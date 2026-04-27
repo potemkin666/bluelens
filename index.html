@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Ocean OSINT Lens</title>
+    <title>BlueLens</title>
     <meta
       name="description"
       content="Upload an image, extract OSINT-relevant signals, and jump into reverse-image search workflows."
@@ -23,7 +23,7 @@
       <div class="brand">
         <div class="brand-mark" aria-hidden="true"></div>
         <div class="brand-text">
-          <h1>Ocean OSINT Lens</h1>
+          <h1>BlueLens</h1>
           <p>Reverse image search + OSINT signals — fast, local-first.</p>
         </div>
       </div>
@@ -58,7 +58,7 @@
           </button>
         </div>
 
-        <div class="row">
+        <div id="manualRow" class="row">
           <button
             id="btnSearchAll"
             class="btn"
@@ -91,8 +91,8 @@
           </button>
         </div>
 
-        <div class="row row-tight">
-          <select id="missionPreset" class="select" disabled title="One mission = one run">
+        <div id="missionRow" class="row row-tight">
+          <select id="missionPreset" class="select" disabled hidden title="One mission = one run">
             <option value="fast">Fast Scan</option>
             <option value="deep">Deep Scan</option>
             <option value="share_search">Share+Search</option>

@@ -176,18 +176,31 @@ async function handleUpload(req, res) {
       return url;
     };
 
+    const upload0x0 = async () => {
+      // 0x0.st: simple multipart field `file`, returns direct URL as plain text.
+      const fd = new FormData();
+      fd.append("file", blob, filename);
+      const upstream = await fetchWithTimeout("https://0x0.st", { method: "POST", body: fd }, 35_000);
+      const txt = await upstream.text();
+      if (!upstream.ok) throw new Error(`0x0 (${upstream.status})`);
+      const url = parseUrlFromText(txt);
+      if (!url) throw new Error("0x0 (bad response)");
+      return url;
+    };
+
     const attempts = [
       { name: "uguu", fn: uploadUguu },
       { name: "catbox", fn: uploadCatbox },
       { name: "litterbox", fn: uploadLitterbox },
+      { name: "0x0", fn: upload0x0 },
     ];
 
     // Auto-fastest routing (based on recent telemetry), with purpose-aware nudges.
     // Some engines (notably Lens) behave better with stable hosts that allow third-party fetches.
     const purposePreferredOrder =
       purpose === "lens" || purpose === "google"
-        ? ["catbox", "litterbox", "uguu"]
-        : ["uguu", "catbox", "litterbox"];
+        ? ["catbox", "0x0", "litterbox", "uguu"]
+        : ["uguu", "catbox", "0x0", "litterbox"];
 
     const purposeRank = (host) => {
       const i = purposePreferredOrder.indexOf(host);

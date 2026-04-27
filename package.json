@@ -3,7 +3,7 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "desktop-icon": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\\\create-desktop-icon.ps1"
   }
 }
-

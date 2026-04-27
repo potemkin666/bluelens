@@ -1178,6 +1178,10 @@ body.skin-chrome .tab.active {
   vertical-align: top;
 }
 
+.batchdash td:nth-child(1) {
+  width: 66px;
+}
+
 .batchdash tr td:first-child {
   border-left: 1px solid rgba(198, 244, 255, 0.12);
   border-top-left-radius: 14px;
@@ -1225,6 +1229,42 @@ body.skin-chrome .tab.active {
   flex-wrap: wrap;
   gap: 8px;
   margin: 8px 0 10px;
+}
+
+.batchdash .cluster-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.batchdash .cluster-card {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(198, 244, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(235, 252, 255, 0.92);
+}
+
+.batchdash .cluster-card .meta {
+  font-size: 11px;
+  color: rgba(230, 251, 255, 0.70);
+}
+
+.batchdash .thumb {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(198, 244, 255, 0.18);
+  background: rgba(255, 255, 255, 0.06);
+  object-fit: cover;
+}
+
+.batchdash .selbox {
+  accent-color: rgba(189, 245, 255, 0.95);
 }
 
 .chips {

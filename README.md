@@ -1,4 +1,4 @@
-# Ocean OSINT Lens
+# BlueLens
 
 Ocean-themed UI for image upload + reverse-image-search workflows, with an OSINT slant:
 
@@ -17,7 +17,6 @@ Ocean-themed UI for image upload + reverse-image-search workflows, with an OSINT
 This is a static site, but the built-in server is recommended so one-click uploads work reliably.
 
 ```bash
-cd ocean-osint-lens
 node server.js
 ```
 
@@ -28,6 +27,14 @@ Open:
 ## Notes
 
 - One-click mode uploads your image to a third-party host to generate a temporary public URL.
-- Upload proxy uses multi-host failover (Uguu -> Catbox -> Litterbox).
+- Upload proxy uses multi-host failover (Uguu -> Catbox -> Litterbox -> 0x0).
 - "Search All" may be limited by browser pop-up blockers. If blocked, the app shows clickable engine links in-console.
 - Run tests with `npm test`.
+
+## Desktop icon (Windows)
+
+```bash
+npm run desktop-icon
+```
+
+Or double-click `bluelens-start.cmd`.

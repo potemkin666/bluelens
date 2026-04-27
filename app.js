@@ -70,6 +70,8 @@ const elements = {
   btnCopyReport: document.getElementById("btnCopyReport"),
   missionPreset: document.getElementById("missionPreset"),
   btnRunMission: document.getElementById("btnRunMission"),
+  manualRow: document.getElementById("manualRow"),
+  missionRow: document.getElementById("missionRow"),
   radar: document.getElementById("radar"),
   repostScore: document.getElementById("repostScore"),
   repostReasons: document.getElementById("repostReasons"),
@@ -159,6 +161,7 @@ const state = {
     gpsOnly: false,
     entOnly: false,
     cluster: "all",
+    selected: {},
   },
   caseInfo: {
     where_obtained: "",
@@ -365,6 +368,7 @@ function reset() {
   state.entityConfidence = {};
   state.batchReports = [];
   state.batchItems = [];
+  state.batchUi.selected = {};
   state.caseInfo = {
     where_obtained: "",
     when_obtained: "",
@@ -588,6 +592,77 @@ function setupEngineLaunchpad() {
   });
 }
 
+function setupSimpleUi() {
+  // Make "missions" the default control surface; tuck manual buttons into Advanced drawer.
+  try {
+    if (elements.btnRunMission) {
+      elements.btnRunMission.classList.remove("btn-secondary");
+      elements.btnRunMission.classList.add("btn");
+    }
+
+    // Move Copy Report into the mission row (keeps IDs, reduces visible button clutter).
+    if (elements.missionRow && elements.btnCopyReport && elements.btnCopyReport.parentElement !== elements.missionRow) {
+      elements.missionRow.appendChild(elements.btnCopyReport);
+    }
+
+    // Move the manual action row into the Advanced drawer body.
+    const advBody = document.querySelector("details.drawer .drawer-body");
+    if (advBody && elements.manualRow && elements.manualRow.parentElement !== advBody) {
+      advBody.prepend(elements.manualRow);
+    }
+
+    // Move preset selector into Advanced to reduce button/read clutter.
+    if (advBody && elements.missionPreset && elements.missionPreset.parentElement !== advBody) {
+      const wrap = document.createElement("div");
+      wrap.className = "row row-tight";
+      wrap.appendChild(elements.missionPreset);
+      advBody.prepend(wrap);
+    }
+
+    // Default to the one thing most people want (persisted).
+    if (elements.missionPreset) {
+      let saved = "";
+      try {
+        saved = localStorage.getItem("ui:missionPreset") || "";
+      } catch {
+        saved = "";
+      }
+      elements.missionPreset.value = saved || "share_search";
+      elements.missionPreset.addEventListener("change", () => {
+        try {
+          localStorage.setItem("ui:missionPreset", elements.missionPreset.value || "share_search");
+        } catch {
+          // ignore
+        }
+      });
+    }
+
+    const syncRunLabel = () => {
+      if (!elements.btnRunMission || !elements.missionPreset) return;
+      const p = elements.missionPreset.value || "fast";
+      elements.btnRunMission.textContent = p === "share_search" ? "Share+Search" : p === "deep" ? "Deep Scan" : "Fast Scan";
+    };
+    elements.missionPreset?.addEventListener?.("change", syncRunLabel);
+    syncRunLabel();
+  } catch {
+    // ignore
+  }
+}
+
+function setupGlobalErrorSurface() {
+  // If anything explodes, surface it instead of "buttons do nothing".
+  window.addEventListener("error", (e) => {
+    const msg = e?.message || "Unknown error";
+    setStatus("Error");
+    setStatusLine(`JS error: ${msg}`);
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    const msg = e?.reason?.message || String(e?.reason || "Unknown rejection");
+    setStatus("Error");
+    setStatusLine(`Promise error: ${msg}`);
+  });
+}
+
 function publishWaitState(token, engine, data) {
   if (!token || !engine || !data) return;
   try {
@@ -779,6 +854,30 @@ function renderBatchDashboard() {
     if (!it.triage) it.triage = triageSignalsForReport(it.report);
   }
 
+  // Anomaly flags: outliers vs batch medians (size/resolution).
+  const mpVals = items.map((x) => x.triage?.mp).filter((x) => Number.isFinite(x));
+  const szVals = items.map((x) => x.report?.file?.size_bytes).filter((x) => Number.isFinite(x));
+  const median = (arr) => {
+    const a = arr.slice().sort((x, y) => x - y);
+    if (a.length === 0) return null;
+    const mid = Math.floor(a.length / 2);
+    return a.length % 2 ? a[mid] : (a[mid - 1] + a[mid]) / 2;
+  };
+  const mpMed = median(mpVals);
+  const szMed = median(szVals);
+
+  for (const it of items) {
+    const t = it.triage;
+    t.tags = Array.isArray(t.tags) ? t.tags : [];
+    if (mpMed != null && Number.isFinite(t.mp)) {
+      if (t.mp <= mpMed * 0.25 || t.mp >= mpMed * 4) t.tags.push({ t: "OUTLIER:RES", tone: "warn" });
+    }
+    if (szMed != null && Number.isFinite(it.report?.file?.size_bytes)) {
+      const s = it.report.file.size_bytes;
+      if (s <= szMed * 0.25 || s >= szMed * 4) t.tags.push({ t: "OUTLIER:SIZE", tone: "warn" });
+    }
+  }
+
   const clusters = clusterBatchItems(items, 8);
 
   const applyFilters = () => {
@@ -848,6 +947,20 @@ function renderBatchDashboard() {
     })
     .join("");
 
+  const clusterSummary = clusters
+    .slice(0, 6)
+    .map((c, idx) => {
+      const id = idx + 1;
+      const rep = c.items[0];
+      const thumb = rep?.thumb ? `<img class="thumb" alt="" src="${escapeAttr(rep.thumb)}" />` : "";
+      const name = rep?.report?.file?.name || `Cluster ${id}`;
+      return `<div class="cluster-card" title="Filter cluster" data-cluster="${id}">${thumb}<div><div>Cluster ${id}</div><div class="meta">${escapeHtml(name)} · ${c.items.length} items</div></div></div>`;
+    })
+    .join("");
+
+  const selected = state.batchUi.selected && typeof state.batchUi.selected === "object" ? state.batchUi.selected : {};
+  const selectedCount = Object.values(selected).filter(Boolean).length;
+
   const topBar = `
     <div class="dash-top">
       <div class="dash-filters">
@@ -855,6 +968,8 @@ function renderBatchDashboard() {
         <label class="toggle toggle-mini" title="Only items with GPS"><input type="checkbox" data-batch-gps ${state.batchUi.gpsOnly ? "checked" : ""}/><span class="toggle-ui" aria-hidden="true"></span><span class="toggle-text">GPS only</span></label>
         <label class="toggle toggle-mini" title="Only items with entities"><input type="checkbox" data-batch-ent ${state.batchUi.entOnly ? "checked" : ""}/><span class="toggle-ui" aria-hidden="true"></span><span class="toggle-text">Entities only</span></label>
         <button class="btn btn-secondary" type="button" data-batch-open-top title="Open Lens for top 5 by lead score">Open top 5 (Lens)</button>
+        <button class="btn btn-secondary" type="button" data-batch-open-sel title="Open Lens searches for selected rows">Open selected (Lens)</button>
+        <span class="tag" title="Selected rows">${selectedCount} selected</span>
         <input class="dash-input" style="min-width: 120px" data-batch-ocr-n type="number" min="1" max="20" step="1" value="8" title="How many top candidates to OCR (capped)" />
         <button class="btn btn-secondary" type="button" data-batch-ocr-top title="Run OCR on top candidates and update entity counts">OCR top</button>
       </div>
@@ -867,6 +982,7 @@ function renderBatchDashboard() {
       <button class="chip" type="button" data-cluster="all" title="Clear cluster filter">All</button>
       ${clusterChips || ""}
     </div>
+    ${clusterSummary ? `<div class="cluster-summary">${clusterSummary}</div>` : ""}
   `;
 
   const rows = sorted
@@ -879,14 +995,17 @@ function renderBatchDashboard() {
       const gps = t.gps ? "✓" : "—";
       const ent = t.entCount ? String(t.entCount) : "—";
       const cl = it.clusterId || "—";
+      const checked = selected?.[it.id] ? "checked" : "";
+      const thumb = it.thumb ? `<img class="thumb" alt="" src="${escapeAttr(it.thumb)}" />` : "";
       const tagHtml = (t.tags || [])
         .slice(0, 4)
         .map((x) => `<span class="tag ${x.tone === "hot" ? "tag-hot" : x.tone === "warn" ? "tag-warn" : ""}">${escapeHtml(x.t)}</span>`)
         .join(" ");
       return `
         <tr>
+          <td><input class="selbox" type="checkbox" data-sel="${escapeAttr(it.id)}" ${checked} /></td>
           <td>${escapeHtml(String(t.lead))}</td>
-          <td title="${escapeAttr(name)}">${escapeHtml(name)}</td>
+          <td title="${escapeAttr(name)}">${thumb} ${escapeHtml(name)}</td>
           <td>${escapeHtml(dims)}</td>
           <td>${escapeHtml(gps)}</td>
           <td>${escapeHtml(ent)}</td>
@@ -903,6 +1022,7 @@ function renderBatchDashboard() {
     <table>
       <thead>
         <tr>
+          <th>Select</th>
           ${head("lead", "Lead")}
           ${head("name", "Name")}
           ${head("dim", "Dim")}
@@ -939,12 +1059,26 @@ function renderBatchDashboard() {
     if (openTop != null) {
       void openBatchTopLens(5);
     }
+    const openSel = e.target?.getAttribute?.("data-batch-open-sel");
+    if (openSel != null) {
+      void openBatchSelectedLens();
+    }
     const ocrTop = e.target?.getAttribute?.("data-batch-ocr-top");
     if (ocrTop != null) {
       const nEl = el.querySelector?.("[data-batch-ocr-n]");
       const n = nEl ? Number(nEl.value) : 8;
       void runBatchOcrTopCandidates(n);
     }
+  };
+
+  el.onchange = (e) => {
+    const id = e.target?.getAttribute?.("data-sel");
+    if (!id) return;
+    const inp = e.target;
+    if (!(inp instanceof HTMLInputElement)) return;
+    state.batchUi.selected = state.batchUi.selected && typeof state.batchUi.selected === "object" ? state.batchUi.selected : {};
+    state.batchUi.selected[id] = Boolean(inp.checked);
+    renderBatchDashboard();
   };
 
   const qEl = el.querySelector?.("[data-batch-q]");
@@ -1001,6 +1135,40 @@ async function openBatchTopLens(n = 5) {
   }
 
   await withUiLock("Top lens…", async () => {
+    for (let i = 0; i < pick.length; i += 1) {
+      try {
+        const f = await fileToUploadForBatch(pick[i].file);
+        const url = await publicUrlForFile(f, "lens");
+        publishWaitState(tokens[i], "lens", { url });
+      } catch (e) {
+        publishWaitState(tokens[i], "lens", { err: e?.message || "upload failed" });
+      }
+    }
+    setStatus("Ready");
+  });
+}
+
+async function openBatchSelectedLens() {
+  if (state.uiBusy) return;
+  const items = Array.isArray(state.batchItems) ? state.batchItems.filter((x) => x?.file && x?.report) : [];
+  if (items.length === 0) return;
+
+  const selected = state.batchUi.selected && typeof state.batchUi.selected === "object" ? state.batchUi.selected : {};
+  const picked = items.filter((it) => Boolean(selected?.[it.id]));
+  if (picked.length === 0) return;
+
+  const cap = Math.min(10, picked.length);
+  const pick = picked.slice(0, cap);
+
+  const tokens = pick.map((_, i) => `${Date.now()}-${Math.random().toString(16).slice(2)}-${i}`);
+  for (let i = 0; i < pick.length; i += 1) {
+    const label = `Batch · Selected · Lens · ${pick[i].report?.file?.name || `#${i + 1}`}`;
+    const waitUrl = `/wait.html?token=${encodeURIComponent(tokens[i])}&engine=lens&label=${encodeURIComponent(label)}`;
+    window.open(waitUrl, "_blank");
+    publishWaitState(tokens[i], "lens", { status: "uploading" });
+  }
+
+  await withUiLock(`Selected lens (${pick.length})…`, async () => {
     for (let i = 0; i < pick.length; i += 1) {
       try {
         const f = await fileToUploadForBatch(pick[i].file);
@@ -1096,30 +1264,12 @@ async function runMissionPreset(preset) {
     }
 
     if (p === "share_search") {
-      // Must open tabs before any await (popup blockers).
+      // Reduce popup chaos: open ONE tab (Lens) + render launchpad for the rest.
       const engines = ["lens", "bing", "tineye", "yandex", "google_images"];
       const token = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      const openedByEngine = Object.create(null);
-      for (const e of engines) {
-        const label =
-          e === "lens"
-            ? "Lens"
-            : e === "bing"
-              ? "Bing"
-              : e === "tineye"
-                ? "TinEye"
-                : e === "yandex"
-                  ? "Yandex"
-                  : "Google Images";
-        const waitUrl = `/wait.html?token=${encodeURIComponent(token)}&engine=${encodeURIComponent(e)}&label=${encodeURIComponent(`Mission · ${label}`)}`;
-        const w = window.open(waitUrl, "_blank");
-        if (w) openedByEngine[e] = w;
-      }
-      state.session = loadSession();
-      state.session.engines_opened += engines.length;
-      saveSession();
-      void refreshHostStats();
-      for (const e of engines) publishWaitState(token, e, { status: "uploading" });
+      const waitUrl = `/wait.html?token=${encodeURIComponent(token)}&engine=lens&label=${encodeURIComponent("Mission · Lens")}`;
+      window.open(waitUrl, "_blank");
+      publishWaitState(token, "lens", { status: "uploading" });
 
       if (!state.shareEnabled) {
         state.shareEnabled = true;
@@ -1127,9 +1277,37 @@ async function runMissionPreset(preset) {
         setShareControlsEnabled(true);
       }
 
-      setStatusLine("Upload: … · Engines: …");
-      await searchAllLocked({ token, engines, openedByEngine });
-      setStatusLine("Upload: ✓ · Engines: ✓");
+      setStatusLine("Upload: … · Lens: …");
+      const url = await ensurePublicUrl({ purpose: "lens" });
+      publishWaitState(token, "lens", { url });
+
+      const targets = engines.map((e) => reverseSearchUrl(e, url));
+      const run = {
+        ts: Date.now(),
+        url,
+        token,
+        artifact: state.publicUrlArtifact || "original",
+        targets: {
+          lens: targets[0],
+          bing: targets[1],
+          tineye: targets[2],
+          yandex: targets[3],
+          google_images: targets[4],
+        },
+        chosen: { lens: true, bing: true, tineye: true, yandex: true, google_images: true },
+        opened: { lens: true },
+        blocked: {},
+      };
+      state.lastEngineRun = run;
+      saveLastRun(run);
+      renderEngineLaunchpad(run);
+
+      state.session = loadSession();
+      state.session.engines_opened += 1;
+      saveSession();
+      void refreshHostStats();
+
+      setStatusLine("Upload: ✓ · Lens: ✓ · Launchpad ready");
       setStatus("Ready");
     }
   });
@@ -1416,35 +1594,12 @@ async function handleSearchAll() {
   if (!state.file) return;
   if (state.uiBusy) return;
 
-  // Popup blockers: open tabs synchronously BEFORE any await.
+  // Less chaos: open ONE tab (Lens) + render launchpad for the rest.
   const engines = ["lens", "bing", "tineye", "yandex", "google_images"];
   const token = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const openedByEngine = Object.create(null);
-  let openedCount = 0;
-
-  for (const e of engines) {
-    const label =
-      e === "lens"
-        ? "Lens"
-        : e === "bing"
-          ? "Bing"
-          : e === "tineye"
-            ? "TinEye"
-            : e === "yandex"
-              ? "Yandex"
-              : "Google Images";
-    const waitUrl = `/wait.html?token=${encodeURIComponent(token)}&engine=${encodeURIComponent(e)}&label=${encodeURIComponent(label)}`;
-    const w = window.open(waitUrl, "_blank");
-    if (w) {
-      openedByEngine[e] = w;
-      openedCount += 1;
-    }
-  }
-  state.session = loadSession();
-  state.session.engines_opened += openedCount || engines.length;
-  saveSession();
-  void refreshHostStats();
-  for (const e of engines) publishWaitState(token, e, { status: "uploading" });
+  const waitUrl = `/wait.html?token=${encodeURIComponent(token)}&engine=lens&label=${encodeURIComponent("Lens")}`;
+  window.open(waitUrl, "_blank");
+  publishWaitState(token, "lens", { status: "uploading" });
 
   if (!state.shareEnabled) {
     const ok = window.confirm(
@@ -1457,21 +1612,42 @@ async function handleSearchAll() {
   }
 
   await withUiLock("Search all…", async () => {
-    await searchAllLocked({ token, engines, openedByEngine });
+    const url = await ensurePublicUrl({ purpose: "lens" });
+    publishWaitState(token, "lens", { url });
+
+    const targets = engines.map((e) => reverseSearchUrl(e, url));
+    const run = {
+      ts: Date.now(),
+      url,
+      token,
+      artifact: state.publicUrlArtifact || "original",
+      targets: {
+        lens: targets[0],
+        bing: targets[1],
+        tineye: targets[2],
+        yandex: targets[3],
+        google_images: targets[4],
+      },
+      chosen: { lens: true, bing: true, tineye: true, yandex: true, google_images: true },
+      opened: { lens: true },
+      blocked: {},
+    };
+    state.lastEngineRun = run;
+    saveLastRun(run);
+    renderEngineLaunchpad(run);
+
+    state.session = loadSession();
+    state.session.engines_opened += 1;
+    saveSession();
+    void refreshHostStats();
+
+    triggerGlitterStorm(68);
+    setStatus("Ready");
   }).catch((e) => {
     setShareStatus("Upload failed");
     const msg = e?.message || "unknown error";
     elements.publicUrlOut.textContent = `Upload failed: ${msg}`;
-    for (const eng of engines) publishWaitState(token, eng, { err: msg });
-    for (const eng of engines) {
-      const w = openedByEngine[eng];
-      if (!w) continue;
-      try {
-        w.close();
-      } catch {
-        // ignore
-      }
-    }
+    publishWaitState(token, "lens", { err: msg });
   });
 }
 
@@ -2740,7 +2916,14 @@ async function runBatchFiles(files) {
     try {
       const r = await buildReportForFileHeadless(f);
       state.batchReports.push(r);
-      state.batchItems.push({ file: f, report: r, triage: null, clusterId: 0 });
+      const id = r?.hashes?.sha256 || `${f.name}:${f.size}:${i}`;
+      let thumb = null;
+      try {
+        thumb = await makeThumbnailDataUrl(f, 96);
+      } catch {
+        thumb = null;
+      }
+      state.batchItems.push({ id, file: f, report: r, triage: null, clusterId: 0, thumb });
       lines.push(`  OK · repost ${r.insights.repost_likelihood}/100`);
     } catch (e) {
       lines.push(`  FAIL · ${e?.message || "unknown error"}`);
@@ -3850,6 +4033,19 @@ function validateLibs() {
   }
 }
 
+async function checkLocalServerHint() {
+  // Non-blocking hint: uploads/search need the local server.
+  try {
+    const controller = new AbortController();
+    const t = window.setTimeout(() => controller.abort(), 900);
+    const res = await fetch("/api/ping", { cache: "no-store", signal: controller.signal });
+    window.clearTimeout(t);
+    if (!res.ok) throw new Error("ping");
+  } catch {
+    setStatusLine("Local server offline — start `bluelens-start.cmd` (or `node server.js`) for Share+Search.");
+  }
+}
+
 function setFxVars(scanline, chromatic) {
   const root = document.documentElement;
   if (typeof scanline === "number") root.style.setProperty("--scanline", String(scanline));
@@ -4293,6 +4489,7 @@ setupActions();
 setupCaseboard();
 reset();
 validateLibs();
+void checkLocalServerHint();
 setupFx();
 setupHudDrag();
 setupTabs();
@@ -4303,5 +4500,7 @@ setupChromeSkin();
 state.session = loadSession();
 void refreshHostStats();
 setupEngineLaunchpad();
+setupSimpleUi();
+setupGlobalErrorSurface();
 
 
