@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ocean OSINT Lens</title>
+    <meta
+      name="description"
+      content="Upload an image, extract OSINT-relevant signals, and jump into reverse-image search workflows."
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="bg-overlay" aria-hidden="true"></div>
+    <div class="holo-grid" aria-hidden="true"></div>
+    <div class="bubbles" aria-hidden="true"></div>
+    <div class="orbs" aria-hidden="true"></div>
+    <div class="sparkles" aria-hidden="true"></div>
+    <div class="caustics" aria-hidden="true"></div>
+    <div id="radar" class="radar" aria-hidden="true"><div class="radar-sweep"></div></div>
+
+    <header class="header">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div class="brand-text">
+          <h1>Ocean OSINT Lens</h1>
+          <p>Reverse image search + OSINT signals — fast, local-first.</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="btnReset" class="btn btn-ghost" type="button" title="Clear everything.">Reset</button>
+        <a class="btn btn-ghost" href="./README.md" target="_blank" rel="noreferrer" title="Run instructions + notes."
+          >Help</a
+        >
+      </div>
+    </header>
+
+    <main class="layout layout-single">
+      <section class="card console-card" aria-labelledby="consoleTitle">
+        <div class="card-title-row">
+          <h2 id="consoleTitle">OSINT Console</h2>
+          <span id="statusPill" class="pill pill-muted">Idle</span>
+        </div>
+        <div id="statusLine" class="status-line" aria-live="polite"></div>
+
+        <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload image">
+          <div class="dropzone-inner">
+            <div class="dropzone-icon" aria-hidden="true"></div>
+            <div class="dropzone-text">
+              <div class="dropzone-strong">Drop an image here</div>
+              <div class="dropzone-sub">or choose a file (JPG/PNG/WebP/HEIC*)</div>
+            </div>
+          </div>
+          <input id="fileInput" type="file" accept="image/*" />
+          <input id="cameraInput" type="file" accept="image/*" capture="environment" />
+          <button id="btnCamera" class="dropzone-camera" type="button" title="Capture from camera" aria-label="Capture from camera">
+            <span aria-hidden="true">📷</span>
+          </button>
+        </div>
+
+        <div class="row">
+          <button
+            id="btnSearchAll"
+            class="btn"
+            type="button"
+            disabled
+            data-ico="⌕"
+            title="Uploads (public URL) and opens multiple reverse image search engines."
+          >
+            Search All
+          </button>
+          <button
+            id="btnRunPass"
+            class="btn btn-secondary"
+            type="button"
+            disabled
+            data-ico="⚡"
+            title="Runs OCR and refreshes attribution/repost signals."
+          >
+            OSINT Pass
+          </button>
+          <button
+            id="btnCopyReport"
+            class="btn btn-ghost"
+            type="button"
+            disabled
+            data-ico="⎘"
+            title="Copies a human-readable report (Markdown + embedded JSON). Shift-click for JSON only."
+          >
+            Copy Report
+          </button>
+        </div>
+
+        <div class="row row-tight">
+          <select id="missionPreset" class="select" disabled title="One mission = one run">
+            <option value="fast">Fast Scan</option>
+            <option value="deep">Deep Scan</option>
+            <option value="share_search">Share+Search</option>
+          </select>
+          <button id="btnRunMission" class="btn btn-secondary" type="button" disabled title="Runs the selected mission preset">
+            Run
+          </button>
+        </div>
+
+        <div class="grid console-grid" aria-label="Quick facts">
+          <div class="kv">
+            <div class="k">File</div>
+            <div id="metaName" class="v">—</div>
+          </div>
+          <div class="kv">
+            <div class="k">Type</div>
+            <div id="metaType" class="v">—</div>
+          </div>
+          <div class="kv">
+            <div class="k">Size</div>
+            <div id="metaSize" class="v">—</div>
+          </div>
+          <div class="kv">
+            <div class="k">Dim</div>
+            <div id="metaDim" class="v">—</div>
+          </div>
+          <div class="kv">
+            <div class="k">Repost</div>
+            <div id="repostScore" class="v">—</div>
+            <div id="repostReasons" class="chips chips-mini" hidden aria-label="Repost score reasons"></div>
+          </div>
+          <div class="kv">
+            <div class="k">Attribution</div>
+            <div id="attrHints" class="v">—</div>
+          </div>
+        </div>
+
+        <div class="tabs" role="tablist" aria-label="OSINT tabs">
+          <button class="tab active" type="button" role="tab" aria-selected="true" data-tab="search">Search</button>
+          <button class="tab" type="button" role="tab" aria-selected="false" data-tab="signals">Signals</button>
+          <button class="tab" type="button" role="tab" aria-selected="false" data-tab="text">Text</button>
+          <button class="tab" type="button" role="tab" aria-selected="false" data-tab="compare">Compare</button>
+        </div>
+
+        <div class="tabpanels">
+          <div class="tabpanel active" data-panel="search" role="tabpanel">
+            <div class="subcard hud" data-hud-key="search">
+              <div class="subcard-head">
+                <div class="subcard-title">Source + Sharing</div>
+                <div class="pill-row">
+                  <span class="pill pill-muted" id="sharePill">Not shared</span>
+                  <span class="pill pill-warn" id="gpsPill" hidden>GPS present</span>
+                  <span class="pill" id="editPill" hidden>Editing software</span>
+                </div>
+              </div>
+
+              <div class="grid console-grid">
+                <div class="kv">
+                  <div class="k">Where obtained</div>
+                  <input id="srcWhere" class="input" placeholder="URL / platform / channel" />
+                </div>
+                <div class="kv">
+                  <div class="k">When obtained</div>
+                  <input id="srcWhen" class="input" type="datetime-local" />
+                </div>
+                <div class="kv">
+                  <div class="k">Who provided</div>
+                  <input id="srcWho" class="input" placeholder="Name / handle / org" />
+                </div>
+                <div class="kv">
+                  <div class="k">Original filename</div>
+                  <input id="srcOrig" class="input" placeholder="Original name (if different)" />
+                </div>
+              </div>
+
+              <div class="row row-tight">
+                <label class="field" title="Mark confidence in the findings you’re using">
+                  <span class="field-label">Confidence</span>
+                  <select id="confLevel" class="select">
+                    <option value="unverified">Unverified</option>
+                    <option value="likely">Likely</option>
+                    <option value="confirmed">Confirmed</option>
+                  </select>
+                </label>
+              </div>
+
+              <label class="toggle" style="margin-top: 10px" title="Makes the image public via a temporary URL">
+                <input id="chkEnableShare" type="checkbox" />
+                <span class="toggle-ui" aria-hidden="true"></span>
+                <span class="toggle-text">Enable one-click reverse search (uploads image to generate a public URL).</span>
+              </label>
+
+              <label class="toggle toggle-mini" title="Uploads the clean copy (re-encoded) instead of the original file">
+                <input id="chkShareSafe" type="checkbox" />
+                <span class="toggle-ui" aria-hidden="true"></span>
+                <span class="toggle-text">Share safe (upload clean copy)</span>
+              </label>
+
+              <div class="row row-tight">
+                <select id="shareProvider" class="select" disabled title="Local proxy will try multiple hosts">
+                  <option value="0x0">Auto (failover)</option>
+                </select>
+                <button id="btnCopyPublicUrl" class="btn btn-ghost" type="button" disabled title="Copy public URL">
+                  Copy URL
+                </button>
+                <button
+                  id="btnRetryUpload"
+                  class="btn btn-secondary"
+                  type="button"
+                  disabled
+                  hidden
+                  title="Retry upload / public URL"
+                >
+                  Retry
+                </button>
+              </div>
+
+              <div id="publicUrlOut" class="mono mono-box">—</div>
+              <div id="engineLinks" class="mono mono-box links" hidden></div>
+              <div id="hostStatsOut" class="mono mono-box" hidden></div>
+            </div>
+
+            <div class="subcard hud" data-hud-key="caseboard">
+              <div class="subcard-head">
+                <div class="subcard-title">Caseboard</div>
+                <span class="pill pill-muted" title="Persist investigations locally">local</span>
+              </div>
+              <div class="row row-tight">
+                <input id="caseName" class="input" placeholder="Case name (e.g., Incident-042)" />
+                <button id="btnNewCase" class="btn btn-secondary" type="button" disabled title="Create a new case">New</button>
+                <button id="btnSaveCase" class="btn" type="button" disabled title="Save this image + report into the caseboard">Save</button>
+              </div>
+              <div class="row row-tight">
+                <select id="caseSelect" class="select" disabled title="Load a case"></select>
+                <button id="btnLoadCase" class="btn btn-secondary" type="button" disabled title="Load selected case">Load</button>
+                <button id="btnExportCase" class="btn btn-ghost" type="button" disabled title="Download case JSON bundle">Export</button>
+                <button id="btnDeleteCase" class="btn btn-ghost" type="button" disabled title="Delete selected case">Delete</button>
+              </div>
+              <div id="caseOut" class="mono mono-box">—</div>
+              <div class="row row-tight">
+                <textarea
+                  id="caseNote"
+                  class="input textarea"
+                  rows="2"
+                  placeholder="Quick note (what you saw / why it matters)"
+                ></textarea>
+              </div>
+            </div>
+
+            <details class="drawer hud" data-hud-key="advanced">
+              <summary title="More controls and nerdy details">Advanced</summary>
+              <div class="drawer-body">
+            <div class="subcard hud" data-hud-key="mutate">
+              <div class="subcard-head">
+                <div class="subcard-title">Mutation Lab</div>
+                <span class="pill" title="Generate variants and search them">variants</span>
+              </div>
+              <div class="row row-tight">
+                <button id="btnMutateSearch" class="btn btn-secondary" type="button" disabled title="Creates variants and searches them (Lens)">
+                  Mutate + Search
+                </button>
+                <button id="btnCopyMutations" class="btn btn-ghost" type="button" disabled title="Copy variant URLs">Copy URLs</button>
+              </div>
+              <div id="mutationOut" class="mono mono-box">—</div>
+            </div>
+
+            <div class="subcard hud" data-hud-key="batch">
+              <div class="subcard-head">
+                <div class="subcard-title">Batch</div>
+                <span class="pill" title="Drop multiple images for a report per file">reports</span>
+              </div>
+              <div class="row row-tight">
+                <input id="batchInput" class="input" type="file" accept="image/*" multiple title="Select multiple images" />
+                <button id="btnRunBatch" class="btn btn-secondary" type="button" title="Generate per-file reports">Run</button>
+                <button id="btnDownloadBatch" class="btn btn-ghost" type="button" disabled title="Download JSON bundle">Download</button>
+              </div>
+              <div id="batchOut" class="pre">—</div>
+            </div>
+
+                <div class="subcard hud" data-hud-key="fx">
+                  <div class="subcard-head">
+                    <div class="subcard-title">FX</div>
+                    <span class="pill">Y2K</span>
+                  </div>
+                  <div class="row row-tight">
+                <label class="field" title="Scanlines intensity">
+                  <span class="field-label">Scan</span>
+                  <input id="scanlineSlider" class="input range" type="range" min="0" max="0.35" step="0.01" />
+                </label>
+                <label class="field" title="Chromatic hover split intensity">
+                  <span class="field-label">Split</span>
+                  <input id="chromaticSlider" class="input range" type="range" min="0" max="1.2" step="0.05" />
+                </label>
+                    <button id="btnOverclock" class="btn btn-secondary" type="button" title="Max it out.">Overclock</button>
+                  </div>
+                  <label class="toggle toggle-mini" title="Blue-chrome 2001 music player skin">
+                    <input id="chkChrome" type="checkbox" />
+                    <span class="toggle-ui" aria-hidden="true"></span>
+                    <span class="toggle-text">Blue chrome skin</span>
+                  </label>
+                  <label class="toggle toggle-mini" title="Drag mini-panels around the screen">
+                    <input id="chkHud" type="checkbox" />
+                    <span class="toggle-ui" aria-hidden="true"></span>
+                    <span class="toggle-text">HUD mode</span>
+                  </label>
+                </div>
+              </div>
+            </details>
+          </div>
+
+          <div class="tabpanel" data-panel="signals" role="tabpanel">
+            <div class="subcard hud" data-hud-key="preview">
+              <div class="subcard-head">
+                <div class="subcard-title">Preview</div>
+                <span class="pill pill-muted">Local</span>
+              </div>
+              <div class="preview">
+                <img id="previewImg" alt="Uploaded preview" />
+                <div id="previewEmpty" class="preview-empty">No image yet.</div>
+              </div>
+              <div class="row row-tight">
+                <button id="btnChoose" class="btn" type="button" title="Pick a file">Choose</button>
+                <button id="btnDownloadClean" class="btn btn-secondary" type="button" disabled title="Re-encode to strip metadata">
+                  Clean Copy
+                </button>
+              </div>
+            </div>
+
+            <div class="subcard hud" data-hud-key="hashes">
+              <div class="subcard-head">
+                <div class="subcard-title">Hashes</div>
+                <span class="pill">signals</span>
+              </div>
+              <div class="signals">
+                <div class="signal">
+                  <div class="signal-head">
+                    <div class="signal-name">SHA-256</div>
+                    <button id="copySha" class="btn btn-ghost btn-small" type="button" disabled title="Copy SHA-256">Copy</button>
+                  </div>
+                  <code id="sha256" class="mono">—</code>
+                </div>
+
+                <div class="signal">
+                  <div class="signal-head">
+                    <div class="signal-name">MD5</div>
+                    <button id="copyMd5" class="btn btn-ghost btn-small" type="button" disabled title="Copy MD5">Copy</button>
+                  </div>
+                  <code id="md5" class="mono">—</code>
+                </div>
+
+                <div class="signal">
+                  <div class="signal-head">
+                    <div class="signal-name">dHash</div>
+                    <button id="copyDhash" class="btn btn-ghost btn-small" type="button" disabled title="Copy dHash">Copy</button>
+                  </div>
+                  <code id="dhash" class="mono">—</code>
+                </div>
+              </div>
+
+              <details id="cleanDetails" class="details" hidden title="Signals computed from the clean copy artifact">
+                <summary>Clean copy signals</summary>
+                <div class="signals">
+                  <div class="signal">
+                    <div class="signal-head">
+                      <div class="signal-name">Clean SHA-256</div>
+                    </div>
+                    <code id="cleanSha256" class="mono">—</code>
+                  </div>
+                  <div class="signal">
+                    <div class="signal-head">
+                      <div class="signal-name">Clean MD5</div>
+                    </div>
+                    <code id="cleanMd5" class="mono">—</code>
+                  </div>
+                  <div class="signal">
+                    <div class="signal-head">
+                      <div class="signal-name">Clean dHash</div>
+                    </div>
+                    <code id="cleanDhash" class="mono">—</code>
+                  </div>
+                </div>
+                <div id="cleanDiffOut" class="mono mono-box">—</div>
+              </details>
+            </div>
+
+            <div class="subcard hud" data-hud-key="meta">
+              <div class="subcard-head">
+                <div class="subcard-title">Metadata</div>
+                <span class="pill">key fields</span>
+              </div>
+
+              <div class="row row-tight">
+                <button id="btnOpenMap" class="btn btn-secondary" type="button" disabled title="Open GPS in OpenStreetMap">
+                  Map
+                </button>
+                <button id="btnCopyCoords" class="btn btn-ghost" type="button" disabled title="Copy GPS coords">
+                  Copy Coords
+                </button>
+                <button id="btnCopyExif" class="btn btn-ghost" type="button" disabled title="Copy EXIF JSON">
+                  Copy EXIF
+                </button>
+                <button id="btnTogglePretty" class="btn btn-ghost" type="button" disabled title="Toggle formatting">
+                  Pretty
+                </button>
+              </div>
+
+              <div id="exifKeyFields" class="keygrid" aria-label="Key metadata fields">
+                <div class="kv">
+                  <div class="k">Captured</div>
+                  <div id="kfCaptured" class="v">—</div>
+                </div>
+                <div class="kv">
+                  <div class="k">Camera</div>
+                  <div id="kfCamera" class="v">—</div>
+                </div>
+                <div class="kv">
+                  <div class="k">Software</div>
+                  <div id="kfSoftware" class="v">—</div>
+                </div>
+                <div class="kv">
+                  <div class="k">GPS</div>
+                  <div id="kfGps" class="v">—</div>
+                </div>
+              </div>
+
+              <details class="details" title="Raw metadata JSON">
+                <summary>Raw EXIF</summary>
+                <pre id="exifOut" class="pre">—</pre>
+              </details>
+            </div>
+
+            <div class="subcard hud" data-hud-key="engines">
+              <div class="subcard-head">
+                <div class="subcard-title">Engines</div>
+                <span class="pill">manual</span>
+              </div>
+              <div class="actions">
+                <button id="btnOpenLens" class="btn btn-secondary" type="button" disabled>Lens</button>
+                <button id="btnOpenBing" class="btn btn-secondary" type="button" disabled>Bing</button>
+                <button id="btnOpenTineye" class="btn btn-secondary" type="button" disabled>TinEye</button>
+                <button id="btnOpenYandex" class="btn btn-secondary" type="button" disabled>Yandex</button>
+                <button id="btnOpenGoogleImages" class="btn btn-secondary" type="button" disabled>Google</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="tabpanel" data-panel="text" role="tabpanel">
+            <div class="subcard hud" data-hud-key="ocr">
+              <div class="subcard-head">
+                <div class="subcard-title">OCR</div>
+                <span id="ocrPill" class="pill pill-muted">Idle</span>
+              </div>
+
+              <div class="row row-tight">
+                <label class="field" title="OCR language">
+                  <span class="field-label">Lang</span>
+                  <select id="ocrLang" class="select" disabled>
+                    <option value="eng">English</option>
+                    <option value="spa">Spanish</option>
+                    <option value="fra">French</option>
+                    <option value="deu">German</option>
+                  </select>
+                </label>
+                <span id="ocrLangHint" class="pill pill-muted" hidden title="Language hint from detected characters">Hint</span>
+                <button id="btnRunOcr" class="btn btn-secondary" type="button" disabled title="Run OCR">Run</button>
+                <button id="btnPivotSearch" class="btn btn-secondary" type="button" disabled title="Open pivot searches for OCR entities">Pivot</button>
+                <button id="btnCopyOcr" class="btn btn-ghost" type="button" disabled title="Copy OCR text">Copy</button>
+              </div>
+
+              <pre id="ocrOut" class="pre">—</pre>
+              <div id="ocrEntities" class="chips" hidden aria-label="OCR extracted key fields"></div>
+            </div>
+          </div>
+
+          <div class="tabpanel" data-panel="compare" role="tabpanel">
+            <div class="subcard hud" data-hud-key="compare">
+              <div class="subcard-head">
+                <div class="subcard-title">Compare</div>
+                <span class="pill">near-duplicate</span>
+              </div>
+
+              <div class="row row-tight">
+                <button id="btnChooseCompare" class="btn" type="button" disabled title="Choose another image to compare">
+                  Choose
+                </button>
+                <button id="btnClearCompare" class="btn btn-ghost" type="button" disabled title="Clear comparison">
+                  Clear
+                </button>
+                <input id="compareInput" type="file" accept="image/*" hidden />
+              </div>
+
+              <div class="compare">
+                <div class="compare-preview">
+                  <img id="compareImg" alt="Comparison preview" />
+                  <div id="compareEmpty" class="preview-empty">No comparison image.</div>
+                </div>
+                <div class="compare-meta">
+                  <div class="kv">
+                    <div class="k">dHash A</div>
+                    <div id="cmpA" class="v mono">—</div>
+                  </div>
+                  <div class="kv">
+                    <div class="k">dHash B</div>
+                    <div id="cmpB" class="v mono">—</div>
+                  </div>
+                  <div class="kv">
+                    <div class="k">Hamming (0–64)</div>
+                    <div id="cmpDist" class="v">—</div>
+                  </div>
+                  <div class="kv">
+                    <div class="k">Verdict</div>
+                    <div id="cmpVerdict" class="v">—</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="hint">
+          *HEIC support depends on your browser/OS. One-click search makes the image public via a temporary URL.
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div>Built for investigative workflows. Use responsibly and respect privacy &amp; terms of service.</div>
+    </footer>
+
+    <div id="cmdk" class="cmdk" hidden aria-hidden="true">
+      <div class="cmdk-backdrop" data-cmdk-close></div>
+      <div class="cmdk-panel" role="dialog" aria-modal="true" aria-label="Command palette">
+        <div class="cmdk-top">
+          <input id="cmdkInput" class="cmdk-input" type="text" autocomplete="off" spellcheck="false" placeholder="Type a commandâ€¦" />
+          <div class="cmdk-kbd" aria-hidden="true">Ctrl+K</div>
+        </div>
+        <div id="cmdkList" class="cmdk-list" role="listbox"></div>
+        <div class="cmdk-hint">Enter â€¢ â†‘/â†“ â€¢ Esc</div>
+      </div>
+    </div>
+
+    <!-- Libraries -->
+    <script src="https://unpkg.com/exifr/dist/full.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/js-sha256@0.11.0/build/sha256.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/spark-md5@3.0.2/spark-md5.min.js"></script>
+    <script src="./osint-lib.js"></script>
+    <script src="./ocr-pipeline.js"></script>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OSINT Lens &mdash; Waiting</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif;
+        background: #05142d;
+        color: #eaf7ff;
+      }
+      .wrap {
+        display: grid;
+        place-items: center;
+        height: 100%;
+        padding: 24px;
+      }
+      .card {
+        max-width: 720px;
+        width: 100%;
+        border: 1px solid rgba(230, 251, 255, 0.25);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.06);
+        padding: 18px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+      }
+      .muted {
+        opacity: 0.8;
+      }
+      a {
+        color: #d9fbff;
+        text-decoration: none;
+        border-bottom: 1px dashed rgba(230, 251, 255, 0.55);
+      }
+      button {
+        margin-top: 12px;
+        padding: 10px 12px;
+        border-radius: 14px;
+        border: 1px solid rgba(230, 251, 255, 0.35);
+        background: rgba(255, 255, 255, 0.08);
+        color: #eaf7ff;
+        cursor: pointer;
+      }
+      .spinner {
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+        border: 2px solid rgba(234, 247, 255, 0.25);
+        border-top-color: rgba(234, 247, 255, 0.9);
+        display: inline-block;
+        vertical-align: -2px;
+        margin-right: 10px;
+        animation: spin 700ms linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <div id="title"><strong>Engine</strong> &mdash; waiting for public image URL&hellip;</div>
+        <div id="msg" class="muted" style="margin-top: 8px"><span class="spinner"></span>Keep this tab open.</div>
+        <div id="link" style="margin-top: 10px"></div>
+        <button id="close">Close</button>
+      </div>
+    </div>
+
+    <script>
+      const params = new URLSearchParams(location.search);
+      const token = params.get("token") || "";
+      const engine = params.get("engine") || "";
+      const label = params.get("label") || engine || "Engine";
+      const key = `osint:${token}:${engine}`;
+
+      const title = document.getElementById("title");
+      const msg = document.getElementById("msg");
+      const link = document.getElementById("link");
+      title.innerHTML = `<strong>${label}</strong> &mdash; waiting for public image URL&hellip;`;
+      document.title = `OSINT Lens - ${label}`;
+
+      document.getElementById("close").addEventListener("click", () => window.close());
+
+      const buildTarget = (u) => {
+        const enc = encodeURIComponent(u);
+        switch (engine) {
+          case "lens":
+            return `https://lens.google.com/uploadbyurl?url=${enc}`;
+          case "bing":
+            return `https://www.bing.com/images/search?q=imgurl:${enc}&view=detailv2&iss=sbi`;
+          case "tineye":
+            return `https://tineye.com/search?url=${enc}`;
+          case "yandex":
+            return `https://yandex.com/images/search?rpt=imageview&url=${enc}`;
+          default:
+            return `https://www.google.com/searchbyimage?image_url=${enc}`;
+        }
+      };
+
+      const applyData = (data) => {
+        if (!data) return false;
+        if (data.status) {
+          msg.textContent = data.status === "uploading" ? "Uploading... (check main tab)" : String(data.status);
+          return true;
+        }
+        if (data.err) {
+          msg.textContent = `Error: ${data.err}`;
+          return true;
+        }
+        if (data.url) {
+          const t = buildTarget(data.url);
+          link.innerHTML = `<a href="${t}">Open manually</a>`;
+          location.replace(t);
+          return true;
+        }
+        return false;
+      };
+
+      const tickStorage = () => {
+        let raw = null;
+        try {
+          raw = localStorage.getItem(key);
+        } catch {}
+        if (!raw) return;
+        try {
+          applyData(JSON.parse(raw));
+        } catch {}
+      };
+
+      const tickApi = async () => {
+        if (!token || !engine) return;
+        try {
+          const r = await fetch(`/api/status?token=${encodeURIComponent(token)}&engine=${encodeURIComponent(engine)}`, {
+            cache: "no-store",
+          });
+          if (!r.ok) return;
+          const d = await r.json();
+          applyData(d);
+        } catch {}
+      };
+
+      // BroadcastChannel fallback (works even if storage is restricted)
+      let bc = null;
+      try {
+        bc = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("osint-lens") : null;
+      } catch {}
+      if (bc) {
+        bc.addEventListener("message", (ev) => {
+          const d = ev && ev.data;
+          if (!d || d.token !== token || d.engine !== engine) return;
+          applyData(d);
+        });
+      }
+
+      window.addEventListener("storage", (e) => {
+        if (e.key === key) tickStorage();
+      });
+
+      setInterval(tickStorage, 250);
+      setInterval(() => void tickApi(), 350);
+      void tickApi();
+      tickStorage();
+    </script>
+  </body>
+</html>
+
