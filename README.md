@@ -88,13 +88,13 @@ Then reload the page.
 
 ## Project structure
 
-- `/home/runner/work/bluelens/bluelens/index.html` — main UI shell
-- `/home/runner/work/bluelens/bluelens/app.js` — browser application logic
-- `/home/runner/work/bluelens/bluelens/ocr-pipeline.js` — OCR preprocessing and entity extraction helpers
-- `/home/runner/work/bluelens/bluelens/osint-lib.js` — reverse-search URL helpers
-- `/home/runner/work/bluelens/bluelens/server.js` — local static server and upload/status API
-- `/home/runner/work/bluelens/bluelens/wait.html` + `/home/runner/work/bluelens/bluelens/wait.js` — wait-tab handoff page
-- `/home/runner/work/bluelens/bluelens/test` — automated tests
+- `index.html` — main UI shell
+- `app.js` — browser application logic
+- `ocr-pipeline.js` — OCR preprocessing and entity extraction helpers
+- `osint-lib.js` — reverse-search URL helpers
+- `server.js` — local static server and upload/status API
+- `wait.html` + `wait.js` — wait-tab handoff page
+- `test/` — automated tests
 
 ## Architecture notes
 
