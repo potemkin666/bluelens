@@ -688,6 +688,19 @@ function publishWaitState(token, engine, data) {
   }
 }
 
+function createWaitToken() {
+  try {
+    if (crypto?.getRandomValues) {
+      const bytes = new Uint8Array(18);
+      crypto.getRandomValues(bytes);
+      return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+    }
+  } catch {
+    // ignore
+  }
+  return `${Date.now().toString(36)}${Math.random().toString(16).slice(2)}${Math.random().toString(16).slice(2)}`;
+}
+
 function pulseRadar(kind) {
   const el = elements.radar;
   if (!el) return;
@@ -1126,7 +1139,7 @@ async function openBatchTopLens(n = 5) {
     .sort((a, b) => (b.triage?.lead || 0) - (a.triage?.lead || 0))
     .slice(0, Math.max(1, Math.min(10, n)));
 
-  const tokens = pick.map((_, i) => `${Date.now()}-${Math.random().toString(16).slice(2)}-${i}`);
+  const tokens = pick.map(() => createWaitToken());
   for (let i = 0; i < pick.length; i += 1) {
     const label = `Batch · Lens · ${pick[i].report?.file?.name || `#${i + 1}`}`;
     const waitUrl = `/wait.html?token=${encodeURIComponent(tokens[i])}&engine=lens&label=${encodeURIComponent(label)}`;
@@ -1160,7 +1173,7 @@ async function openBatchSelectedLens() {
   const cap = Math.min(10, picked.length);
   const pick = picked.slice(0, cap);
 
-  const tokens = pick.map((_, i) => `${Date.now()}-${Math.random().toString(16).slice(2)}-${i}`);
+  const tokens = pick.map(() => createWaitToken());
   for (let i = 0; i < pick.length; i += 1) {
     const label = `Batch · Selected · Lens · ${pick[i].report?.file?.name || `#${i + 1}`}`;
     const waitUrl = `/wait.html?token=${encodeURIComponent(tokens[i])}&engine=lens&label=${encodeURIComponent(label)}`;
@@ -1266,7 +1279,7 @@ async function runMissionPreset(preset) {
     if (p === "share_search") {
       // Reduce popup chaos: open ONE tab (Lens) + render launchpad for the rest.
       const engines = ["lens", "bing", "tineye", "yandex", "google_images"];
-      const token = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const token = createWaitToken();
       const waitUrl = `/wait.html?token=${encodeURIComponent(token)}&engine=lens&label=${encodeURIComponent("Mission · Lens")}`;
       window.open(waitUrl, "_blank");
       publishWaitState(token, "lens", { status: "uploading" });
@@ -1407,8 +1420,14 @@ async function uploadViaLocalProxy(file, purpose = "") {
       throw new Error("Local upload endpoint not running. Start `node server.js` and reload.");
     }
     if (parsed && typeof parsed === "object") {
-      const details = Array.isArray(parsed.details) ? `\n\n${parsed.details.join("\n")}` : "";
-      throw new Error(`Local upload failed (${res.status}).${details}`);
+      const message = parsed?.error?.message || parsed?.message || "Local upload failed";
+      const detailLines = Array.isArray(parsed?.error?.details?.providers)
+        ? parsed.error.details.providers
+        : Array.isArray(parsed?.details)
+          ? parsed.details
+          : [];
+      const details = detailLines.length ? `\n\n${detailLines.join("\n")}` : "";
+      throw new Error(`${message} (${res.status}).${details}`);
     }
     const detail = txt ? `\n\n${txt}` : "";
     throw new Error(`Local upload failed (${res.status}).${detail}`);
@@ -1556,7 +1575,7 @@ async function handleQuickJump(engine) {
   }
 
   // Popup blockers: open a wait tab immediately, then upload.
-  const token = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const token = createWaitToken();
   const label =
     engine === "lens"
       ? "Lens"
@@ -1596,7 +1615,7 @@ async function handleSearchAll() {
 
   // Less chaos: open ONE tab (Lens) + render launchpad for the rest.
   const engines = ["lens", "bing", "tineye", "yandex", "google_images"];
-  const token = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const token = createWaitToken();
   const waitUrl = `/wait.html?token=${encodeURIComponent(token)}&engine=lens&label=${encodeURIComponent("Lens")}`;
   window.open(waitUrl, "_blank");
   publishWaitState(token, "lens", { status: "uploading" });
@@ -3840,7 +3859,7 @@ function setupActions() {
         for (const m of clusters[ci].items) m.cluster = ci + 1;
       }
 
-      const tokens = muts.map((_, i) => `${Date.now()}-${Math.random().toString(16).slice(2)}-${i}`);
+      const tokens = muts.map(() => createWaitToken());
       for (let i = 0; i < muts.length; i += 1) {
         const label = `Lens · ${muts[i].label}`;
         const waitUrl = `/wait.html?token=${encodeURIComponent(tokens[i])}&engine=lens&label=${encodeURIComponent(label)}`;
@@ -4178,6 +4197,22 @@ function setupTabs() {
   const tabsWrap = document.querySelector(".tabs");
   if (tabs.length === 0 || panels.length === 0) return;
 
+  tabs.forEach((tab) => {
+    const name = tab.getAttribute("data-tab");
+    if (!name) return;
+    const panel = panels.find((p) => p.getAttribute("data-panel") === name);
+    const tabId = `tab-${name}`;
+    tab.id = tabId;
+    tab.setAttribute("tabindex", tab.classList.contains("active") ? "0" : "-1");
+    if (panel) {
+      const panelId = `panel-${name}`;
+      panel.id = panelId;
+      tab.setAttribute("aria-controls", panelId);
+      panel.setAttribute("aria-labelledby", tabId);
+      panel.hidden = !panel.classList.contains("active");
+    }
+  });
+
   const activate = (name) => {
     if (tabsWrap) {
       tabsWrap.classList.remove("wave");
@@ -4190,9 +4225,12 @@ function setupTabs() {
       const on = t.getAttribute("data-tab") === name;
       t.classList.toggle("active", on);
       t.setAttribute("aria-selected", on ? "true" : "false");
+      t.setAttribute("tabindex", on ? "0" : "-1");
     }
     for (const p of panels) {
-      p.classList.toggle("active", p.getAttribute("data-panel") === name);
+      const on = p.getAttribute("data-panel") === name;
+      p.classList.toggle("active", on);
+      p.hidden = !on;
     }
     localStorage.setItem("ui:tab", name);
   };
@@ -4201,6 +4239,29 @@ function setupTabs() {
 
   for (const t of tabs) {
     t.addEventListener("click", () => activate(t.getAttribute("data-tab")));
+    t.addEventListener("keydown", (e) => {
+      const idx = tabs.indexOf(t);
+      if (idx === -1) return;
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const next = tabs[(idx + 1) % tabs.length];
+        activate(next.getAttribute("data-tab"));
+        next.focus();
+      } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const prev = tabs[(idx - 1 + tabs.length) % tabs.length];
+        activate(prev.getAttribute("data-tab"));
+        prev.focus();
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        activate(tabs[0].getAttribute("data-tab"));
+        tabs[0].focus();
+      } else if (e.key === "End") {
+        e.preventDefault();
+        activate(tabs[tabs.length - 1].getAttribute("data-tab"));
+        tabs[tabs.length - 1].focus();
+      }
+    });
   }
 
   const saved = localStorage.getItem("ui:tab");
@@ -4502,5 +4563,3 @@ void refreshHostStats();
 setupEngineLaunchpad();
 setupSimpleUi();
 setupGlobalErrorSurface();
-
-

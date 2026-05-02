@@ -1,9 +1,21 @@
 {
   "name": "ocean-osint-lens",
+  "description": "Local-first reverse image search and OSINT helper for image triage workflows.",
   "private": true,
   "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
+    "start": "node server.js",
     "test": "node --test",
+    "test:ci": "node --test",
     "desktop-icon": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\\\create-desktop-icon.ps1"
-  }
+  },
+  "keywords": [
+    "osint",
+    "reverse-image-search",
+    "ocr",
+    "metadata"
+  ]
 }
