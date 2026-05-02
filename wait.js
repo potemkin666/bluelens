@@ -92,7 +92,11 @@
 
   buildTitle(label);
   document.title = `BlueLens - ${label}`;
-  closeBtn?.addEventListener("click", () => window.close());
+  if (closeBtn) {
+    closeBtn.addEventListener("click", () => window.close());
+  } else {
+    console.warn("BlueLens wait page: close button missing");
+  }
 
   let bc = null;
   try {

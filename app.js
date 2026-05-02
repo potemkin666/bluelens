@@ -689,16 +689,13 @@ function publishWaitState(token, engine, data) {
 }
 
 function createWaitToken() {
-  try {
-    if (crypto?.getRandomValues) {
-      const bytes = new Uint8Array(18);
-      crypto.getRandomValues(bytes);
-      return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-    }
-  } catch {
-    // ignore
+  if (crypto?.randomUUID) return crypto.randomUUID().replace(/-/g, "");
+  if (crypto?.getRandomValues) {
+    const bytes = new Uint8Array(18);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
   }
-  return `${Date.now().toString(36)}${Math.random().toString(16).slice(2)}${Math.random().toString(16).slice(2)}`;
+  throw new Error("Secure token generation is not available in this browser.");
 }
 
 function pulseRadar(kind) {
