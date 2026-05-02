@@ -47,7 +47,7 @@ function logEvent(event, fields = {}) {
     console.log(JSON.stringify(payload));
   } catch {
     // eslint-disable-next-line no-console
-    console.log(`[${payload.ts}] ${event}`);
+    console.log(`[${new Date().toISOString()}] ${event}`);
   }
 }
 
@@ -573,7 +573,7 @@ function shutdown(server, signal) {
     logEvent("server.stopped", { signal });
     process.exit(0);
   });
-  setTimeout(() => process.exit(1), 5000).unref?.();
+  setTimeout(() => process.exit(1), 5000).unref();
 }
 
 if (require.main === module) {

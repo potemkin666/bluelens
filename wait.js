@@ -95,7 +95,7 @@
   if (closeBtn) {
     closeBtn.addEventListener("click", () => window.close());
   } else {
-    console.warn("BlueLens wait page: close button missing");
+    console.warn("BlueLens wait page: close button missing; verify wait.html still contains #close.");
   }
 
   let bc = null;
