@@ -10,6 +10,8 @@ const {
   sortBatchItems,
 } = require("../bluelens-helpers.js");
 
+const SERVER_START_TIMEOUT = 5000;
+
 test("hammingHex compares perceptual hashes", () => {
   assert.equal(hammingHex("0000", "0000"), 0);
   assert.equal(hammingHex("0f", "f0"), 8);
@@ -60,7 +62,7 @@ test("local server exposes ping and wait-tab handoff routes", async (t) => {
   });
 
   await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("server start timeout")), 5000);
+    const timer = setTimeout(() => reject(new Error("server start timeout")), SERVER_START_TIMEOUT);
     server.stdout.on("data", (buf) => {
       if (String(buf).includes(`http://localhost:${port}`)) {
         clearTimeout(timer);

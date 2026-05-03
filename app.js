@@ -813,6 +813,7 @@ function fmtMs(ms) {
 
 function triageSignalsForReport(report) {
   const gps = report?.gps && Number.isFinite(report.gps.lat) && Number.isFinite(report.gps.lon);
+  // Keep reading the old field from saved cases/reports until they have all been re-exported with repost_heuristic.
   const repost = Number(report?.insights?.repost_heuristic ?? report?.insights?.repost_likelihood);
   const hasExif = Boolean(report?.exif && Object.keys(report.exif).length > 0);
   const software = String(report?.key_fields?.software || report?.exif?.Software || "").trim();
