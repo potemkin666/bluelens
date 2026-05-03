@@ -253,7 +253,7 @@ body {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(120deg, rgba(255, 255, 255, 0.0) 14%, rgba(255, 255, 255, 0.22) 34%, rgba(255, 255, 255, 0.0) 56%),
+    linear-gradient(120deg, rgba(255, 255, 255, 0) 14%, rgba(255, 255, 255, 0.22) 34%, rgba(255, 255, 255, 0) 56%),
     radial-gradient(420px 200px at 8% 18%, rgba(255, 255, 255, 0.18), transparent 70%);
   opacity: 0.45;
   pointer-events: none;
@@ -325,7 +325,7 @@ body {
   inset: auto -30% -58% 8%;
   height: 72px;
   border-radius: 999px;
-  background: radial-gradient(circle, rgba(188, 244, 255, 0.22), rgba(188, 244, 255, 0.0) 72%);
+  background: radial-gradient(circle, rgba(188, 244, 255, 0.22), rgba(188, 244, 255, 0) 72%);
   pointer-events: none;
 }
 
