@@ -342,6 +342,10 @@ function formatBytes(bytes) {
   return `${v.toFixed(i === 0 ? 0 : 2)} ${units[i]}`;
 }
 
+function formatOcrError(error) {
+  return `OCR failed: ${error?.message || "unknown error"}`;
+}
+
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
@@ -1258,7 +1262,7 @@ async function runMissionPreset(preset) {
       try {
         await runOcrForCurrent({ mode: "fast" });
       } catch (e) {
-        elements.ocrOut.textContent = `OCR failed: ${e?.message || "unknown error"}`;
+        elements.ocrOut.textContent = formatOcrError(e);
         setOcrStatus("Failed");
         setStatus("OCR failed");
         return;
@@ -1273,7 +1277,7 @@ async function runMissionPreset(preset) {
       try {
         await runOcrForCurrent({ mode: "deep" });
       } catch (e) {
-        elements.ocrOut.textContent = `OCR failed: ${e?.message || "unknown error"}`;
+        elements.ocrOut.textContent = formatOcrError(e);
         setOcrStatus("Failed");
         setStatus("OCR failed");
         return;
@@ -1802,13 +1806,14 @@ function renderMutationSummary(entries) {
   const engineLabel = (e) =>
     e === "lens" ? "Lens" : e === "bing" ? "Bing" : e === "tineye" ? "TinEye" : e === "yandex" ? "Yandex" : "Google";
   const noteRank = (value) => (value === "best_candidate" ? 2 : value === "possible_match" ? 1 : 0);
+  const getEngineReviewValue = (row, engine) => {
+    const raw = row?.engine_review?.[engine] || row?.score?.[engine] || "review";
+    return raw === "hit" ? "match" : raw === "no" ? "no_match" : raw;
+  };
 
   const pickWinner = (engine) => {
     const hits = rows
-      .filter((r) => {
-        const review = r.engine_review?.[engine] || r.score?.[engine] || "review";
-        return review === "match" || review === "hit";
-      })
+      .filter((r) => getEngineReviewValue(r, engine) === "match")
       .sort((a, b) => {
         const ca = noteRank(a.analyst_annotation || a.confidence);
         const cb = noteRank(b.analyst_annotation || b.confidence);
@@ -1860,8 +1865,7 @@ function renderMutationSummary(entries) {
 
       const scoreCells = engines
         .map((eng) => {
-          const raw = score?.[eng] || "review";
-          const v = raw === "hit" ? "match" : raw === "no" ? "no_match" : raw;
+          const v = getEngineReviewValue({ engine_review: score }, eng);
           const dis = r.status !== "ok" ? "disabled" : "";
           return (
             `<label class="mut-cell" title="Analyst review for ${engineLabel(eng)}">` +
@@ -3858,7 +3862,7 @@ function setupActions() {
       try {
         await runOcrForCurrent();
       } catch (e) {
-        elements.ocrOut.textContent = `OCR failed: ${e?.message || "unknown error"}`;
+        elements.ocrOut.textContent = formatOcrError(e);
         setOcrStatus("Failed");
       }
     });
