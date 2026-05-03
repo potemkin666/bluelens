@@ -68,7 +68,7 @@
         ...ents.handles
           .slice(0, 3)
           .map((x) => {
-          // Old reports or manual edits can leave multiple leading @ symbols; normalize them to a single public handle form.
+          // Old reports or manual edits can leave multiple leading @ symbols; normalize them to a single @ prefix format.
           const handle = String(x || "").replace(/^@+/, "");
           return handle ? `@${handle}` : null;
         })

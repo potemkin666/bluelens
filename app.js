@@ -1805,7 +1805,7 @@ function renderMutationSummary(entries) {
   const engines = ["lens", "bing", "tineye", "yandex", "google_images"];
   const engineLabel = (e) =>
     e === "lens" ? "Lens" : e === "bing" ? "Bing" : e === "tineye" ? "TinEye" : e === "yandex" ? "Yandex" : "Google";
-  const noteRank = (value) => (value === "best_candidate" ? 2 : value === "possible_match" ? 1 : 0);
+  const noteRank = (value) => (value === "best" ? 2 : value === "possible" ? 1 : 0);
   const getEngineReviewValue = (row, engine) => {
     const raw = row?.engine_review?.[engine] || row?.score?.[engine] || "review";
     return raw === "hit" ? "match" : raw === "no" ? "no_match" : raw;
@@ -1858,8 +1858,8 @@ function renderMutationSummary(entries) {
       parts.push(
         `<div class="mut-c"><select class="select mut-select" data-mut="${escapeAttr(r.id || "")}" ${disabled}>` +
           `<option value="unreviewed"${analystAnnotation === "unreviewed" ? " selected" : ""}>Unreviewed</option>` +
-          `<option value="possible_match"${analystAnnotation === "possible_match" ? " selected" : ""}>Possible</option>` +
-          `<option value="best_candidate"${analystAnnotation === "best_candidate" ? " selected" : ""}>Best</option>` +
+          `<option value="possible"${analystAnnotation === "possible" ? " selected" : ""}>Possible</option>` +
+          `<option value="best"${analystAnnotation === "best" ? " selected" : ""}>Best</option>` +
           `</select></div>`,
       );
 
