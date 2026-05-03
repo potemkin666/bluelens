@@ -20,6 +20,17 @@ test("search-all UI is framed as link preparation, not automatic querying", () =
   assert.match(appJs, /Prepare Engine Links/);
 });
 
+test("landing UI stays focused on image search", () => {
+  assert.match(indexHtml, /Drop an image and get to reverse search fast\./);
+  assert.match(indexHtml, /github\.com\/user-attachments\/assets\/280b967d-aca5-4eb9-8fa7-af8c262acbc5/);
+  assert.doesNotMatch(indexHtml, /Local file signals/);
+});
+
+test("search tab is always the first panel shown on load", () => {
+  assert.match(appJs, /activate\("search"\);/);
+  assert.doesNotMatch(appJs, /localStorage\.getItem\("ui:tab"\)/);
+});
+
 test("mutation lab copy is clearly framed as analyst review", () => {
   assert.match(appJs, /Analyst review board:/);
   assert.match(appJs, /Manual notes only — BlueLens does not score reverse-search results automatically\./);

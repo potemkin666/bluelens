@@ -35,50 +35,27 @@
       </div>
     </header>
 
-    <section class="hero-shell" aria-labelledby="heroTitle">
-      <div class="hero-panel">
-        <div class="hero-copy">
-          <span class="hero-kicker">Local-first image triage</span>
-          <h2 id="heroTitle">Inspect one image locally before you open external search tools.</h2>
-          <p class="hero-lede">
-            BlueLens computes local hashes, parses metadata, runs OCR, compares a second image, and can open reverse-search pages after you
-            explicitly create a public URL. It does not ingest search-engine results or prove provenance on its own.
+    <section class="focus-shell" aria-labelledby="focusTitle">
+      <div class="focus-panel">
+        <div class="focus-copy">
+          <span class="focus-kicker">Search-first workflow</span>
+          <h2 id="focusTitle">Drop an image and get to reverse search fast.</h2>
+          <p class="focus-lede">
+            BlueLens works best as a fast launchpad: inspect one image locally, create a public URL only when you need it, and open the
+            search providers without the giant capability wall.
           </p>
+          <ul class="focus-points">
+            <li>Upload once and go straight to the Search tab.</li>
+            <li>Keep hashes, EXIF, OCR, and compare tools one click away.</li>
+            <li>Launch Lens first, then use the prepared manual links for the rest.</li>
+          </ul>
         </div>
 
-        <div class="hero-grid" aria-label="Key capabilities">
-          <article class="hero-tile">
-            <h3>Local file signals</h3>
-            <p>Compute SHA-256, MD5, dHash, dimensions, and a clean-copy fingerprint set.</p>
-          </article>
-          <article class="hero-tile">
-            <h3>Metadata inspection</h3>
-            <p>Extract EXIF/IPTC/XMP fields, camera/software tags, and GPS coordinates when present.</p>
-          </article>
-          <article class="hero-tile">
-            <h3>OCR text extraction</h3>
-            <p>Run OCR locally, pull URLs, emails, @handles, and phone numbers, and open manual pivots from the extracted text.</p>
-          </article>
-          <article class="hero-tile">
-            <h3>Reverse-search launchpad</h3>
-            <p>Create a public URL on demand, then open Lens, Bing, TinEye, Yandex, and Google result pages for manual review.</p>
-          </article>
-          <article class="hero-tile">
-            <h3>Near-duplicate compare</h3>
-            <p>Compare two local images with dHash distance to spot likely matches and obvious differences.</p>
-          </article>
-          <article class="hero-tile">
-            <h3>Batch local triage</h3>
-            <p>Generate per-file reports, cluster local files by dHash, and sort by simple triage signals.</p>
-          </article>
-          <article class="hero-tile">
-            <h3>Caseboard notes</h3>
-            <p>Store local reports, pivots, notes, and thumbnails in browser storage for later review.</p>
-          </article>
-          <article class="hero-tile">
-            <h3>Clean-copy export</h3>
-            <p>Re-encode a local copy to strip metadata before sharing or saving a sanitized artifact.</p>
-          </article>
+        <div class="focus-demo">
+          <img
+            src="https://github.com/user-attachments/assets/280b967d-aca5-4eb9-8fa7-af8c262acbc5"
+            alt="BlueLens image search workflow demo"
+          />
         </div>
       </div>
     </section>
@@ -86,7 +63,7 @@
     <main class="layout layout-single">
       <section class="card console-card" aria-labelledby="consoleTitle">
         <div class="card-title-row">
-          <h2 id="consoleTitle">OSINT Console</h2>
+          <h2 id="consoleTitle">Image Search</h2>
           <span id="statusPill" class="pill pill-muted">Idle</span>
         </div>
         <div id="statusLine" class="status-line" aria-live="polite"></div>

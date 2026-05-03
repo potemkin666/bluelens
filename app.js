@@ -4166,8 +4166,7 @@ function setupTabs() {
     t.addEventListener("click", () => activate(t.getAttribute("data-tab")));
   }
 
-  const saved = localStorage.getItem("ui:tab");
-  if (saved && tabs.some((t) => t.getAttribute("data-tab") === saved)) activate(saved);
+  activate("search");
 }
 
 function setupCursorBubbles() {
