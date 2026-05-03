@@ -1245,7 +1245,7 @@ async function runBatchOcrTopCandidates(n = 8) {
       }
       renderBatchDashboard();
     }
-    setStatus(failures ? `Batch OCR ${failures} failed` : "Ready");
+    setStatus(failures ? `Batch OCR completed with ${failures} failures` : "Ready");
     setStatusLine(failures ? `Batch OCR: ${pick.length - failures}/${pick.length} ok · ${failures} failed` : "Batch OCR: ✓");
   });
 }
