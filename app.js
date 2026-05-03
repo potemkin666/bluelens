@@ -2,6 +2,7 @@
 
 /* global OCR_PIPELINE */
 /* global OSINT_LIB */
+/* global BLUELENS_HELPERS */
 
 const elements = {
   dropzone: document.getElementById("dropzone"),
@@ -126,6 +127,51 @@ const osintBroadcast = (() => {
   }
 })();
 
+const appHelpers = BLUELENS_HELPERS || {};
+const hammingHex =
+  appHelpers.hammingHex ||
+  ((a, b) => {
+    if (!a || !b || a.length !== b.length) return null;
+    const bitCounts = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4];
+    let dist = 0;
+    for (let i = 0; i < a.length; i += 1) {
+      const na = parseInt(a[i], 16);
+      const nb = parseInt(b[i], 16);
+      if (Number.isNaN(na) || Number.isNaN(nb)) return null;
+      dist += bitCounts[na ^ nb];
+    }
+    return dist;
+  });
+const sortBatchItems =
+  appHelpers.sortBatchItems ||
+  ((items, sortKey = "lead", sortDir = "desc") => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    return items.slice().sort((a, b) => {
+      const dimsA = String(a?.report?.dimensions || "").match(/(\d+)\s*[×x]\s*(\d+)/);
+      const dimsB = String(b?.report?.dimensions || "").match(/(\d+)\s*[×x]\s*(\d+)/);
+      const ta = a?.triage || {};
+      const tb = b?.triage || {};
+      const pick = (item, triage, dims) =>
+        sortKey === "name"
+          ? String(item?.report?.file?.name || "")
+          : sortKey === "gps"
+            ? (triage.gps ? 1 : 0)
+            : sortKey === "ent"
+              ? (triage.entCount || 0)
+              : sortKey === "repost"
+                ? (Number.isFinite(triage.repost) ? triage.repost : -1)
+                : sortKey === "cluster"
+                  ? (item?.clusterId || 0)
+                  : sortKey === "dim"
+                    ? (dims ? Number(dims[1]) * Number(dims[2]) : -1)
+                    : (triage.lead || 0);
+      const va = pick(a, ta, dimsA);
+      const vb = pick(b, tb, dimsB);
+      if (typeof va === "string" || typeof vb === "string") return dir * String(va).localeCompare(String(vb));
+      return dir * ((va || 0) - (vb || 0));
+    });
+  });
+
 const state = {
   file: null,
   objectUrl: null,
@@ -168,7 +214,7 @@ const state = {
     when_obtained: "",
     who_provided: "",
     original_filename: "",
-    confidence_level: "unverified",
+    analyst_confidence: "unverified",
   },
   insights: {
     repost_score: null,
@@ -374,7 +420,7 @@ function reset() {
     when_obtained: "",
     who_provided: "",
     original_filename: "",
-    confidence_level: "unverified",
+    analyst_confidence: "unverified",
   };
   state.insights = { repost_score: null, repost_reasons: [] };
   state.mutations = [];
@@ -533,7 +579,6 @@ function renderEngineLaunchpad(run) {
     <div class="lp-actions">
       <button class="btn btn-secondary btn-small" type="button" data-lp-open="chosen" title="Open checked engines">Open chosen</button>
       <button class="btn btn-ghost btn-small" type="button" data-lp-open="all" title="Open all engines">Open all</button>
-      <button class="btn btn-ghost btn-small" type="button" data-lp-open="reopen" title="Reopen last run">Reopen last</button>
     </div>
   `;
 }
@@ -768,7 +813,7 @@ function fmtMs(ms) {
 
 function triageSignalsForReport(report) {
   const gps = report?.gps && Number.isFinite(report.gps.lat) && Number.isFinite(report.gps.lon);
-  const repost = Number(report?.insights?.repost_likelihood);
+  const repost = Number(report?.insights?.repost_heuristic ?? report?.insights?.repost_likelihood);
   const hasExif = Boolean(report?.exif && Object.keys(report.exif).length > 0);
   const software = String(report?.key_fields?.software || report?.exif?.Software || "").trim();
 
@@ -900,38 +945,7 @@ function renderBatchDashboard() {
   };
 
   const sortKey = state.batchUi.sortKey || "lead";
-  const dir = state.batchUi.sortDir === "asc" ? 1 : -1;
-
-  const sorted = applyFilters().sort((a, b) => {
-    const ta = a.triage;
-    const tb = b.triage;
-    const va =
-      sortKey === "name"
-        ? String(a.report?.file?.name || "")
-        : sortKey === "gps"
-          ? (ta.gps ? 1 : 0)
-          : sortKey === "ent"
-            ? ta.entCount
-            : sortKey === "repost"
-              ? (ta.repost ?? -1)
-              : sortKey === "cluster"
-                ? (a.clusterId || 0)
-                : ta.lead;
-    const vb =
-      sortKey === "name"
-        ? String(b.report?.file?.name || "")
-        : sortKey === "gps"
-          ? (tb.gps ? 1 : 0)
-          : sortKey === "ent"
-            ? tb.entCount
-            : sortKey === "repost"
-              ? (tb.repost ?? -1)
-              : sortKey === "cluster"
-                ? (b.clusterId || 0)
-                : tb.lead;
-    if (typeof va === "string" || typeof vb === "string") return dir * String(va).localeCompare(String(vb));
-    return dir * ((va || 0) - (vb || 0));
-  });
+  const sorted = sortBatchItems(applyFilters(), sortKey, state.batchUi.sortDir);
 
   const head = (k, label) => {
     const arrow = state.batchUi.sortKey === k ? (state.batchUi.sortDir === "asc" ? " ▲" : " ▼") : "";
@@ -1028,7 +1042,7 @@ function renderBatchDashboard() {
           ${head("dim", "Dim")}
           ${head("gps", "GPS")}
           ${head("ent", "Ent")}
-          ${head("repost", "Repost")}
+          ${head("repost", "Repost heuristic")}
           ${head("cluster", "Cluster")}
           <th>Flags</th>
         </tr>
@@ -1352,17 +1366,6 @@ async function refreshHostStats() {
 const reverseSearchUrl = (engine, imageUrl) => OSINT_LIB?.reverseSearchUrl?.(engine, imageUrl) || "";
 const reverseSearchUploadPage = (engine) => OSINT_LIB?.reverseSearchUploadPage?.(engine) || "about:blank";
 
-async function uploadTo0x0(file) {
-  const fd = new FormData();
-  fd.append("file", file, file.name || "image");
-  const res = await fetch("https://0x0.st", { method: "POST", body: fd });
-  const txt = (await res.text()).trim();
-  if (!res.ok) throw new Error(`Upload failed (${res.status})`);
-  const first = txt.split(/\s+/)[0];
-  if (!/^https?:\/\//i.test(first)) throw new Error("Upload host returned an unexpected response");
-  return first;
-}
-
 async function uploadViaLocalProxy(file, purpose = "") {
   // Prefer local proxy to avoid CORS limitations in browsers when posting to third-party hosts.
   const ab = await file.arrayBuffer();
@@ -1658,61 +1661,6 @@ function wireReverseSearchButtons() {
   elements.btnOpenTineye.addEventListener("click", () => void handleQuickJump("tineye"));
   elements.btnOpenYandex.addEventListener("click", () => void handleQuickJump("yandex"));
   elements.btnOpenGoogleImages.addEventListener("click", () => void handleQuickJump("google_images"));
-}
-
-async function searchAllLocked({ token, engines, openedByEngine }) {
-  if (!token || !Array.isArray(engines)) throw new Error("Missing token/engines");
-  if (!state.shareEnabled) throw new Error("Sharing disabled");
-
-  setStatusLine("Upload: preparing…");
-  const url = await ensurePublicUrl({ purpose: engines.includes("lens") ? "lens" : "" });
-  setStatusLine("Engines: routing…");
-
-  const targets = engines.map((e) => reverseSearchUrl(e, url));
-
-  const run = {
-    ts: Date.now(),
-    url,
-    token,
-    artifact: state.publicUrlArtifact || "original",
-    targets: {
-      lens: targets[0],
-      bing: targets[1],
-      tineye: targets[2],
-      yandex: targets[3],
-      google_images: targets[4],
-    },
-    chosen: { lens: true, bing: true, tineye: true, yandex: true, google_images: true },
-    opened: {},
-    blocked: {},
-  };
-  state.lastEngineRun = run;
-  saveLastRun(run);
-  renderEngineLaunchpad(run);
-
-  // (Tabs already have the URL; keep re-broadcasting in case any missed the first hit.)
-  for (const e of engines) publishWaitState(token, e, { url });
-
-  // Optionally close empty tabs if we somehow lost them.
-  if (openedByEngine && typeof openedByEngine === "object") {
-    for (const e of engines) {
-      const w = openedByEngine[e];
-      if (!w) continue;
-      try {
-        // no-op; tab itself will redirect when it sees status.
-      } catch {
-        // ignore
-      }
-    }
-  }
-
-  window.setTimeout(() => {
-    for (const e of engines) localStorage.removeItem(`osint:${token}:${e}`);
-  }, 2 * 60 * 1000);
-
-  triggerGlitterStorm(68);
-  setStatusLine("Engines: ✓");
-  setStatus("Ready");
 }
 
 async function loadImageFromFile(file) {
@@ -2063,9 +2011,9 @@ function buildMarkdownReport(report) {
   lines.push(`- GPS: ${gps ? `\`${fmtCoord(gps.lat)}, ${fmtCoord(gps.lon)}\`` : "—"}`);
   lines.push("");
   lines.push(`## Insights`);
-  lines.push(`- Repost likelihood: ${r.insights?.repost_likelihood != null ? `**${r.insights.repost_likelihood}/100**` : "—"}`);
+  lines.push(`- Repost heuristic: ${r.insights?.repost_heuristic != null ? `**${r.insights.repost_heuristic}/100**` : "—"}`);
   if (Array.isArray(r.insights?.repost_reasons) && r.insights.repost_reasons.length) {
-    lines.push(`- Reasons: ${r.insights.repost_reasons.map((x) => `\`${String(x)}\``).join(" · ")}`);
+    lines.push(`- Heuristic reasons: ${r.insights.repost_reasons.map((x) => `\`${String(x)}\``).join(" · ")}`);
   }
   if (r.insights?.attribution_hints) lines.push(`- Attribution hints: ${String(r.insights.attribution_hints)}`);
   lines.push("");
@@ -2089,7 +2037,7 @@ function buildMarkdownReport(report) {
   lines.push(`- When: ${sr.when_obtained ? `\`${sr.when_obtained}\`` : "—"}`);
   lines.push(`- Who: ${sr.who_provided ? `\`${sr.who_provided}\`` : "—"}`);
   lines.push(`- Original filename: ${sr.original_filename ? `\`${sr.original_filename}\`` : "—"}`);
-  lines.push(`- Confidence: \`${sr.confidence_level || "unverified"}\``);
+  lines.push(`- Analyst confidence (manual): \`${sr.analyst_confidence || "unverified"}\``);
   lines.push("");
   lines.push(`---`);
   lines.push("");
@@ -2102,19 +2050,6 @@ function buildMarkdownReport(report) {
   }
   lines.push("```");
   return lines.join("\n");
-}
-
-const bitCounts = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4];
-function hammingHex(a, b) {
-  if (!a || !b || a.length !== b.length) return null;
-  let dist = 0;
-  for (let i = 0; i < a.length; i += 1) {
-    const na = parseInt(a[i], 16);
-    const nb = parseInt(b[i], 16);
-    if (Number.isNaN(na) || Number.isNaN(nb)) return null;
-    dist += bitCounts[na ^ nb];
-  }
-  return dist;
 }
 
 function toGrayscaleLuma(r, g, b) {
@@ -2597,11 +2532,12 @@ async function makeThumbnailDataUrl(file, maxEdge = 240) {
 }
 
 function extractPivotsFromReport(report) {
+  if (appHelpers.extractPivotsFromReport) return appHelpers.extractPivotsFromReport(report);
   const pivots = [];
   const ents = report?.key_fields?.ocr_entities;
   if (ents?.urls?.length) pivots.push(...ents.urls.slice(0, 2).map((x) => `url:${x}`));
   if (ents?.emails?.length) pivots.push(...ents.emails.slice(0, 2).map((x) => `email:${x}`));
-  if (ents?.handles?.length) pivots.push(...ents.handles.slice(0, 3).map((x) => `@${x}`));
+  if (ents?.handles?.length) pivots.push(...ents.handles.slice(0, 3).map((x) => `@${String(x || "").replace(/^@+/, "")}`));
   if (ents?.phones?.length) pivots.push(...ents.phones.slice(0, 2).map((x) => `phone:${x}`));
   const gps = report?.gps;
   if (gps && Number.isFinite(gps.lat) && Number.isFinite(gps.lon)) pivots.push(`gps:${gps.lat.toFixed(5)},${gps.lon.toFixed(5)}`);
@@ -2817,7 +2753,7 @@ function buildOsintReport() {
     share_safe: Boolean(state.shareSafe),
     gps: state.gps ? { lat: state.gps.lat, lon: state.gps.lon } : null,
     insights: {
-      repost_likelihood: state.insights.repost_score,
+      repost_heuristic: state.insights.repost_score,
       repost_reasons: state.insights.repost_reasons || [],
       attribution_hints: elements.attrHints?.textContent || null,
     },
@@ -2885,7 +2821,7 @@ async function buildReportForFileHeadless(file) {
     hashes: { sha256: hashes.sha, md5: hashes.md5, dhash: dh },
     gps: key.gps,
     insights: {
-      repost_likelihood: score,
+      repost_heuristic: score,
       repost_reasons: reasons,
       attribution_hints: hints,
     },
@@ -2924,7 +2860,7 @@ async function runBatchFiles(files) {
         thumb = null;
       }
       state.batchItems.push({ id, file: f, report: r, triage: null, clusterId: 0, thumb });
-      lines.push(`  OK · repost ${r.insights.repost_likelihood}/100`);
+      lines.push(`  OK · heuristic ${r.insights.repost_heuristic}/100`);
     } catch (e) {
       lines.push(`  FAIL · ${e?.message || "unknown error"}`);
     }
@@ -3699,7 +3635,7 @@ function setupActions() {
     state.caseInfo.when_obtained = elements.srcWhen.value || "";
     state.caseInfo.who_provided = elements.srcWho.value || "";
     state.caseInfo.original_filename = elements.srcOrig.value || "";
-    if (elements.confLevel) state.caseInfo.confidence_level = elements.confLevel.value || "unverified";
+    if (elements.confLevel) state.caseInfo.analyst_confidence = elements.confLevel.value || "unverified";
   };
   elements.srcWhere.addEventListener("input", syncCase);
   elements.srcWhen.addEventListener("input", syncCase);
@@ -4502,5 +4438,3 @@ void refreshHostStats();
 setupEngineLaunchpad();
 setupSimpleUi();
 setupGlobalErrorSurface();
-
-
