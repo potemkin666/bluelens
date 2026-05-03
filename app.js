@@ -2537,7 +2537,17 @@ function extractPivotsFromReport(report) {
   const ents = report?.key_fields?.ocr_entities;
   if (ents?.urls?.length) pivots.push(...ents.urls.slice(0, 2).map((x) => `url:${x}`));
   if (ents?.emails?.length) pivots.push(...ents.emails.slice(0, 2).map((x) => `email:${x}`));
-  if (ents?.handles?.length) pivots.push(...ents.handles.slice(0, 3).map((x) => `@${String(x || "").replace(/^@+/, "")}`));
+  if (ents?.handles?.length) {
+    pivots.push(
+      ...ents.handles
+        .slice(0, 3)
+        .map((x) => {
+          const handle = String(x || "").replace(/^@+/, "");
+          return handle ? `@${handle}` : null;
+        })
+        .filter(Boolean),
+    );
+  }
   if (ents?.phones?.length) pivots.push(...ents.phones.slice(0, 2).map((x) => `phone:${x}`));
   const gps = report?.gps;
   if (gps && Number.isFinite(gps.lat) && Number.isFinite(gps.lon)) pivots.push(`gps:${gps.lat.toFixed(5)},${gps.lon.toFixed(5)}`);

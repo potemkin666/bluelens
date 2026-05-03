@@ -65,10 +65,13 @@
     if (ents?.emails?.length) pivots.push(...ents.emails.slice(0, 2).map((x) => `email:${x}`));
     if (ents?.handles?.length) {
       pivots.push(
-        ...ents.handles.slice(0, 3).map((x) => {
+        ...ents.handles
+          .slice(0, 3)
+          .map((x) => {
           const handle = String(x || "").replace(/^@+/, "");
-          return `@${handle}`;
-        }),
+          return handle ? `@${handle}` : null;
+        })
+          .filter(Boolean),
       );
     }
     if (ents?.phones?.length) pivots.push(...ents.phones.slice(0, 2).map((x) => `phone:${x}`));
