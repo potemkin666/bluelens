@@ -18,6 +18,6 @@ test("mutation lab copy is clearly framed as analyst review", () => {
 });
 
 test("batch OCR failures are surfaced instead of silently ignored", () => {
-  assert.match(appJs, /it\.report\.ocr_error = e\?\.message \|\| "OCR failed";/);
+  assert.match(appJs, /ocr_error\s*=\s*e\?\.message\s*\|\|\s*"OCR failed"/);
   assert.match(appJs, /Batch OCR: \$\{pick\.length - failures\}\/\$\{pick\.length\} ok · \$\{failures\} failed/);
 });

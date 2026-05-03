@@ -1805,7 +1805,7 @@ function renderMutationSummary(entries) {
   const engines = ["lens", "bing", "tineye", "yandex", "google_images"];
   const engineLabel = (e) =>
     e === "lens" ? "Lens" : e === "bing" ? "Bing" : e === "tineye" ? "TinEye" : e === "yandex" ? "Yandex" : "Google";
-  const noteRank = (value) => (value === "best" ? 2 : value === "possible" ? 1 : 0);
+  const analystAnnotationRank = (value) => (value === "best" ? 2 : value === "possible" ? 1 : 0);
   const getEngineReviewValue = (row, engine) => {
     const raw = row?.engine_review?.[engine] || row?.score?.[engine] || "review";
     return raw === "hit" ? "match" : raw === "no" ? "no_match" : raw;
@@ -1815,8 +1815,8 @@ function renderMutationSummary(entries) {
     const hits = rows
       .filter((r) => getEngineReviewValue(r, engine) === "match")
       .sort((a, b) => {
-        const ca = noteRank(a.analyst_annotation || a.confidence);
-        const cb = noteRank(b.analyst_annotation || b.confidence);
+        const ca = analystAnnotationRank(a.analyst_annotation || a.confidence);
+        const cb = analystAnnotationRank(b.analyst_annotation || b.confidence);
         return cb - ca;
       });
     return hits[0] || null;
