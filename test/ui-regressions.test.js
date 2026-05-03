@@ -5,6 +5,7 @@ const path = require("node:path");
 
 const indexHtml = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
 const appJs = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+const setupTabsBlock = appJs.match(/function setupTabs\(\) \{[\s\S]*?\n\}/)?.[0] || "";
 
 test("mission preset selector stays reachable in the HTML", () => {
   assert.match(indexHtml, /<select id="missionPreset" class="select" disabled title="One mission = one run">/);
@@ -22,13 +23,14 @@ test("search-all UI is framed as link preparation, not automatic querying", () =
 
 test("landing UI stays focused on image search", () => {
   assert.match(indexHtml, /Drop an image and get to reverse search fast\./);
-  assert.match(indexHtml, /github\.com\/user-attachments\/assets\/280b967d-aca5-4eb9-8fa7-af8c262acbc5/);
+  assert.match(indexHtml, /alt="BlueLens image search workflow demo"/);
+  assert.match(indexHtml, /<div class="focus-demo">[\s\S]*?<img/);
   assert.doesNotMatch(indexHtml, /Local file signals/);
 });
 
 test("search tab is always the first panel shown on load", () => {
-  assert.match(appJs, /activate\("search"\);/);
-  assert.doesNotMatch(appJs, /localStorage\.getItem\("ui:tab"\)/);
+  assert.match(setupTabsBlock, /activate\("search"\);/);
+  assert.doesNotMatch(setupTabsBlock, /localStorage\.getItem\("ui:tab"\)/);
 });
 
 test("mutation lab copy is clearly framed as analyst review", () => {
