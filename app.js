@@ -656,16 +656,9 @@ function setupSimpleUi() {
       advBody.prepend(elements.manualRow);
     }
 
-    // Move preset selector into Advanced to reduce button/read clutter.
-    if (advBody && elements.missionPreset && elements.missionPreset.parentElement !== advBody) {
-      const wrap = document.createElement("div");
-      wrap.className = "row row-tight";
-      wrap.appendChild(elements.missionPreset);
-      advBody.prepend(wrap);
-    }
-
     // Default to the one thing most people want (persisted).
     if (elements.missionPreset) {
+      elements.missionPreset.hidden = false;
       let saved = "";
       try {
         saved = localStorage.getItem("ui:missionPreset") || "";
@@ -841,7 +834,7 @@ function triageSignalsForReport(report) {
   }
   const entCount = (ent.urls?.length || 0) + (ent.emails?.length || 0) + (ent.handles?.length || 0) + (ent.phones?.length || 0);
 
-  // Lead score: prioritize pivotability + provenance.
+  // Lead score: prioritize local pivotability + quick-review heuristics.
   let lead = 0;
   lead += gps ? 30 : 0;
   lead += Math.min(24, entCount * 6);
@@ -857,6 +850,7 @@ function triageSignalsForReport(report) {
   if (software) tags.push({ t: "EDITED", tone: repost >= 70 ? "hot" : "warn" });
   if (lowRes) tags.push({ t: "LOWRES", tone: "warn" });
   if (Number.isFinite(repost) && repost >= 80) tags.push({ t: "REPOST↑", tone: "hot" });
+  if (report?.ocr_error) tags.push({ t: "OCRERR", tone: "warn" });
 
   return { lead, gps, repost: Number.isFinite(repost) ? repost : null, software, lowRes, hasExif, ent, entCount, tags, w, h, mp };
 }
@@ -1229,21 +1223,26 @@ async function runBatchOcrTopCandidates(n = 8) {
 
   await withUiLock(`Batch OCR (${pick.length})…`, async () => {
     const lang = elements.ocrLang?.value || "eng";
+    let failures = 0;
     for (let i = 0; i < pick.length; i += 1) {
       const it = pick[i];
       setStatusLine(`Batch OCR: ${i + 1}/${pick.length} · ${it.report?.file?.name || "image"}`);
       try {
         const text = await ocrForBatchFile(it.file, lang);
         it.report.ocr_text = text || null;
+        delete it.report.ocr_error;
         it.report.key_fields = it.report.key_fields || {};
         it.report.key_fields.ocr_entities = text ? OCR_PIPELINE?.extractEntities?.(text) || null : null;
         it.triage = triageSignalsForReport(it.report);
-      } catch {
-        // ignore per-item OCR failures
+      } catch (e) {
+        failures += 1;
+        it.report.ocr_error = e?.message || "OCR failed";
+        it.triage = triageSignalsForReport(it.report);
       }
       renderBatchDashboard();
     }
-    setStatusLine("Batch OCR: ✓");
+    setStatus(failures ? `Batch OCR ${failures} failed` : "Ready");
+    setStatusLine(failures ? `Batch OCR: ${pick.length - failures}/${pick.length} ok · ${failures} failed` : "Batch OCR: ✓");
   });
 }
 
@@ -1258,8 +1257,11 @@ async function runMissionPreset(preset) {
       setStatusLine(`${base} · OCR: …`);
       try {
         await runOcrForCurrent({ mode: "fast" });
-      } catch {
-        // optional
+      } catch (e) {
+        elements.ocrOut.textContent = `OCR failed: ${e?.message || "unknown error"}`;
+        setOcrStatus("Failed");
+        setStatus("OCR failed");
+        return;
       }
       setStatusLine(`${base} · OCR: ✓`);
       setStatus("Ready");
@@ -1270,8 +1272,11 @@ async function runMissionPreset(preset) {
       setStatusLine(`${base} · OCR: …`);
       try {
         await runOcrForCurrent({ mode: "deep" });
-      } catch {
-        // optional
+      } catch (e) {
+        elements.ocrOut.textContent = `OCR failed: ${e?.message || "unknown error"}`;
+        setOcrStatus("Failed");
+        setStatus("OCR failed");
+        return;
       }
       setStatusLine(`${base} · OCR: ✓`);
       setStatus("Ready");
@@ -1796,13 +1801,17 @@ function renderMutationSummary(entries) {
   const engines = ["lens", "bing", "tineye", "yandex", "google_images"];
   const engineLabel = (e) =>
     e === "lens" ? "Lens" : e === "bing" ? "Bing" : e === "tineye" ? "TinEye" : e === "yandex" ? "Yandex" : "Google";
+  const noteRank = (value) => (value === "best_candidate" ? 2 : value === "possible_match" ? 1 : 0);
 
   const pickWinner = (engine) => {
     const hits = rows
-      .filter((r) => (r.score?.[engine] || "unsure") === "hit")
+      .filter((r) => {
+        const review = r.engine_review?.[engine] || r.score?.[engine] || "review";
+        return review === "match" || review === "hit";
+      })
       .sort((a, b) => {
-        const ca = a.confidence === "confirmed" ? 2 : a.confidence === "likely" ? 1 : 0;
-        const cb = b.confidence === "confirmed" ? 2 : b.confidence === "likely" ? 1 : 0;
+        const ca = noteRank(a.analyst_annotation || a.confidence);
+        const cb = noteRank(b.analyst_annotation || b.confidence);
         return cb - ca;
       });
     return hits[0] || null;
@@ -1824,7 +1833,8 @@ function renderMutationSummary(entries) {
 
   const clusters = Array.from(byCluster.entries()).sort((a, b) => a[0] - b[0]);
   const parts = [];
-  parts.push(`<div class="mut-wins">Mutation scoreboard: ${escapeHtml(wins)}</div>`);
+  parts.push(`<div class="mut-wins">Analyst review board: ${escapeHtml(wins)}</div>`);
+  parts.push(`<div class="mut-wins">Manual notes only — BlueLens does not score reverse-search results automatically.</div>`);
   for (const [clusterId, items] of clusters) {
     const title = clusterId ? `Cluster ${clusterId}` : "Cluster";
     parts.push(`<div class="mut-cluster"><div class="mut-title">${title}</div>`);
@@ -1833,32 +1843,33 @@ function renderMutationSummary(entries) {
       const dist = r.base_hamming != null ? `${r.base_hamming}` : "—";
       const url = r.url && /^https?:\/\//i.test(r.url) ? r.url : "";
       const lens = url ? reverseSearchUrl("lens", url) : "";
-      const confidence = r.confidence || "unverified";
+      const analystAnnotation = r.analyst_annotation || r.confidence || "unreviewed";
       const disabled = r.status !== "ok" ? "disabled" : "";
-      const score = r.score && typeof r.score === "object" ? r.score : {};
+      const score = r.engine_review && typeof r.engine_review === "object" ? r.engine_review : r.score && typeof r.score === "object" ? r.score : {};
 
       parts.push(`<div class="mut-row">`);
       parts.push(`<div class="mut-a"><span class="mut-tag">${status}</span> <span class="mut-label">${escapeHtml(r.label || "Variant")}</span></div>`);
       parts.push(`<div class="mut-b">Δ ${escapeHtml(dist)}</div>`);
       parts.push(
         `<div class="mut-c"><select class="select mut-select" data-mut="${escapeAttr(r.id || "")}" ${disabled}>` +
-          `<option value="unverified"${confidence === "unverified" ? " selected" : ""}>Unverified</option>` +
-          `<option value="likely"${confidence === "likely" ? " selected" : ""}>Likely</option>` +
-          `<option value="confirmed"${confidence === "confirmed" ? " selected" : ""}>Confirmed</option>` +
+          `<option value="unreviewed"${analystAnnotation === "unreviewed" ? " selected" : ""}>Unreviewed</option>` +
+          `<option value="possible_match"${analystAnnotation === "possible_match" ? " selected" : ""}>Possible</option>` +
+          `<option value="best_candidate"${analystAnnotation === "best_candidate" ? " selected" : ""}>Best</option>` +
           `</select></div>`,
       );
 
       const scoreCells = engines
         .map((eng) => {
-          const v = score?.[eng] || "unsure";
+          const raw = score?.[eng] || "review";
+          const v = raw === "hit" ? "match" : raw === "no" ? "no_match" : raw;
           const dis = r.status !== "ok" ? "disabled" : "";
           return (
-            `<label class="mut-cell" title="${engineLabel(eng)} result">` +
+            `<label class="mut-cell" title="Analyst review for ${engineLabel(eng)}">` +
             `<span class="mut-e">${engineLabel(eng).slice(0, 1)}</span>` +
             `<select class="select mut-hit" data-mut="${escapeAttr(r.id || "")}" data-eng="${escapeAttr(eng)}" ${dis}>` +
-            `<option value="unsure"${v === "unsure" ? " selected" : ""}>?</option>` +
-            `<option value="hit"${v === "hit" ? " selected" : ""}>Hit</option>` +
-            `<option value="no"${v === "no" ? " selected" : ""}>No</option>` +
+            `<option value="review"${v === "review" ? " selected" : ""}>Review</option>` +
+            `<option value="match"${v === "match" ? " selected" : ""}>Match</option>` +
+            `<option value="no_match"${v === "no_match" ? " selected" : ""}>No</option>` +
             `</select>` +
             `</label>`
           );
@@ -1882,26 +1893,26 @@ function renderMutationSummary(entries) {
   el.classList.add("mut-box");
   el.innerHTML = parts.join("");
 
-  // Wire confidence selectors.
+  // Wire analyst annotation selectors.
   el.querySelectorAll?.("select.mut-select")?.forEach?.((sel) => {
     sel.addEventListener("change", () => {
       const id = sel.getAttribute("data-mut") || "";
-      const v = sel.value || "unverified";
+      const v = sel.value || "unreviewed";
       const m = state.mutations?.find?.((x) => String(x.id) === String(id));
-      if (m) m.confidence = v;
+      if (m) m.analyst_annotation = v;
     });
   });
 
-  // Wire per-engine hit selectors.
+  // Wire per-engine analyst review selectors.
   el.querySelectorAll?.("select.mut-hit")?.forEach?.((sel) => {
     sel.addEventListener("change", () => {
       const id = sel.getAttribute("data-mut") || "";
       const eng = sel.getAttribute("data-eng") || "";
-      const v = sel.value || "unsure";
+      const v = sel.value || "review";
       const m = state.mutations?.find?.((x) => String(x.id) === String(id));
       if (!m) return;
-      m.score = m.score && typeof m.score === "object" ? m.score : {};
-      m.score[eng] = v;
+      m.engine_review = m.engine_review && typeof m.engine_review === "object" ? m.engine_review : {};
+      m.engine_review[eng] = v;
       // update wins line without rebuilding everything
       renderMutationSummary(state.mutations);
     });
@@ -3024,7 +3035,7 @@ function renderOcrEntities(text) {
   const addConfidence = (parent, key) => {
     const sel = document.createElement("select");
     sel.className = "select chip-select";
-    sel.title = "Confidence";
+    sel.title = "Analyst confidence (manual)";
     sel.innerHTML =
       `<option value="unverified">?</option>` +
       `<option value="likely">~</option>` +
@@ -3764,6 +3775,7 @@ function setupActions() {
         muts = await generateMutationFiles();
       } catch (e) {
         elements.mutationOut.textContent = `Mutation failed: ${e?.message || "unknown error"}`;
+        setStatus("Mutation failed");
         return;
       }
 
@@ -3807,8 +3819,8 @@ function setupActions() {
         dhash: m.dhash || "",
         base_hamming: m.base_hamming ?? null,
         cluster: m.cluster || 0,
-        confidence: "unverified",
-        score: { lens: "unsure", bing: "unsure", tineye: "unsure", yandex: "unsure", google_images: "unsure" },
+        analyst_annotation: "unreviewed",
+        engine_review: { lens: "review", bing: "review", tineye: "review", yandex: "review", google_images: "review" },
       }));
       elements.mutationOut.textContent = "Uploading variants…";
       for (let i = 0; i < muts.length; i += 1) {

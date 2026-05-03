@@ -38,11 +38,11 @@
     <section class="hero-shell" aria-labelledby="heroTitle">
       <div class="hero-panel">
         <div class="hero-copy">
-          <span class="hero-kicker">Local image inspection</span>
-          <h2 id="heroTitle">Inspect metadata, OCR text, and similarity signals before you search.</h2>
+          <span class="hero-kicker">Local-first image triage</span>
+          <h2 id="heroTitle">Inspect one image locally before you open external search tools.</h2>
           <p class="hero-lede">
-            BlueLens keeps the core workflow local: inspect hashes, metadata, OCR text, compare a second image, and launch manual reverse
-            searches when you choose to share a public URL.
+            BlueLens computes local hashes, parses metadata, runs OCR, compares a second image, and can open reverse-search pages after you
+            explicitly create a public URL. It does not ingest search-engine results or prove provenance on its own.
           </p>
         </div>
 
@@ -61,7 +61,7 @@
           </article>
           <article class="hero-tile">
             <h3>Reverse-search launchpad</h3>
-            <p>Create a public URL on demand, then open Lens, Bing, TinEye, Yandex, and Google search pages.</p>
+            <p>Create a public URL on demand, then open Lens, Bing, TinEye, Yandex, and Google result pages for manual review.</p>
           </article>
           <article class="hero-tile">
             <h3>Near-duplicate compare</h3>
@@ -140,7 +140,7 @@
         </div>
 
         <div id="missionRow" class="row row-tight">
-          <select id="missionPreset" class="select" disabled hidden title="One mission = one run">
+          <select id="missionPreset" class="select" disabled title="One mission = one run">
             <option value="fast">Fast Scan</option>
             <option value="deep">Deep Scan</option>
             <option value="share_search">Share+Search</option>
