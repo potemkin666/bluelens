@@ -682,7 +682,7 @@ function setupSimpleUi() {
     const syncRunLabel = () => {
       if (!elements.btnRunMission || !elements.missionPreset) return;
       const p = elements.missionPreset.value || "fast";
-      elements.btnRunMission.textContent = p === "share_search" ? "Share+Search" : p === "deep" ? "Deep Scan" : "Fast Scan";
+      elements.btnRunMission.textContent = p === "share_search" ? "Upload + Launchpad" : p === "deep" ? "Deep OCR" : "Quick OCR";
     };
     elements.missionPreset?.addEventListener?.("change", syncRunLabel);
     syncRunLabel();
@@ -1255,7 +1255,7 @@ async function runMissionPreset(preset) {
   if (state.uiBusy) return;
   const p = String(preset || "fast");
 
-  await withUiLock(p === "share_search" ? "Share+Search…" : p === "deep" ? "Deep scan…" : "Fast scan…", async () => {
+  await withUiLock(p === "share_search" ? "Upload + launchpad…" : p === "deep" ? "Deep OCR…" : "Quick OCR…", async () => {
     const base = `Hashes: ✓ · EXIF: ✓`;
     if (p === "fast") {
       setStatusLine(`${base} · OCR: …`);
@@ -1557,7 +1557,7 @@ async function handleQuickJump(engine) {
 
   if (!state.shareEnabled) {
     const ok = window.confirm(
-      "To one-click reverse search, this will upload your image to a temporary file host to generate a public URL. Enable one-click mode?",
+      "To open reverse-search provider pages from one click, this will upload your image to a temporary file host to generate a public URL. Enable one-click mode?",
     );
     if (!ok) {
       openUrl(reverseSearchUploadPage(engine));
@@ -1616,7 +1616,7 @@ async function handleSearchAll() {
 
   if (!state.shareEnabled) {
     const ok = window.confirm(
-      "To run all engines automatically, this will upload your image to a temporary file host to generate a public URL. Enable one-click mode?",
+      "To prepare provider links from one upload, this will upload your image to a temporary file host to generate a public URL. Enable one-click mode?",
     );
     if (!ok) return;
     state.shareEnabled = true;
@@ -1624,7 +1624,7 @@ async function handleSearchAll() {
     setShareControlsEnabled(true);
   }
 
-  await withUiLock("Search all…", async () => {
+  await withUiLock("Preparing engine links…", async () => {
     const url = await ensurePublicUrl({ purpose: "lens" });
     publishWaitState(token, "lens", { url });
 
@@ -4005,7 +4005,7 @@ async function checkLocalServerHint() {
     window.clearTimeout(t);
     if (!res.ok) throw new Error("ping");
   } catch {
-    setStatusLine("Local server offline — start `bluelens-start.cmd` (or `node server.js`) for Share+Search.");
+    setStatusLine("Local server offline — start `bluelens-start.cmd` (or `node server.js`) for Upload + Launchpad.");
   }
 }
 
@@ -4282,7 +4282,7 @@ function setupCommandPalette() {
   let activeIndex = 0;
 
   const actions = [
-    { name: "Search All", meta: "Reverse search", keys: ["search", "all", "reverse", "engines"], run: () => void handleSearchAll() },
+    { name: "Prepare Engine Links", meta: "Reverse-search launchpad", keys: ["prepare", "search", "all", "reverse", "engines", "launchpad"], run: () => void handleSearchAll() },
     { name: "OSINT Pass", meta: "OCR + signals", keys: ["pass", "ocr", "signals", "attribution"], run: () => elements.btnRunPass?.click() },
     { name: "Copy Report", meta: "JSON to clipboard", keys: ["copy", "report", "json"], run: () => elements.btnCopyReport?.click() },
     { name: "Copy Public URL", meta: "If shared", keys: ["copy", "url", "public"], run: () => elements.btnCopyPublicUrl?.click() },

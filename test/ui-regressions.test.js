@@ -9,6 +9,15 @@ const appJs = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
 test("mission preset selector stays reachable in the HTML", () => {
   assert.match(indexHtml, /<select id="missionPreset" class="select" disabled title="One mission = one run">/);
   assert.doesNotMatch(indexHtml, /<select id="missionPreset"[^>]*\shidden\b/);
+  assert.match(indexHtml, />Quick OCR</);
+  assert.match(indexHtml, />Deep OCR</);
+  assert.match(indexHtml, />Upload \+ Launchpad</);
+});
+
+test("search-all UI is framed as link preparation, not automatic querying", () => {
+  assert.match(indexHtml, />\s*Prepare Engine Links\s*</);
+  assert.match(appJs, /Preparing engine links…/);
+  assert.match(appJs, /Prepare Engine Links/);
 });
 
 test("mutation lab copy is clearly framed as analyst review", () => {

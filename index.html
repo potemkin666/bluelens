@@ -113,9 +113,9 @@
             type="button"
             disabled
             data-ico="⌕"
-            title="Uploads (public URL) and opens multiple reverse image search engines."
+            title="Uploads once, opens Lens, and prepares manual links for the other providers."
           >
-            Search All
+            Prepare Engine Links
           </button>
           <button
             id="btnRunPass"
@@ -141,9 +141,9 @@
 
         <div id="missionRow" class="row row-tight">
           <select id="missionPreset" class="select" disabled title="One mission = one run">
-            <option value="fast">Fast Scan</option>
-            <option value="deep">Deep Scan</option>
-            <option value="share_search">Share+Search</option>
+            <option value="fast">Quick OCR</option>
+            <option value="deep">Deep OCR</option>
+            <option value="share_search">Upload + Launchpad</option>
           </select>
           <button id="btnRunMission" class="btn btn-secondary" type="button" disabled title="Runs the selected mission preset">
             Run
@@ -230,7 +230,7 @@
               <label class="toggle" style="margin-top: 10px" title="Makes the image public via a temporary URL">
                 <input id="chkEnableShare" type="checkbox" />
                 <span class="toggle-ui" aria-hidden="true"></span>
-                <span class="toggle-text">Enable one-click reverse search (uploads image to generate a public URL).</span>
+                <span class="toggle-text">Enable one-click provider launcher (uploads image to generate a public URL).</span>
               </label>
 
               <label class="toggle toggle-mini" title="Uploads the clean copy (re-encoded) instead of the original file">
@@ -296,11 +296,11 @@
             <div class="subcard hud" data-hud-key="mutate">
               <div class="subcard-head">
                 <div class="subcard-title">Mutation Lab</div>
-                <span class="pill" title="Generate variants and search them">variants</span>
+                <span class="pill" title="Generate local variants for manual review">variants</span>
               </div>
               <div class="row row-tight">
-                <button id="btnMutateSearch" class="btn btn-secondary" type="button" disabled title="Creates variants and searches them (Lens)">
-                  Mutate + Search
+                <button id="btnMutateSearch" class="btn btn-secondary" type="button" disabled title="Creates local variants, uploads them, and opens Lens tabs for manual review">
+                  Generate Variants + Lens
                 </button>
                 <button id="btnCopyMutations" class="btn btn-ghost" type="button" disabled title="Copy mutation JSON">Copy JSON</button>
               </div>

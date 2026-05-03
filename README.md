@@ -7,8 +7,8 @@ Ocean-themed UI for image upload + reverse-image-search workflows, with an OSINT
 - Metadata extraction (EXIF/IPTC/XMP when present)
 - OCR (watermarks/usernames/signage) + extracted key fields (URLs, emails, @handles, phones)
 - Compare two images via perceptual distance (near-duplicate check)
-- One-click reverse search (public URL) for multiple engines
-- "Mutation Lab" variants (crop/rotate/low-contrast) + re-search
+- One-click launcher for multiple reverse-search providers using a public URL
+- "Mutation Lab" local variants (crop/rotate/low-contrast) + manual re-checking
 - Batch mode: drop a folder of images -> one report per file
 - "Clean copy" download that re-encodes the image to strip metadata
 
@@ -28,7 +28,7 @@ Open:
 
 - One-click mode uploads your image to a third-party host to generate a temporary public URL.
 - Upload proxy uses multi-host failover (Uguu -> Catbox -> Litterbox -> 0x0).
-- "Search All" may be limited by browser pop-up blockers. If blocked, the app shows clickable engine links in-console.
+- "Prepare Engine Links" opens Lens first, then shows clickable provider links in-console for manual follow-up.
 - Run tests with `npm test`.
 
 ## Desktop icon (Windows)
