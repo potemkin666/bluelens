@@ -2,6 +2,7 @@
 
 /* global OCR_PIPELINE */
 /* global OSINT_LIB */
+/* global BLUELENS_HELPERS */
 
 const elements = {
   dropzone: document.getElementById("dropzone"),
@@ -126,6 +127,51 @@ const osintBroadcast = (() => {
   }
 })();
 
+const appHelpers = BLUELENS_HELPERS || {};
+const hammingHex =
+  appHelpers.hammingHex ||
+  ((a, b) => {
+    if (!a || !b || a.length !== b.length) return null;
+    const bitCounts = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4];
+    let dist = 0;
+    for (let i = 0; i < a.length; i += 1) {
+      const na = parseInt(a[i], 16);
+      const nb = parseInt(b[i], 16);
+      if (Number.isNaN(na) || Number.isNaN(nb)) return null;
+      dist += bitCounts[na ^ nb];
+    }
+    return dist;
+  });
+const sortBatchItems =
+  appHelpers.sortBatchItems ||
+  ((items, sortKey = "lead", sortDir = "desc") => {
+    const dir = sortDir === "asc" ? 1 : -1;
+    return items.slice().sort((a, b) => {
+      const dimsA = String(a?.report?.dimensions || "").match(/(\d+)\s*[×x]\s*(\d+)/);
+      const dimsB = String(b?.report?.dimensions || "").match(/(\d+)\s*[×x]\s*(\d+)/);
+      const ta = a?.triage || {};
+      const tb = b?.triage || {};
+      const pick = (item, triage, dims) =>
+        sortKey === "name"
+          ? String(item?.report?.file?.name || "")
+          : sortKey === "gps"
+            ? (triage.gps ? 1 : 0)
+            : sortKey === "ent"
+              ? (triage.entCount || 0)
+              : sortKey === "repost"
+                ? (Number.isFinite(triage.repost) ? triage.repost : -1)
+                : sortKey === "cluster"
+                  ? (item?.clusterId || 0)
+                  : sortKey === "dim"
+                    ? (dims ? Number(dims[1]) * Number(dims[2]) : -1)
+                    : (triage.lead || 0);
+      const va = pick(a, ta, dimsA);
+      const vb = pick(b, tb, dimsB);
+      if (typeof va === "string" || typeof vb === "string") return dir * String(va).localeCompare(String(vb));
+      return dir * ((va || 0) - (vb || 0));
+    });
+  });
+
 const state = {
   file: null,
   objectUrl: null,
@@ -168,7 +214,7 @@ const state = {
     when_obtained: "",
     who_provided: "",
     original_filename: "",
-    confidence_level: "unverified",
+    analyst_confidence: "unverified",
   },
   insights: {
     repost_score: null,
@@ -296,6 +342,10 @@ function formatBytes(bytes) {
   return `${v.toFixed(i === 0 ? 0 : 2)} ${units[i]}`;
 }
 
+function formatOcrError(error) {
+  return `OCR failed: ${error?.message || "unknown error"}`;
+}
+
 async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text);
@@ -374,7 +424,7 @@ function reset() {
     when_obtained: "",
     who_provided: "",
     original_filename: "",
-    confidence_level: "unverified",
+    analyst_confidence: "unverified",
   };
   state.insights = { repost_score: null, repost_reasons: [] };
   state.mutations = [];
@@ -533,7 +583,6 @@ function renderEngineLaunchpad(run) {
     <div class="lp-actions">
       <button class="btn btn-secondary btn-small" type="button" data-lp-open="chosen" title="Open checked engines">Open chosen</button>
       <button class="btn btn-ghost btn-small" type="button" data-lp-open="all" title="Open all engines">Open all</button>
-      <button class="btn btn-ghost btn-small" type="button" data-lp-open="reopen" title="Reopen last run">Reopen last</button>
     </div>
   `;
 }
@@ -611,16 +660,9 @@ function setupSimpleUi() {
       advBody.prepend(elements.manualRow);
     }
 
-    // Move preset selector into Advanced to reduce button/read clutter.
-    if (advBody && elements.missionPreset && elements.missionPreset.parentElement !== advBody) {
-      const wrap = document.createElement("div");
-      wrap.className = "row row-tight";
-      wrap.appendChild(elements.missionPreset);
-      advBody.prepend(wrap);
-    }
-
     // Default to the one thing most people want (persisted).
     if (elements.missionPreset) {
+      elements.missionPreset.hidden = false;
       let saved = "";
       try {
         saved = localStorage.getItem("ui:missionPreset") || "";
@@ -640,7 +682,7 @@ function setupSimpleUi() {
     const syncRunLabel = () => {
       if (!elements.btnRunMission || !elements.missionPreset) return;
       const p = elements.missionPreset.value || "fast";
-      elements.btnRunMission.textContent = p === "share_search" ? "Share+Search" : p === "deep" ? "Deep Scan" : "Fast Scan";
+      elements.btnRunMission.textContent = p === "share_search" ? "Upload + Launchpad" : p === "deep" ? "Deep OCR" : "Quick OCR";
     };
     elements.missionPreset?.addEventListener?.("change", syncRunLabel);
     syncRunLabel();
@@ -768,7 +810,8 @@ function fmtMs(ms) {
 
 function triageSignalsForReport(report) {
   const gps = report?.gps && Number.isFinite(report.gps.lat) && Number.isFinite(report.gps.lon);
-  const repost = Number(report?.insights?.repost_likelihood);
+  // Keep reading the old field from saved cases/reports until they have all been re-exported with repost_heuristic.
+  const repost = Number(report?.insights?.repost_heuristic ?? report?.insights?.repost_likelihood);
   const hasExif = Boolean(report?.exif && Object.keys(report.exif).length > 0);
   const software = String(report?.key_fields?.software || report?.exif?.Software || "").trim();
 
@@ -795,7 +838,7 @@ function triageSignalsForReport(report) {
   }
   const entCount = (ent.urls?.length || 0) + (ent.emails?.length || 0) + (ent.handles?.length || 0) + (ent.phones?.length || 0);
 
-  // Lead score: prioritize pivotability + provenance.
+  // Lead score: prioritize local pivotability + quick-review heuristics.
   let lead = 0;
   lead += gps ? 30 : 0;
   lead += Math.min(24, entCount * 6);
@@ -811,6 +854,7 @@ function triageSignalsForReport(report) {
   if (software) tags.push({ t: "EDITED", tone: repost >= 70 ? "hot" : "warn" });
   if (lowRes) tags.push({ t: "LOWRES", tone: "warn" });
   if (Number.isFinite(repost) && repost >= 80) tags.push({ t: "REPOST↑", tone: "hot" });
+  if (report?.ocr_error) tags.push({ t: "OCRERR", tone: "warn" });
 
   return { lead, gps, repost: Number.isFinite(repost) ? repost : null, software, lowRes, hasExif, ent, entCount, tags, w, h, mp };
 }
@@ -900,38 +944,7 @@ function renderBatchDashboard() {
   };
 
   const sortKey = state.batchUi.sortKey || "lead";
-  const dir = state.batchUi.sortDir === "asc" ? 1 : -1;
-
-  const sorted = applyFilters().sort((a, b) => {
-    const ta = a.triage;
-    const tb = b.triage;
-    const va =
-      sortKey === "name"
-        ? String(a.report?.file?.name || "")
-        : sortKey === "gps"
-          ? (ta.gps ? 1 : 0)
-          : sortKey === "ent"
-            ? ta.entCount
-            : sortKey === "repost"
-              ? (ta.repost ?? -1)
-              : sortKey === "cluster"
-                ? (a.clusterId || 0)
-                : ta.lead;
-    const vb =
-      sortKey === "name"
-        ? String(b.report?.file?.name || "")
-        : sortKey === "gps"
-          ? (tb.gps ? 1 : 0)
-          : sortKey === "ent"
-            ? tb.entCount
-            : sortKey === "repost"
-              ? (tb.repost ?? -1)
-              : sortKey === "cluster"
-                ? (b.clusterId || 0)
-                : tb.lead;
-    if (typeof va === "string" || typeof vb === "string") return dir * String(va).localeCompare(String(vb));
-    return dir * ((va || 0) - (vb || 0));
-  });
+  const sorted = sortBatchItems(applyFilters(), sortKey, state.batchUi.sortDir);
 
   const head = (k, label) => {
     const arrow = state.batchUi.sortKey === k ? (state.batchUi.sortDir === "asc" ? " ▲" : " ▼") : "";
@@ -1028,7 +1041,7 @@ function renderBatchDashboard() {
           ${head("dim", "Dim")}
           ${head("gps", "GPS")}
           ${head("ent", "Ent")}
-          ${head("repost", "Repost")}
+          ${head("repost", "Repost heuristic")}
           ${head("cluster", "Cluster")}
           <th>Flags</th>
         </tr>
@@ -1214,21 +1227,26 @@ async function runBatchOcrTopCandidates(n = 8) {
 
   await withUiLock(`Batch OCR (${pick.length})…`, async () => {
     const lang = elements.ocrLang?.value || "eng";
+    let failures = 0;
     for (let i = 0; i < pick.length; i += 1) {
       const it = pick[i];
       setStatusLine(`Batch OCR: ${i + 1}/${pick.length} · ${it.report?.file?.name || "image"}`);
       try {
         const text = await ocrForBatchFile(it.file, lang);
         it.report.ocr_text = text || null;
+        delete it.report.ocr_error;
         it.report.key_fields = it.report.key_fields || {};
         it.report.key_fields.ocr_entities = text ? OCR_PIPELINE?.extractEntities?.(text) || null : null;
         it.triage = triageSignalsForReport(it.report);
-      } catch {
-        // ignore per-item OCR failures
+      } catch (e) {
+        failures += 1;
+        it.report.ocr_error = e?.message || "OCR failed";
+        it.triage = triageSignalsForReport(it.report);
       }
       renderBatchDashboard();
     }
-    setStatusLine("Batch OCR: ✓");
+    setStatus(failures ? `Batch OCR completed with ${failures} failures` : "Ready");
+    setStatusLine(failures ? `Batch OCR: ${pick.length - failures}/${pick.length} ok · ${failures} failed` : "Batch OCR: ✓");
   });
 }
 
@@ -1237,14 +1255,17 @@ async function runMissionPreset(preset) {
   if (state.uiBusy) return;
   const p = String(preset || "fast");
 
-  await withUiLock(p === "share_search" ? "Share+Search…" : p === "deep" ? "Deep scan…" : "Fast scan…", async () => {
+  await withUiLock(p === "share_search" ? "Upload + launchpad…" : p === "deep" ? "Deep OCR…" : "Quick OCR…", async () => {
     const base = `Hashes: ✓ · EXIF: ✓`;
     if (p === "fast") {
       setStatusLine(`${base} · OCR: …`);
       try {
         await runOcrForCurrent({ mode: "fast" });
-      } catch {
-        // optional
+      } catch (e) {
+        elements.ocrOut.textContent = formatOcrError(e);
+        setOcrStatus("Failed");
+        setStatus("OCR failed");
+        return;
       }
       setStatusLine(`${base} · OCR: ✓`);
       setStatus("Ready");
@@ -1255,8 +1276,11 @@ async function runMissionPreset(preset) {
       setStatusLine(`${base} · OCR: …`);
       try {
         await runOcrForCurrent({ mode: "deep" });
-      } catch {
-        // optional
+      } catch (e) {
+        elements.ocrOut.textContent = formatOcrError(e);
+        setOcrStatus("Failed");
+        setStatus("OCR failed");
+        return;
       }
       setStatusLine(`${base} · OCR: ✓`);
       setStatus("Ready");
@@ -1351,17 +1375,6 @@ async function refreshHostStats() {
 
 const reverseSearchUrl = (engine, imageUrl) => OSINT_LIB?.reverseSearchUrl?.(engine, imageUrl) || "";
 const reverseSearchUploadPage = (engine) => OSINT_LIB?.reverseSearchUploadPage?.(engine) || "about:blank";
-
-async function uploadTo0x0(file) {
-  const fd = new FormData();
-  fd.append("file", file, file.name || "image");
-  const res = await fetch("https://0x0.st", { method: "POST", body: fd });
-  const txt = (await res.text()).trim();
-  if (!res.ok) throw new Error(`Upload failed (${res.status})`);
-  const first = txt.split(/\s+/)[0];
-  if (!/^https?:\/\//i.test(first)) throw new Error("Upload host returned an unexpected response");
-  return first;
-}
 
 async function uploadViaLocalProxy(file, purpose = "") {
   // Prefer local proxy to avoid CORS limitations in browsers when posting to third-party hosts.
@@ -1544,7 +1557,7 @@ async function handleQuickJump(engine) {
 
   if (!state.shareEnabled) {
     const ok = window.confirm(
-      "To one-click reverse search, this will upload your image to a temporary file host to generate a public URL. Enable one-click mode?",
+      "To open reverse-search provider pages from one click, this will upload your image to a temporary file host to generate a public URL. Enable one-click mode?",
     );
     if (!ok) {
       openUrl(reverseSearchUploadPage(engine));
@@ -1603,7 +1616,7 @@ async function handleSearchAll() {
 
   if (!state.shareEnabled) {
     const ok = window.confirm(
-      "To run all engines automatically, this will upload your image to a temporary file host to generate a public URL. Enable one-click mode?",
+      "To prepare provider links from one upload, this will upload your image to a temporary file host to generate a public URL. Enable one-click mode?",
     );
     if (!ok) return;
     state.shareEnabled = true;
@@ -1611,7 +1624,7 @@ async function handleSearchAll() {
     setShareControlsEnabled(true);
   }
 
-  await withUiLock("Search all…", async () => {
+  await withUiLock("Preparing engine links…", async () => {
     const url = await ensurePublicUrl({ purpose: "lens" });
     publishWaitState(token, "lens", { url });
 
@@ -1658,61 +1671,6 @@ function wireReverseSearchButtons() {
   elements.btnOpenTineye.addEventListener("click", () => void handleQuickJump("tineye"));
   elements.btnOpenYandex.addEventListener("click", () => void handleQuickJump("yandex"));
   elements.btnOpenGoogleImages.addEventListener("click", () => void handleQuickJump("google_images"));
-}
-
-async function searchAllLocked({ token, engines, openedByEngine }) {
-  if (!token || !Array.isArray(engines)) throw new Error("Missing token/engines");
-  if (!state.shareEnabled) throw new Error("Sharing disabled");
-
-  setStatusLine("Upload: preparing…");
-  const url = await ensurePublicUrl({ purpose: engines.includes("lens") ? "lens" : "" });
-  setStatusLine("Engines: routing…");
-
-  const targets = engines.map((e) => reverseSearchUrl(e, url));
-
-  const run = {
-    ts: Date.now(),
-    url,
-    token,
-    artifact: state.publicUrlArtifact || "original",
-    targets: {
-      lens: targets[0],
-      bing: targets[1],
-      tineye: targets[2],
-      yandex: targets[3],
-      google_images: targets[4],
-    },
-    chosen: { lens: true, bing: true, tineye: true, yandex: true, google_images: true },
-    opened: {},
-    blocked: {},
-  };
-  state.lastEngineRun = run;
-  saveLastRun(run);
-  renderEngineLaunchpad(run);
-
-  // (Tabs already have the URL; keep re-broadcasting in case any missed the first hit.)
-  for (const e of engines) publishWaitState(token, e, { url });
-
-  // Optionally close empty tabs if we somehow lost them.
-  if (openedByEngine && typeof openedByEngine === "object") {
-    for (const e of engines) {
-      const w = openedByEngine[e];
-      if (!w) continue;
-      try {
-        // no-op; tab itself will redirect when it sees status.
-      } catch {
-        // ignore
-      }
-    }
-  }
-
-  window.setTimeout(() => {
-    for (const e of engines) localStorage.removeItem(`osint:${token}:${e}`);
-  }, 2 * 60 * 1000);
-
-  triggerGlitterStorm(68);
-  setStatusLine("Engines: ✓");
-  setStatus("Ready");
 }
 
 async function loadImageFromFile(file) {
@@ -1847,13 +1805,18 @@ function renderMutationSummary(entries) {
   const engines = ["lens", "bing", "tineye", "yandex", "google_images"];
   const engineLabel = (e) =>
     e === "lens" ? "Lens" : e === "bing" ? "Bing" : e === "tineye" ? "TinEye" : e === "yandex" ? "Yandex" : "Google";
+  const analystAnnotationRank = (value) => (value === "best" ? 2 : value === "possible" ? 1 : 0);
+  const getEngineReviewValue = (row, engine) => {
+    const raw = row?.engine_review?.[engine] || row?.score?.[engine] || "review";
+    return raw === "hit" ? "match" : raw === "no" ? "no_match" : raw;
+  };
 
   const pickWinner = (engine) => {
     const hits = rows
-      .filter((r) => (r.score?.[engine] || "unsure") === "hit")
+      .filter((r) => getEngineReviewValue(r, engine) === "match")
       .sort((a, b) => {
-        const ca = a.confidence === "confirmed" ? 2 : a.confidence === "likely" ? 1 : 0;
-        const cb = b.confidence === "confirmed" ? 2 : b.confidence === "likely" ? 1 : 0;
+        const ca = analystAnnotationRank(a.analyst_annotation || a.confidence);
+        const cb = analystAnnotationRank(b.analyst_annotation || b.confidence);
         return cb - ca;
       });
     return hits[0] || null;
@@ -1875,7 +1838,8 @@ function renderMutationSummary(entries) {
 
   const clusters = Array.from(byCluster.entries()).sort((a, b) => a[0] - b[0]);
   const parts = [];
-  parts.push(`<div class="mut-wins">Mutation scoreboard: ${escapeHtml(wins)}</div>`);
+  parts.push(`<div class="mut-wins">Analyst review board: ${escapeHtml(wins)}</div>`);
+  parts.push(`<div class="mut-wins">Manual notes only — BlueLens does not score reverse-search results automatically.</div>`);
   for (const [clusterId, items] of clusters) {
     const title = clusterId ? `Cluster ${clusterId}` : "Cluster";
     parts.push(`<div class="mut-cluster"><div class="mut-title">${title}</div>`);
@@ -1884,32 +1848,32 @@ function renderMutationSummary(entries) {
       const dist = r.base_hamming != null ? `${r.base_hamming}` : "—";
       const url = r.url && /^https?:\/\//i.test(r.url) ? r.url : "";
       const lens = url ? reverseSearchUrl("lens", url) : "";
-      const confidence = r.confidence || "unverified";
+      const analystAnnotation = r.analyst_annotation || r.confidence || "unreviewed";
       const disabled = r.status !== "ok" ? "disabled" : "";
-      const score = r.score && typeof r.score === "object" ? r.score : {};
+      const score = r.engine_review && typeof r.engine_review === "object" ? r.engine_review : r.score && typeof r.score === "object" ? r.score : {};
 
       parts.push(`<div class="mut-row">`);
       parts.push(`<div class="mut-a"><span class="mut-tag">${status}</span> <span class="mut-label">${escapeHtml(r.label || "Variant")}</span></div>`);
       parts.push(`<div class="mut-b">Δ ${escapeHtml(dist)}</div>`);
       parts.push(
         `<div class="mut-c"><select class="select mut-select" data-mut="${escapeAttr(r.id || "")}" ${disabled}>` +
-          `<option value="unverified"${confidence === "unverified" ? " selected" : ""}>Unverified</option>` +
-          `<option value="likely"${confidence === "likely" ? " selected" : ""}>Likely</option>` +
-          `<option value="confirmed"${confidence === "confirmed" ? " selected" : ""}>Confirmed</option>` +
+          `<option value="unreviewed"${analystAnnotation === "unreviewed" ? " selected" : ""}>Unreviewed</option>` +
+          `<option value="possible"${analystAnnotation === "possible" ? " selected" : ""}>Possible</option>` +
+          `<option value="best"${analystAnnotation === "best" ? " selected" : ""}>Best</option>` +
           `</select></div>`,
       );
 
       const scoreCells = engines
         .map((eng) => {
-          const v = score?.[eng] || "unsure";
+          const v = getEngineReviewValue({ engine_review: score }, eng);
           const dis = r.status !== "ok" ? "disabled" : "";
           return (
-            `<label class="mut-cell" title="${engineLabel(eng)} result">` +
+            `<label class="mut-cell" title="Analyst review for ${engineLabel(eng)}">` +
             `<span class="mut-e">${engineLabel(eng).slice(0, 1)}</span>` +
             `<select class="select mut-hit" data-mut="${escapeAttr(r.id || "")}" data-eng="${escapeAttr(eng)}" ${dis}>` +
-            `<option value="unsure"${v === "unsure" ? " selected" : ""}>?</option>` +
-            `<option value="hit"${v === "hit" ? " selected" : ""}>Hit</option>` +
-            `<option value="no"${v === "no" ? " selected" : ""}>No</option>` +
+            `<option value="review"${v === "review" ? " selected" : ""}>Review</option>` +
+            `<option value="match"${v === "match" ? " selected" : ""}>Match</option>` +
+            `<option value="no_match"${v === "no_match" ? " selected" : ""}>No</option>` +
             `</select>` +
             `</label>`
           );
@@ -1933,26 +1897,26 @@ function renderMutationSummary(entries) {
   el.classList.add("mut-box");
   el.innerHTML = parts.join("");
 
-  // Wire confidence selectors.
+  // Wire analyst annotation selectors.
   el.querySelectorAll?.("select.mut-select")?.forEach?.((sel) => {
     sel.addEventListener("change", () => {
       const id = sel.getAttribute("data-mut") || "";
-      const v = sel.value || "unverified";
+      const v = sel.value || "unreviewed";
       const m = state.mutations?.find?.((x) => String(x.id) === String(id));
-      if (m) m.confidence = v;
+      if (m) m.analyst_annotation = v;
     });
   });
 
-  // Wire per-engine hit selectors.
+  // Wire per-engine analyst review selectors.
   el.querySelectorAll?.("select.mut-hit")?.forEach?.((sel) => {
     sel.addEventListener("change", () => {
       const id = sel.getAttribute("data-mut") || "";
       const eng = sel.getAttribute("data-eng") || "";
-      const v = sel.value || "unsure";
+      const v = sel.value || "review";
       const m = state.mutations?.find?.((x) => String(x.id) === String(id));
       if (!m) return;
-      m.score = m.score && typeof m.score === "object" ? m.score : {};
-      m.score[eng] = v;
+      m.engine_review = m.engine_review && typeof m.engine_review === "object" ? m.engine_review : {};
+      m.engine_review[eng] = v;
       // update wins line without rebuilding everything
       renderMutationSummary(state.mutations);
     });
@@ -2063,9 +2027,9 @@ function buildMarkdownReport(report) {
   lines.push(`- GPS: ${gps ? `\`${fmtCoord(gps.lat)}, ${fmtCoord(gps.lon)}\`` : "—"}`);
   lines.push("");
   lines.push(`## Insights`);
-  lines.push(`- Repost likelihood: ${r.insights?.repost_likelihood != null ? `**${r.insights.repost_likelihood}/100**` : "—"}`);
+  lines.push(`- Repost heuristic: ${r.insights?.repost_heuristic != null ? `**${r.insights.repost_heuristic}/100**` : "—"}`);
   if (Array.isArray(r.insights?.repost_reasons) && r.insights.repost_reasons.length) {
-    lines.push(`- Reasons: ${r.insights.repost_reasons.map((x) => `\`${String(x)}\``).join(" · ")}`);
+    lines.push(`- Heuristic reasons: ${r.insights.repost_reasons.map((x) => `\`${String(x)}\``).join(" · ")}`);
   }
   if (r.insights?.attribution_hints) lines.push(`- Attribution hints: ${String(r.insights.attribution_hints)}`);
   lines.push("");
@@ -2089,7 +2053,7 @@ function buildMarkdownReport(report) {
   lines.push(`- When: ${sr.when_obtained ? `\`${sr.when_obtained}\`` : "—"}`);
   lines.push(`- Who: ${sr.who_provided ? `\`${sr.who_provided}\`` : "—"}`);
   lines.push(`- Original filename: ${sr.original_filename ? `\`${sr.original_filename}\`` : "—"}`);
-  lines.push(`- Confidence: \`${sr.confidence_level || "unverified"}\``);
+  lines.push(`- Analyst confidence (manual): \`${sr.analyst_confidence || "unverified"}\``);
   lines.push("");
   lines.push(`---`);
   lines.push("");
@@ -2102,19 +2066,6 @@ function buildMarkdownReport(report) {
   }
   lines.push("```");
   return lines.join("\n");
-}
-
-const bitCounts = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4];
-function hammingHex(a, b) {
-  if (!a || !b || a.length !== b.length) return null;
-  let dist = 0;
-  for (let i = 0; i < a.length; i += 1) {
-    const na = parseInt(a[i], 16);
-    const nb = parseInt(b[i], 16);
-    if (Number.isNaN(na) || Number.isNaN(nb)) return null;
-    dist += bitCounts[na ^ nb];
-  }
-  return dist;
 }
 
 function toGrayscaleLuma(r, g, b) {
@@ -2597,11 +2548,22 @@ async function makeThumbnailDataUrl(file, maxEdge = 240) {
 }
 
 function extractPivotsFromReport(report) {
+  if (appHelpers.extractPivotsFromReport) return appHelpers.extractPivotsFromReport(report);
   const pivots = [];
   const ents = report?.key_fields?.ocr_entities;
   if (ents?.urls?.length) pivots.push(...ents.urls.slice(0, 2).map((x) => `url:${x}`));
   if (ents?.emails?.length) pivots.push(...ents.emails.slice(0, 2).map((x) => `email:${x}`));
-  if (ents?.handles?.length) pivots.push(...ents.handles.slice(0, 3).map((x) => `@${x}`));
+  if (ents?.handles?.length) {
+    pivots.push(
+      ...ents.handles
+        .slice(0, 3)
+        .map((x) => {
+          const handle = String(x || "").replace(/^@+/, "");
+          return handle ? `@${handle}` : null;
+        })
+        .filter(Boolean),
+    );
+  }
   if (ents?.phones?.length) pivots.push(...ents.phones.slice(0, 2).map((x) => `phone:${x}`));
   const gps = report?.gps;
   if (gps && Number.isFinite(gps.lat) && Number.isFinite(gps.lon)) pivots.push(`gps:${gps.lat.toFixed(5)},${gps.lon.toFixed(5)}`);
@@ -2817,7 +2779,7 @@ function buildOsintReport() {
     share_safe: Boolean(state.shareSafe),
     gps: state.gps ? { lat: state.gps.lat, lon: state.gps.lon } : null,
     insights: {
-      repost_likelihood: state.insights.repost_score,
+      repost_heuristic: state.insights.repost_score,
       repost_reasons: state.insights.repost_reasons || [],
       attribution_hints: elements.attrHints?.textContent || null,
     },
@@ -2885,7 +2847,7 @@ async function buildReportForFileHeadless(file) {
     hashes: { sha256: hashes.sha, md5: hashes.md5, dhash: dh },
     gps: key.gps,
     insights: {
-      repost_likelihood: score,
+      repost_heuristic: score,
       repost_reasons: reasons,
       attribution_hints: hints,
     },
@@ -2924,7 +2886,7 @@ async function runBatchFiles(files) {
         thumb = null;
       }
       state.batchItems.push({ id, file: f, report: r, triage: null, clusterId: 0, thumb });
-      lines.push(`  OK · repost ${r.insights.repost_likelihood}/100`);
+      lines.push(`  OK · heuristic ${r.insights.repost_heuristic}/100`);
     } catch (e) {
       lines.push(`  FAIL · ${e?.message || "unknown error"}`);
     }
@@ -3077,7 +3039,7 @@ function renderOcrEntities(text) {
   const addConfidence = (parent, key) => {
     const sel = document.createElement("select");
     sel.className = "select chip-select";
-    sel.title = "Confidence";
+    sel.title = "Analyst confidence (manual)";
     sel.innerHTML =
       `<option value="unverified">?</option>` +
       `<option value="likely">~</option>` +
@@ -3699,7 +3661,7 @@ function setupActions() {
     state.caseInfo.when_obtained = elements.srcWhen.value || "";
     state.caseInfo.who_provided = elements.srcWho.value || "";
     state.caseInfo.original_filename = elements.srcOrig.value || "";
-    if (elements.confLevel) state.caseInfo.confidence_level = elements.confLevel.value || "unverified";
+    if (elements.confLevel) state.caseInfo.analyst_confidence = elements.confLevel.value || "unverified";
   };
   elements.srcWhere.addEventListener("input", syncCase);
   elements.srcWhen.addEventListener("input", syncCase);
@@ -3817,6 +3779,7 @@ function setupActions() {
         muts = await generateMutationFiles();
       } catch (e) {
         elements.mutationOut.textContent = `Mutation failed: ${e?.message || "unknown error"}`;
+        setStatus("Mutation failed");
         return;
       }
 
@@ -3860,8 +3823,8 @@ function setupActions() {
         dhash: m.dhash || "",
         base_hamming: m.base_hamming ?? null,
         cluster: m.cluster || 0,
-        confidence: "unverified",
-        score: { lens: "unsure", bing: "unsure", tineye: "unsure", yandex: "unsure", google_images: "unsure" },
+        analyst_annotation: "unreviewed",
+        engine_review: { lens: "review", bing: "review", tineye: "review", yandex: "review", google_images: "review" },
       }));
       elements.mutationOut.textContent = "Uploading variants…";
       for (let i = 0; i < muts.length; i += 1) {
@@ -3899,7 +3862,7 @@ function setupActions() {
       try {
         await runOcrForCurrent();
       } catch (e) {
-        elements.ocrOut.textContent = `OCR failed: ${e?.message || "unknown error"}`;
+        elements.ocrOut.textContent = formatOcrError(e);
         setOcrStatus("Failed");
       }
     });
@@ -4042,7 +4005,7 @@ async function checkLocalServerHint() {
     window.clearTimeout(t);
     if (!res.ok) throw new Error("ping");
   } catch {
-    setStatusLine("Local server offline — start `bluelens-start.cmd` (or `node server.js`) for Share+Search.");
+    setStatusLine("Local server offline — start `bluelens-start.cmd` (or `node server.js`) for Upload + Launchpad.");
   }
 }
 
@@ -4319,7 +4282,7 @@ function setupCommandPalette() {
   let activeIndex = 0;
 
   const actions = [
-    { name: "Search All", meta: "Reverse search", keys: ["search", "all", "reverse", "engines"], run: () => void handleSearchAll() },
+    { name: "Prepare Engine Links", meta: "Reverse-search launchpad", keys: ["prepare", "search", "all", "reverse", "engines", "launchpad"], run: () => void handleSearchAll() },
     { name: "OSINT Pass", meta: "OCR + signals", keys: ["pass", "ocr", "signals", "attribution"], run: () => elements.btnRunPass?.click() },
     { name: "Copy Report", meta: "JSON to clipboard", keys: ["copy", "report", "json"], run: () => elements.btnCopyReport?.click() },
     { name: "Copy Public URL", meta: "If shared", keys: ["copy", "url", "public"], run: () => elements.btnCopyPublicUrl?.click() },
@@ -4502,5 +4465,3 @@ void refreshHostStats();
 setupEngineLaunchpad();
 setupSimpleUi();
 setupGlobalErrorSurface();
-
-

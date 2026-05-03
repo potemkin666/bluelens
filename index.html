@@ -6,7 +6,7 @@
     <title>BlueLens</title>
     <meta
       name="description"
-      content="Upload an image, extract OSINT-relevant signals, and jump into reverse-image search workflows."
+      content="Inspect local image hashes, metadata, OCR text, and launch reverse-search providers from a local-first workflow."
     />
     <link rel="stylesheet" href="./styles.css" />
   </head>
@@ -24,7 +24,7 @@
         <div class="brand-mark" aria-hidden="true"></div>
         <div class="brand-text">
           <h1>BlueLens</h1>
-          <p>Reverse image search + OSINT signals — fast, local-first.</p>
+          <p>Inspect images locally, extract context, and launch reverse-search providers.</p>
         </div>
       </div>
       <div class="header-actions">
@@ -34,6 +34,54 @@
         >
       </div>
     </header>
+
+    <section class="hero-shell" aria-labelledby="heroTitle">
+      <div class="hero-panel">
+        <div class="hero-copy">
+          <span class="hero-kicker">Local-first image triage</span>
+          <h2 id="heroTitle">Inspect one image locally before you open external search tools.</h2>
+          <p class="hero-lede">
+            BlueLens computes local hashes, parses metadata, runs OCR, compares a second image, and can open reverse-search pages after you
+            explicitly create a public URL. It does not ingest search-engine results or prove provenance on its own.
+          </p>
+        </div>
+
+        <div class="hero-grid" aria-label="Key capabilities">
+          <article class="hero-tile">
+            <h3>Local file signals</h3>
+            <p>Compute SHA-256, MD5, dHash, dimensions, and a clean-copy fingerprint set.</p>
+          </article>
+          <article class="hero-tile">
+            <h3>Metadata inspection</h3>
+            <p>Extract EXIF/IPTC/XMP fields, camera/software tags, and GPS coordinates when present.</p>
+          </article>
+          <article class="hero-tile">
+            <h3>OCR text extraction</h3>
+            <p>Run OCR locally, pull URLs, emails, @handles, and phone numbers, and open manual pivots from the extracted text.</p>
+          </article>
+          <article class="hero-tile">
+            <h3>Reverse-search launchpad</h3>
+            <p>Create a public URL on demand, then open Lens, Bing, TinEye, Yandex, and Google result pages for manual review.</p>
+          </article>
+          <article class="hero-tile">
+            <h3>Near-duplicate compare</h3>
+            <p>Compare two local images with dHash distance to spot likely matches and obvious differences.</p>
+          </article>
+          <article class="hero-tile">
+            <h3>Batch local triage</h3>
+            <p>Generate per-file reports, cluster local files by dHash, and sort by simple triage signals.</p>
+          </article>
+          <article class="hero-tile">
+            <h3>Caseboard notes</h3>
+            <p>Store local reports, pivots, notes, and thumbnails in browser storage for later review.</p>
+          </article>
+          <article class="hero-tile">
+            <h3>Clean-copy export</h3>
+            <p>Re-encode a local copy to strip metadata before sharing or saving a sanitized artifact.</p>
+          </article>
+        </div>
+      </div>
+    </section>
 
     <main class="layout layout-single">
       <section class="card console-card" aria-labelledby="consoleTitle">
@@ -65,9 +113,9 @@
             type="button"
             disabled
             data-ico="⌕"
-            title="Uploads (public URL) and opens multiple reverse image search engines."
+            title="Uploads once, opens Lens, and prepares manual links for the other providers."
           >
-            Search All
+            Prepare Engine Links
           </button>
           <button
             id="btnRunPass"
@@ -92,10 +140,10 @@
         </div>
 
         <div id="missionRow" class="row row-tight">
-          <select id="missionPreset" class="select" disabled hidden title="One mission = one run">
-            <option value="fast">Fast Scan</option>
-            <option value="deep">Deep Scan</option>
-            <option value="share_search">Share+Search</option>
+          <select id="missionPreset" class="select" disabled title="One mission = one run">
+            <option value="fast">Quick OCR</option>
+            <option value="deep">Deep OCR</option>
+            <option value="share_search">Upload + Launchpad</option>
           </select>
           <button id="btnRunMission" class="btn btn-secondary" type="button" disabled title="Runs the selected mission preset">
             Run
@@ -120,9 +168,9 @@
             <div id="metaDim" class="v">—</div>
           </div>
           <div class="kv">
-            <div class="k">Repost</div>
+            <div class="k" title="Local-only estimate, not a provenance verdict">Repost heuristic</div>
             <div id="repostScore" class="v">—</div>
-            <div id="repostReasons" class="chips chips-mini" hidden aria-label="Repost score reasons"></div>
+            <div id="repostReasons" class="chips chips-mini" hidden aria-label="Repost heuristic reasons"></div>
           </div>
           <div class="kv">
             <div class="k">Attribution</div>
@@ -169,8 +217,8 @@
               </div>
 
               <div class="row row-tight">
-                <label class="field" title="Mark confidence in the findings you’re using">
-                  <span class="field-label">Confidence</span>
+                <label class="field" title="Manual analyst note for how much you trust your current findings">
+                  <span class="field-label">Analyst confidence (manual)</span>
                   <select id="confLevel" class="select">
                     <option value="unverified">Unverified</option>
                     <option value="likely">Likely</option>
@@ -182,7 +230,7 @@
               <label class="toggle" style="margin-top: 10px" title="Makes the image public via a temporary URL">
                 <input id="chkEnableShare" type="checkbox" />
                 <span class="toggle-ui" aria-hidden="true"></span>
-                <span class="toggle-text">Enable one-click reverse search (uploads image to generate a public URL).</span>
+                <span class="toggle-text">Enable one-click provider launcher (uploads image to generate a public URL).</span>
               </label>
 
               <label class="toggle toggle-mini" title="Uploads the clean copy (re-encoded) instead of the original file">
@@ -227,7 +275,7 @@
               </div>
               <div class="row row-tight">
                 <select id="caseSelect" class="select" disabled title="Load a case"></select>
-                <button id="btnLoadCase" class="btn btn-secondary" type="button" disabled title="Load selected case">Load</button>
+                <button id="btnLoadCase" class="btn btn-secondary" type="button" disabled title="Select the active case">Select</button>
                 <button id="btnExportCase" class="btn btn-ghost" type="button" disabled title="Download case JSON bundle">Export</button>
                 <button id="btnDeleteCase" class="btn btn-ghost" type="button" disabled title="Delete selected case">Delete</button>
               </div>
@@ -248,13 +296,13 @@
             <div class="subcard hud" data-hud-key="mutate">
               <div class="subcard-head">
                 <div class="subcard-title">Mutation Lab</div>
-                <span class="pill" title="Generate variants and search them">variants</span>
+                <span class="pill" title="Generate local variants for manual review">variants</span>
               </div>
               <div class="row row-tight">
-                <button id="btnMutateSearch" class="btn btn-secondary" type="button" disabled title="Creates variants and searches them (Lens)">
-                  Mutate + Search
+                <button id="btnMutateSearch" class="btn btn-secondary" type="button" disabled title="Creates local variants, uploads them, and opens Lens tabs for manual review">
+                  Generate Variants + Lens
                 </button>
-                <button id="btnCopyMutations" class="btn btn-ghost" type="button" disabled title="Copy variant URLs">Copy URLs</button>
+                <button id="btnCopyMutations" class="btn btn-ghost" type="button" disabled title="Copy mutation JSON">Copy JSON</button>
               </div>
               <div id="mutationOut" class="mono mono-box">—</div>
             </div>
@@ -538,6 +586,7 @@
     <script src="https://unpkg.com/exifr/dist/full.umd.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/js-sha256@0.11.0/build/sha256.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/spark-md5@3.0.2/spark-md5.min.js"></script>
+    <script src="./bluelens-helpers.js"></script>
     <script src="./osint-lib.js"></script>
     <script src="./ocr-pipeline.js"></script>
 

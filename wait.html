@@ -10,7 +10,10 @@
         height: 100%;
         margin: 0;
         font-family: system-ui, Segoe UI, Roboto, Arial, sans-serif;
-        background: #05142d;
+        background:
+          radial-gradient(960px 640px at 18% 12%, rgba(220, 248, 255, 0.18), transparent 58%),
+          radial-gradient(900px 700px at 82% 16%, rgba(114, 198, 255, 0.18), transparent 60%),
+          linear-gradient(180deg, #041327, #071d3b 65%, #05142d);
         color: #eaf7ff;
       }
       .wrap {
@@ -22,11 +25,17 @@
       .card {
         max-width: 720px;
         width: 100%;
-        border: 1px solid rgba(230, 251, 255, 0.25);
-        border-radius: 16px;
-        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(230, 251, 255, 0.28);
+        border-radius: 22px;
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.06)),
+          linear-gradient(180deg, rgba(10, 34, 68, 0.56), rgba(6, 20, 44, 0.3));
         padding: 18px;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+        box-shadow:
+          0 28px 90px rgba(0, 10, 30, 0.45),
+          inset 0 1px 0 rgba(255, 255, 255, 0.18);
+        backdrop-filter: blur(18px) saturate(1.16);
+        -webkit-backdrop-filter: blur(18px) saturate(1.16);
       }
       .muted {
         opacity: 0.8;
@@ -41,24 +50,44 @@
         padding: 10px 12px;
         border-radius: 14px;
         border: 1px solid rgba(230, 251, 255, 0.35);
-        background: rgba(255, 255, 255, 0.08);
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.06)),
+          rgba(255, 255, 255, 0.04);
         color: #eaf7ff;
         cursor: pointer;
       }
       .spinner {
-        width: 12px;
-        height: 12px;
-        border-radius: 999px;
-        border: 2px solid rgba(234, 247, 255, 0.25);
-        border-top-color: rgba(234, 247, 255, 0.9);
+        position: relative;
+        width: 14px;
+        height: 14px;
         display: inline-block;
         vertical-align: -2px;
         margin-right: 10px;
-        animation: spin 700ms linear infinite;
       }
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
+      .spinner::before,
+      .spinner::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        border: 1px solid rgba(196, 242, 255, 0.4);
+        box-shadow: 0 0 22px rgba(167, 236, 255, 0.18);
+        animation: ripple 1.6s ease-out infinite;
+      }
+      .spinner::before {
+        background: radial-gradient(circle, rgba(255, 255, 255, 0.95) 0 22%, rgba(166, 236, 255, 0.88) 42%, transparent 75%);
+      }
+      .spinner::after {
+        animation-delay: 0.45s;
+      }
+      @keyframes ripple {
+        0% {
+          transform: scale(0.42);
+          opacity: 0.95;
+        }
+        100% {
+          transform: scale(2.5);
+          opacity: 0;
         }
       }
     </style>
@@ -67,7 +96,7 @@
     <div class="wrap">
       <div class="card">
         <div id="title"><strong>Engine</strong> &mdash; waiting for public image URL&hellip;</div>
-        <div id="msg" class="muted" style="margin-top: 8px"><span class="spinner"></span>Keep this tab open.</div>
+        <div id="msg" class="muted" style="margin-top: 8px" aria-live="polite"><span class="spinner" aria-hidden="true"></span>Keep this tab open.</div>
         <div id="link" style="margin-top: 10px"></div>
         <button id="close">Close</button>
       </div>
@@ -170,4 +199,3 @@
     </script>
   </body>
 </html>
-

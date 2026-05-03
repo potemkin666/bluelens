@@ -1,0 +1,32 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const indexHtml = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+const appJs = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+
+test("mission preset selector stays reachable in the HTML", () => {
+  assert.match(indexHtml, /<select id="missionPreset" class="select" disabled title="One mission = one run">/);
+  assert.doesNotMatch(indexHtml, /<select id="missionPreset"[^>]*\shidden\b/);
+  assert.match(indexHtml, />Quick OCR</);
+  assert.match(indexHtml, />Deep OCR</);
+  assert.match(indexHtml, />Upload \+ Launchpad</);
+});
+
+test("search-all UI is framed as link preparation, not automatic querying", () => {
+  assert.match(indexHtml, />\s*Prepare Engine Links\s*</);
+  assert.match(appJs, /Preparing engine links…/);
+  assert.match(appJs, /Prepare Engine Links/);
+});
+
+test("mutation lab copy is clearly framed as analyst review", () => {
+  assert.match(appJs, /Analyst review board:/);
+  assert.match(appJs, /Manual notes only — BlueLens does not score reverse-search results automatically\./);
+  assert.doesNotMatch(appJs, /Mutation scoreboard:/);
+});
+
+test("batch OCR failures are surfaced instead of silently ignored", () => {
+  assert.match(appJs, /ocr_error\s*=\s*e\?\.message\s*\|\|\s*"OCR failed"/);
+  assert.match(appJs, /Batch OCR: \$\{pick\.length - failures\}\/\$\{pick\.length\} ok · \$\{failures\} failed/);
+});
