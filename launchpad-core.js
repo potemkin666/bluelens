@@ -22,6 +22,47 @@
     return run;
   };
 
+  const ensureRunOutcomeState = ({ run, engines = [] } = {}) => {
+    if (!run || typeof run !== "object") return run;
+    run.outcomes = run.outcomes && typeof run.outcomes === "object" ? run.outcomes : {};
+    run.plan = run.plan && typeof run.plan === "object" ? run.plan : {};
+    run.plan.engines = Array.from(new Set([...(run.plan.engines || []), ...(engines || [])]));
+    run.plan.staged_at = run.plan.staged_at || new Date().toISOString();
+    for (const engine of engines || []) {
+      const current = run.outcomes[engine] && typeof run.outcomes[engine] === "object" ? run.outcomes[engine] : {};
+      run.outcomes[engine] = {
+        disposition: current.disposition || "pending",
+        notes: typeof current.notes === "string" ? current.notes : "",
+        updated_at: current.updated_at || null,
+      };
+    }
+    return run;
+  };
+
+  const updateRunOutcome = ({ run, engine, patch = {} } = {}) => {
+    if (!run || !engine) return run;
+    ensureRunOutcomeState({ run, engines: [engine] });
+    const current = run.outcomes[engine];
+    run.outcomes[engine] = {
+      ...current,
+      ...patch,
+      disposition: String(patch.disposition || current.disposition || "pending"),
+      notes: typeof patch.notes === "string" ? patch.notes : current.notes || "",
+      updated_at: patch.updated_at || new Date().toISOString(),
+    };
+    return run;
+  };
+
+  const summarizeRunOutcomes = ({ run, engines = [] } = {}) => {
+    ensureRunOutcomeState({ run, engines });
+    const summary = {};
+    for (const engine of engines || []) {
+      const disposition = String(run?.outcomes?.[engine]?.disposition || "pending");
+      summary[disposition] = (summary[disposition] || 0) + 1;
+    }
+    return summary;
+  };
+
   const createEngineRunRecord = ({
     engines = [],
     mode = "launchpad",
@@ -58,6 +99,7 @@
 
   const openTargetsForRun = ({ run, engines, engineOrder = [], openUrl = () => null, updateRunQueueStatus: updateStatus, runQueueStatus = {} } = {}) => {
     if (!run || !run.targets) return { openedCount: 0, blockedCount: 0 };
+    ensureRunOutcomeState({ run, engines: getRunEngines({ run, engineOrder }) });
     const openList = Array.from(new Set((engines || []).filter((engine) => run.targets?.[engine])));
     let openedCount = 0;
     let blockedCount = 0;
@@ -71,10 +113,12 @@
         delete run.blocked[engine];
         openedCount += 1;
         updateStatus?.(run, engine, { status: runQueueStatus.opened || "opened" });
+        updateRunOutcome({ run, engine, patch: { disposition: run.outcomes?.[engine]?.disposition || "pending" } });
       } else {
         run.blocked[engine] = true;
         blockedCount += 1;
         updateStatus?.(run, engine, { status: runQueueStatus.blocked || "blocked" });
+        updateRunOutcome({ run, engine, patch: { disposition: run.outcomes?.[engine]?.disposition === "useful" ? "useful" : "blocked" } });
       }
     }
     run.ts = Date.now();
@@ -109,6 +153,7 @@
     getArtifact = () => "original",
   } = {}) => {
     const run = createRun({ engines, mode, reverseSearchUrl, runQueueStatus, artifact: getArtifact() });
+    ensureRunOutcomeState({ run, engines });
     let waitJob = null;
     if (openLens && engines.includes("lens")) {
       waitJob = openWaitJob("lens", `${labelPrefix} · Lens`);
@@ -146,6 +191,7 @@
     engineLabel = {},
   } = {}) => {
     const run = createRun({ engines, mode: "swarm", reverseSearchUrl, runQueueStatus, artifact: getArtifact() });
+    ensureRunOutcomeState({ run, engines });
     for (const engine of engines) {
       const wait = openWaitJob(engine, `${labelPrefix} · ${engineLabel[engine] || engine}`, { initialStatus: runQueueStatus.queued || "queued" });
       updateStatus?.(run, engine, {
@@ -174,6 +220,9 @@
 
   const api = {
     getRunEngines,
+    ensureRunOutcomeState,
+    updateRunOutcome,
+    summarizeRunOutcomes,
     updateRunQueueStatus,
     createEngineRunRecord,
     openTargetsForRun,

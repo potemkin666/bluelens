@@ -119,6 +119,15 @@ const elements = {
   actionLogOut: document.getElementById("actionLogOut"),
   btnRunDoctor: document.getElementById("btnRunDoctor"),
   doctorOut: document.getElementById("doctorOut"),
+  investigationSummary: document.getElementById("investigationSummary"),
+  investigationGraph: document.getElementById("investigationGraph"),
+  investigationLegend: document.getElementById("investigationLegend"),
+  investigationDetail: document.getElementById("investigationDetail"),
+  investigationTimeline: document.getElementById("investigationTimeline"),
+  investigationSonarOut: document.getElementById("investigationSonarOut"),
+  investigationSwarmOut: document.getElementById("investigationSwarmOut"),
+  btnRunSonar: document.getElementById("btnRunSonar"),
+  btnCopySwarmJson: document.getElementById("btnCopySwarmJson"),
   missionOutputOut: document.getElementById("missionOutputOut"),
   resultIntakeInput: document.getElementById("resultIntakeInput"),
   btnIngestResults: document.getElementById("btnIngestResults"),
@@ -177,6 +186,8 @@ const sortBatchItems =
       return dir * ((va || 0) - (vb || 0));
     });
   });
+const buildEntityGraph = appHelpers.buildEntityGraph || (() => ({ nodes: [], edges: [], summary: { reports: 0, file_nodes: 0, entity_nodes: 0, edges: 0 } }));
+const buildInvestigationTimeline = appHelpers.buildInvestigationTimeline || (() => ({ events: [], summary: { total: 0, ambiguous: 0, categories: {} } }));
 
 const runtimeConfig = BLUELENS_CONFIG || {};
 const CONFIG_META = runtimeConfig.meta || {};
@@ -299,6 +310,8 @@ const EXPORT_RUNTIME_CONFIG_SOURCE = JSON.stringify({
   },
 });
 const EXPORT_RUNTIME_CONFIG_FINGERPRINT = typeof sha256 === "function" ? sha256(EXPORT_RUNTIME_CONFIG_SOURCE) : EXPORT_RUNTIME_CONFIG_SOURCE;
+const DOCTOR_SONAR_POLL_MS = 45_000;
+let doctorSonarTimer = 0;
 
 const nonFatalErrorState = new Map();
 
@@ -445,6 +458,11 @@ const state = {
   lastOcrMode: "not_run",
   captureTimeInfo: null,
   doctorReport: null,
+  investigation: {
+    view: "graph",
+    selectedNodeKey: "",
+    lastModel: null,
+  },
 };
 
 const LAUNCHPAD_CORE = window.BLUELENS_LAUNCHPAD || {};
@@ -524,6 +542,330 @@ function logAction(event, detail = "") {
   state.actionLog.push({ ts, event: String(event || "event"), detail: detail ? String(detail) : "" });
   if (state.actionLog.length > 200) state.actionLog = state.actionLog.slice(-200);
   renderActionLog();
+  renderInvestigationSurface();
+}
+
+function deepClone(value) {
+  if (value == null) return value;
+  return JSON.parse(JSON.stringify(value));
+}
+
+function enrichReportForInvestigation(report) {
+  if (!report || typeof report !== "object") return null;
+  const cloned = deepClone(report);
+  cloned.file = cloned.file || {};
+  cloned.key_fields = cloned.key_fields || {};
+  cloned.source_reliability = cloned.source_reliability || {};
+  cloned.session_action_log = Array.isArray(cloned.session_action_log) ? cloned.session_action_log : [];
+  cloned.launchpad = cloned.launchpad || null;
+  cloned.result_intake = cloned.result_intake || null;
+  if (!cloned.key_fields.ocr_entities && cloned.ocr_text) {
+    cloned.key_fields.ocr_entities = OCR_PIPELINE?.extractEntities?.(String(cloned.ocr_text)) || null;
+  }
+  return cloned;
+}
+
+function getInvestigationReports({ currentReport = null } = {}) {
+  const seen = new Set();
+  const reports = [];
+  const addReport = (report) => {
+    const enriched = enrichReportForInvestigation(report);
+    if (!enriched) return;
+    const key = [
+      enriched.file?.name || "image",
+      enriched.hashes?.sha256 || enriched.hashes?.md5 || "",
+      enriched.generated_at || "",
+    ].join("|");
+    if (seen.has(key)) return;
+    seen.add(key);
+    reports.push(enriched);
+  };
+
+  if (currentReport) addReport(currentReport);
+  else if (state.file) addReport(buildOsintReport({ includeInvestigation: false }));
+  for (const report of state.batchReports || []) addReport(report);
+  for (const item of state.batchItems || []) addReport(item?.report);
+  return reports;
+}
+
+function getInvestigationSwarmRun(run = state.lastEngineRun || loadLastRun()) {
+  if (!run || typeof run !== "object") return null;
+  const cloned = deepClone(run);
+  return LAUNCHPAD_CORE.ensureRunOutcomeState?.({ run: cloned, engines: getRunEngines(cloned) }) || cloned;
+}
+
+function buildInvestigationModel({ currentReport = null } = {}) {
+  const reports = getInvestigationReports({ currentReport });
+  const graph = buildEntityGraph({ reports });
+  const swarmRun = getInvestigationSwarmRun();
+  const timeline = buildInvestigationTimeline({
+    reports,
+    actionLog: state.actionLog,
+    lastEngineRun: swarmRun,
+    resultIntake: state.resultIntake,
+  });
+  return {
+    generated_at: new Date().toISOString(),
+    reports,
+    graph,
+    timeline,
+    sonar: state.doctorReport || null,
+    swarm: swarmRun,
+    summary: {
+      reports: reports.length,
+      graph_nodes: graph.nodes.length,
+      graph_edges: graph.edges.length,
+      timeline_events: timeline.events.length,
+      swarm_engines: Object.keys(swarmRun?.targets || {}).length,
+    },
+  };
+}
+
+function getInvestigationNodeColor(type) {
+  const palette = {
+    file: "#d9fbff",
+    handle: "#8fe8ff",
+    email: "#ffe18a",
+    phone: "#ffb6df",
+    domain: "#a7f0ff",
+    url: "#c0d9ff",
+    gps: "#92ffce",
+    software: "#ffb27c",
+    camera: "#f2c9ff",
+  };
+  return palette[type] || "#d9fbff";
+}
+
+function layoutInvestigationGraph(nodes, width = 860, height = 480) {
+  const byType = new Map();
+  for (const node of nodes) {
+    const bucket = byType.get(node.type) || [];
+    bucket.push(node);
+    byType.set(node.type, bucket);
+  }
+  const orderedTypes = ["file", "handle", "email", "phone", "domain", "url", "gps", "software", "camera"];
+  const columns = orderedTypes.filter((type) => byType.has(type));
+  const positions = new Map();
+  columns.forEach((type, columnIndex) => {
+    const bucket = (byType.get(type) || []).slice().sort((a, b) => b.degree - a.degree || a.label.localeCompare(b.label));
+    const x = columns.length === 1 ? width / 2 : 110 + (columnIndex * (width - 220)) / Math.max(1, columns.length - 1);
+    const gap = height / (bucket.length + 1);
+    bucket.forEach((node, rowIndex) => {
+      const y = Math.max(42, Math.min(height - 42, gap * (rowIndex + 1)));
+      positions.set(node.key, { x, y });
+    });
+  });
+  return positions;
+}
+
+function renderInvestigationSummary(model) {
+  const el = elements.investigationSummary;
+  if (!el) return;
+  if (!model || !model.reports.length) {
+    el.textContent = "Load an image, run OCR, or build a batch to populate the investigation graph and timeline.";
+    return;
+  }
+  const ambiguous = Number(model.timeline?.summary?.ambiguous || 0);
+  const swarmEngines = Object.keys(model.swarm?.targets || {}).length;
+  el.textContent = [
+    `Investigation model: reports ${model.summary.reports} · graph nodes ${model.summary.graph_nodes} · links ${model.summary.graph_edges}`,
+    `Timeline events ${model.summary.timeline_events}${ambiguous ? ` · ambiguous ${ambiguous}` : ""} · swarm engines ${swarmEngines}`,
+  ].join("\n");
+}
+
+function renderInvestigationGraph(model) {
+  const svg = elements.investigationGraph;
+  const legend = elements.investigationLegend;
+  if (!svg || !legend) return;
+  const nodes = Array.isArray(model?.graph?.nodes) ? model.graph.nodes : [];
+  const edges = Array.isArray(model?.graph?.edges) ? model.graph.edges : [];
+  if (!nodes.length) {
+    svg.innerHTML = "";
+    legend.hidden = true;
+    return;
+  }
+  const positions = layoutInvestigationGraph(nodes);
+  const selectedKey = state.investigation?.selectedNodeKey || "";
+  const selectedNode = nodes.find((node) => node.key === selectedKey) || nodes.find((node) => node.type !== "file") || nodes[0];
+  if (selectedNode && state.investigation.selectedNodeKey !== selectedNode.key) state.investigation.selectedNodeKey = selectedNode.key;
+  const linked = new Set([selectedNode?.key, ...(selectedNode?.linked_keys || [])].filter(Boolean));
+  const edgeMarkup = edges
+    .map((edge) => {
+      const source = positions.get(edge.source);
+      const target = positions.get(edge.target);
+      if (!source || !target) return "";
+      const hot = selectedNode && (edge.source === selectedNode.key || edge.target === selectedNode.key);
+      return `<line x1="${source.x}" y1="${source.y}" x2="${target.x}" y2="${target.y}" stroke="${hot ? "rgba(255,225,138,0.95)" : "rgba(185,232,255,0.22)"}" stroke-width="${hot ? 2.4 : 1.1}" />`;
+    })
+    .join("");
+  const nodeMarkup = nodes
+    .map((node) => {
+      const pos = positions.get(node.key);
+      if (!pos) return "";
+      const color = getInvestigationNodeColor(node.type);
+      const selected = node.key === selectedNode?.key;
+      const active = linked.has(node.key);
+      const radius = node.type === "file" ? 18 : Math.max(11, Math.min(20, 10 + Math.round(node.file_count || 0)));
+      return `
+        <g class="investigation-node${selected ? " selected" : ""}${active ? " linked" : ""}" data-node-key="${escapeAttr(node.key)}" tabindex="0" role="button" aria-label="${escapeAttr(node.label)}">
+          <circle cx="${pos.x}" cy="${pos.y}" r="${radius}" fill="${color}" fill-opacity="${selected ? "0.96" : active ? "0.82" : "0.72"}" stroke="${selected ? "#fff2b0" : "rgba(255,255,255,0.35)"}" stroke-width="${selected ? 2.4 : 1.1}" />
+          <text x="${pos.x}" y="${pos.y + radius + 14}" text-anchor="middle" fill="rgba(244,251,255,0.92)" font-size="11">${escapeHtml(node.label.slice(0, 24))}</text>
+        </g>
+      `;
+    })
+    .join("");
+  svg.innerHTML = `<g>${edgeMarkup}${nodeMarkup}</g>`;
+  const legendTypes = Array.from(new Set(nodes.map((node) => node.type)));
+  legend.hidden = legendTypes.length === 0;
+  legend.innerHTML = legendTypes.map((type) => `<span class="chip" style="border-color:${escapeAttr(getInvestigationNodeColor(type))};">${escapeHtml(type)}</span>`).join("");
+}
+
+function renderInvestigationDetail(model) {
+  const el = elements.investigationDetail;
+  if (!el) return;
+  const nodes = Array.isArray(model?.graph?.nodes) ? model.graph.nodes : [];
+  const edges = Array.isArray(model?.graph?.edges) ? model.graph.edges : [];
+  if (!nodes.length) {
+    el.textContent = "Select a node to inspect linked files, evidence counts, and provenance.";
+    return;
+  }
+  const selectedKey = state.investigation?.selectedNodeKey || nodes[0].key;
+  const node = nodes.find((entry) => entry.key === selectedKey) || nodes[0];
+  const linkedNodes = (node.linked_keys || [])
+    .map((key) => nodes.find((entry) => entry.key === key))
+    .filter(Boolean)
+    .slice(0, 12);
+  const linkedEdges = edges.filter((edge) => edge.source === node.key || edge.target === node.key).slice(0, 8);
+  const lines = [
+    `${node.label} · ${node.type}`,
+    `Evidence ${node.evidence_count} · files ${node.file_count} · degree ${node.degree}`,
+    "",
+    "Linked nodes:",
+    ...(linkedNodes.length ? linkedNodes.map((entry) => `- ${entry.label} (${entry.type}) · files ${entry.file_count}`) : ["- —"]),
+    "",
+    "Provenance:",
+    ...((node.provenance || []).slice(0, 10).map((entry) => `- ${entry.file_name || "report"} · ${entry.field || "field"} · ${entry.source || "source"}${entry.raw ? ` · ${entry.raw}` : ""}${entry.excerpt ? ` · ${entry.excerpt}` : ""}`) || ["- —"]),
+    "",
+    "Edges:",
+    ...(linkedEdges.length ? linkedEdges.map((edge) => `- ${edge.type} · evidence ${edge.evidence_count} · files ${edge.file_count}`) : ["- —"]),
+  ];
+  el.textContent = lines.join("\n");
+}
+
+function renderInvestigationTimeline(model) {
+  const el = elements.investigationTimeline;
+  if (!el) return;
+  const events = Array.isArray(model?.timeline?.events) ? model.timeline.events : [];
+  if (!events.length) {
+    el.textContent = "No chronology yet. Add source timing, OCR dates, or analyst actions to build the timeline.";
+    return;
+  }
+  const lines = [];
+  for (const event of events) {
+    const flag = event.ambiguous ? "⚠" : "•";
+    const file = event.file_name ? ` · ${event.file_name}` : "";
+    const detail = event.detail ? ` · ${event.detail}` : "";
+    lines.push(`${flag} ${event.time_label || "Unknown time"} · ${event.category} · ${event.label}${file}${detail}`);
+    lines.push(`  provenance: ${event.provenance || "unknown"}`);
+  }
+  el.textContent = lines.join("\n");
+}
+
+function renderDoctorSurface(report) {
+  const targets = [elements.doctorOut, elements.investigationSonarOut].filter(Boolean);
+  if (!targets.length) return;
+  const lines = [];
+  if (!report) {
+    lines.push("Running sonar…");
+  } else {
+    lines.push(`App: ${report.app_version || APP_VERSION} · schema ${report.schema_version || EXPORT_SCHEMA_VERSION}`);
+    lines.push(`Ping: ${report.server?.ping_ok ? "OK" : "FAIL"}${report.server?.node_version ? ` · Node ${report.server.node_version}` : ""}`);
+    lines.push(`Popup: ${report.popup?.ok ? "OK" : "BLOCKED"} · Storage: ${report.storage?.ok ? "OK" : "FAIL"}`);
+    lines.push(`Libraries: ${report.libs?.summary || "unknown"}`);
+    if (report.server?.recommended_upload_host) lines.push(`Best upload path: ${report.server.recommended_upload_host}`);
+    if (Array.isArray(report.server?.upload_reachability) && report.server.upload_reachability.length) {
+      lines.push("Upload reachability:");
+      for (const row of report.server.upload_reachability) {
+        lines.push(`- ${row.host}: ${row.reachable ? "OK" : "FAIL"}${row.status_code ? ` (${row.status_code})` : ""}${row.error ? ` · ${row.error}` : ""}`);
+      }
+    }
+    if (Array.isArray(report.server?.cdn_reachability) && report.server.cdn_reachability.length) {
+      lines.push("CDN reachability:");
+      for (const row of report.server.cdn_reachability) lines.push(`- ${row.name}: ${row.reachable ? "OK" : "FAIL"}${row.status_code ? ` (${row.status_code})` : ""}${row.error ? ` · ${row.error}` : ""}`);
+    }
+    if (Array.isArray(report.server?.engine_availability) && report.server.engine_availability.length) {
+      lines.push("Engine availability:");
+      for (const row of report.server.engine_availability) lines.push(`- ${row.engine}: ${row.reachable ? "OK" : "FAIL"}${row.status_code ? ` (${row.status_code})` : ""}${row.error ? ` · ${row.error}` : ""}`);
+    }
+    if (Array.isArray(report.server?.recent_upload_attempts) && report.server.recent_upload_attempts.length) {
+      lines.push("Recent upload attempts:");
+      for (const row of report.server.recent_upload_attempts.slice(0, 6)) lines.push(`- ${row.host}: ${row.ok ? "OK" : "FAIL"} · ${fmtMs(row.ms)}${row.err ? ` · ${row.err}` : ""}`);
+    }
+    if (report.server?.history?.upload_hosts && Object.keys(report.server.history.upload_hosts).length) {
+      lines.push("Host trends:");
+      for (const [host, stats] of Object.entries(report.server.history.upload_hosts)) {
+        lines.push(`- ${host}: ok ${stats.ok || 0} · fail ${stats.fail || 0} · fail-rate ${Math.round(Number(stats.fail_rate || 0) * 100)}% · avg ${fmtMs(stats.avg_ms)}`);
+      }
+    }
+  }
+  for (const target of targets) target.textContent = lines.join("\n");
+}
+
+function renderInvestigationSwarm(model) {
+  const el = elements.investigationSwarmOut;
+  if (!el) return;
+  const run = model?.swarm;
+  if (!run || !run.targets) {
+    el.textContent = "No launchpad or swarm run staged yet.";
+    if (elements.btnCopySwarmJson) elements.btnCopySwarmJson.disabled = true;
+    return;
+  }
+  const engines = getRunEngines(run);
+  const outcomeSummary = LAUNCHPAD_CORE.summarizeRunOutcomes?.({ run, engines }) || { pending: engines.length };
+  if (elements.btnCopySwarmJson) elements.btnCopySwarmJson.disabled = false;
+  el.innerHTML = `
+    <div class="swarm-summary">
+      <div>Mode: ${escapeHtml(run.mode || "launchpad")} · artifact ${escapeHtml(run.artifact || "original")} · engines ${engines.length}</div>
+      <div>Outcomes: ${Object.entries(outcomeSummary).map(([key, value]) => `${escapeHtml(key)} ${escapeHtml(String(value))}`).join(" · ")}</div>
+    </div>
+    <div class="swarm-grid">
+      ${engines.map((engine) => {
+        const queue = run.queue?.[engine] || {};
+        const outcome = run.outcomes?.[engine] || {};
+        const disposition = outcome.disposition || "pending";
+        return `
+          <div class="swarm-card ${escapeAttr(queue.status || disposition)}" data-swarm-engine="${escapeAttr(engine)}">
+            <div class="swarm-card-head">
+              <strong>${escapeHtml(ENGINE_LABEL[engine] || engine)}</strong>
+              <span>${escapeHtml(queue.status || "idle")}</span>
+            </div>
+            <div class="swarm-card-meta">${escapeHtml(queue.detail || "No queue detail recorded.")}</div>
+            <label class="field">
+              <span class="field-label">Disposition</span>
+              <select class="select" data-swarm-disposition="${escapeAttr(engine)}">
+                ${["pending", "reviewed", "useful", "dead_end", "blocked", "retry_later"].map((value) => `<option value="${escapeAttr(value)}" ${value === disposition ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}
+              </select>
+            </label>
+            <label class="field">
+              <span class="field-label">Notes</span>
+              <textarea class="input textarea swarm-notes" rows="2" data-swarm-notes="${escapeAttr(engine)}" placeholder="What this engine showed, blocked on, or needs next.">${escapeHtml(outcome.notes || "")}</textarea>
+            </label>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderInvestigationSurface() {
+  const model = buildInvestigationModel();
+  state.investigation.lastModel = model;
+  renderInvestigationSummary(model);
+  renderInvestigationGraph(model);
+  renderInvestigationDetail(model);
+  renderInvestigationTimeline(model);
+  renderDoctorSurface(state.doctorReport);
+  renderInvestigationSwarm(model);
 }
 
 function appendReviewEntry(listName, entry, max = 400) {
@@ -574,6 +916,7 @@ function updateSourceInfoField(field, value, { source = "manual", note = "" } = 
       note,
     }),
   );
+  renderInvestigationSurface();
   return true;
 }
 
@@ -794,6 +1137,7 @@ function renderMissionOutput() {
     <div class="mission-summary">${escapeHtml(mission.summary || "")}</div>
     ${cards}
   `;
+  renderInvestigationSurface();
 }
 
 function renderResultIntake() {
@@ -834,6 +1178,7 @@ function renderResultIntake() {
   `;
   if (elements.btnClearResults) elements.btnClearResults.disabled = false;
   if (elements.btnCopyResultsJson) elements.btnCopyResultsJson.disabled = false;
+  renderInvestigationSurface();
 }
 
 function setMissionOutput(output) {
@@ -1582,6 +1927,7 @@ function reset() {
   setStatusLine("");
   elements.btnTogglePretty.textContent = "Pretty: On";
   renderOnboardingStrip();
+  renderInvestigationSurface();
 
   try {
     document.dispatchEvent(new Event("osint:file-changed"));
@@ -1615,6 +1961,7 @@ function persistLaunchpadRun(run) {
   state.lastEngineRun = run || null;
   saveLastRun(run || null);
   renderEngineLaunchpad(run || null);
+  renderInvestigationSurface();
 }
 
 function openTargetsForRun(run, engines) {
@@ -1977,6 +2324,7 @@ function renderBatchDashboard() {
   const items = Array.isArray(state.batchItems) ? state.batchItems.filter((x) => x?.report) : [];
   if (items.length === 0) {
     el.textContent = "—";
+    renderInvestigationSurface();
     return;
   }
 
@@ -2253,6 +2601,7 @@ function renderBatchDashboard() {
       renderBatchDashboard();
     };
   }
+  renderInvestigationSurface();
 }
 
 async function fileToUploadForBatch(file) {
@@ -3562,27 +3911,17 @@ function buildExportMetadata({ ocrMode = state.lastOcrMode || "not_run", ocrLang
 }
 
 function renderDoctorReport(report) {
-  const el = elements.doctorOut;
-  if (!el) return;
-  if (!report) {
-    el.textContent = "—";
-    return;
-  }
-  const lines = [];
-  lines.push(`App: ${report.app_version || APP_VERSION} · schema ${report.schema_version || EXPORT_SCHEMA_VERSION}`);
-  lines.push(`Ping: ${report.server?.ping_ok ? "OK" : "FAIL"}${report.server?.node_version ? ` · Node ${report.server.node_version}` : ""}`);
-  lines.push(`Popup: ${report.popup?.ok ? "OK" : "BLOCKED"} · Storage: ${report.storage?.ok ? "OK" : "FAIL"}`);
-  lines.push(`Libraries: ${report.libs?.summary || "unknown"}`);
-  if (Array.isArray(report.server?.upload_reachability) && report.server.upload_reachability.length) {
-    lines.push(`Upload reachability:`);
-    for (const row of report.server.upload_reachability) {
-      lines.push(`- ${row.host}: ${row.reachable ? "OK" : "FAIL"}${row.status_code ? ` (${row.status_code})` : ""}${row.error ? ` · ${row.error}` : ""}`);
-    }
-  }
-  el.textContent = lines.join("\n");
+  renderDoctorSurface(report);
 }
 
-async function runDoctorChecks() {
+function startDoctorSonarPolling() {
+  if (doctorSonarTimer) window.clearInterval(doctorSonarTimer);
+  doctorSonarTimer = window.setInterval(() => {
+    void runDoctorChecks({ quietStatus: true });
+  }, DOCTOR_SONAR_POLL_MS);
+}
+
+async function runDoctorChecks({ quietStatus = false } = {}) {
   const libs = {
     exifr: Boolean(window.exifr),
     sha256: Boolean(window.sha256),
@@ -3620,10 +3959,25 @@ async function runDoctorChecks() {
       ping_ok: true,
       node_version: parsed.node_version || null,
       upload_reachability: Array.isArray(parsed.upload_reachability) ? parsed.upload_reachability : [],
+      cdn_reachability: Array.isArray(parsed.cdn_reachability) ? parsed.cdn_reachability : [],
+      engine_availability: Array.isArray(parsed.engine_availability) ? parsed.engine_availability : [],
+      recent_upload_attempts: Array.isArray(parsed.recent_upload_attempts) ? parsed.recent_upload_attempts : [],
+      recommended_upload_host: parsed.recommended_upload_host || "",
+      history: parsed.history && typeof parsed.history === "object" ? parsed.history : {},
       error: "",
     };
   } catch (error) {
-    server = { ping_ok: false, node_version: null, upload_reachability: [], error: error?.message || "doctor unavailable" };
+    server = {
+      ping_ok: false,
+      node_version: null,
+      upload_reachability: [],
+      cdn_reachability: [],
+      engine_availability: [],
+      recent_upload_attempts: [],
+      recommended_upload_host: "",
+      history: {},
+      error: error?.message || "doctor unavailable",
+    };
   }
 
   state.doctorReport = {
@@ -3642,6 +3996,8 @@ async function runDoctorChecks() {
   state.localServerOnline = Boolean(server.ping_ok);
   renderOnboardingStrip();
   renderDoctorReport(state.doctorReport);
+  renderInvestigationSurface();
+  if (!quietStatus) setStatusLine(server.ping_ok ? "Doctor sonar refreshed" : `Doctor sonar: ${server.error || "unavailable"}`);
 }
 
 function updateKeyFields(exifObj) {
@@ -4005,11 +4361,22 @@ function extractPivotsFromReport(report) {
   return Array.from(new Set(pivots)).slice(0, 8);
 }
 
-function buildOsintReport() {
+function buildInvestigationExport({ currentReport = null } = {}) {
+  const model = buildInvestigationModel({ currentReport });
+  return {
+    generated_at: model.generated_at,
+    summary: model.summary,
+    graph: model.graph,
+    timeline: model.timeline,
+    swarm: model.swarm,
+  };
+}
+
+function buildOsintReport({ includeInvestigation = true } = {}) {
   const keyFields = extractKeyFieldsObj(state.exif);
   const exportMetadata = buildExportMetadata();
   const upload = buildUploadLifecycleMeta();
-  return {
+  const report = {
     schema_version: EXPORT_SCHEMA_VERSION,
     app_version: APP_VERSION,
     generated_at: new Date().toISOString(),
@@ -4065,10 +4432,13 @@ function buildOsintReport() {
           ts: state.lastEngineRun.ts || null,
           mode: state.lastEngineRun.mode || null,
           artifact: state.lastEngineRun.artifact || null,
+          plan: state.lastEngineRun.plan ? { ...state.lastEngineRun.plan } : null,
           targets: state.lastEngineRun.targets ? { ...state.lastEngineRun.targets } : null,
+          chosen: state.lastEngineRun.chosen ? { ...state.lastEngineRun.chosen } : null,
           opened: state.lastEngineRun.opened ? { ...state.lastEngineRun.opened } : null,
           blocked: state.lastEngineRun.blocked ? { ...state.lastEngineRun.blocked } : null,
           queue: state.lastEngineRun.queue ? { ...state.lastEngineRun.queue } : null,
+          outcomes: state.lastEngineRun.outcomes ? deepClone(state.lastEngineRun.outcomes) : null,
         }
       : null,
     mission_output: state.missionOutput
@@ -4094,6 +4464,8 @@ function buildOsintReport() {
         }
       : null,
   };
+  if (includeInvestigation) report.investigation = buildInvestigationExport({ currentReport: report });
+  return report;
 }
 
 function extractKeyFieldsObj(exifObj) {
@@ -4249,6 +4621,7 @@ async function downloadEvidencePack() {
     launchpad: report.launchpad,
     source_reliability: report.source_reliability,
     session_action_log: report.session_action_log,
+    investigation: report.investigation,
   };
   const mtime = Math.floor(new Date(report.generated_at || Date.now()).getTime() / 1000);
   const notes = [
@@ -4439,6 +4812,7 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
       elements.ocrOut.textContent = text || "No text detected.";
       renderOcrEntities(text);
       renderOcrLangHint(text);
+      renderInvestigationSurface();
       elements.btnCopyOcr.disabled = !text;
       setOcrStatus("Ready");
       if (text) pulseRadar("ocr");
@@ -4562,6 +4936,7 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
     elements.ocrOut.textContent = finalText ? `${header}\n\n${finalText}` : `${header}\n\nNo text detected.`;
     renderOcrEntities(finalText);
     renderOcrLangHint(finalText);
+    renderInvestigationSurface();
     elements.btnCopyOcr.disabled = !finalText;
     setOcrStatus("Ready");
     if (finalText) pulseRadar("ocr");
@@ -4689,6 +5064,7 @@ async function analyzeFile(file) {
   logAction("image_loaded", `${file.name || "image"} · local review ready`);
   setStatusLine("Local review ready. Uploads start only when you choose a launch action.");
   renderOnboardingStrip();
+  renderInvestigationSurface();
 }
 
 function clearCompare() {
@@ -5336,7 +5712,13 @@ function setupActions() {
   elements.btnDownloadBatch.addEventListener("click", () => {
     if (!state.batchReports || state.batchReports.length === 0) return;
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    downloadJson(state.batchReports, `osint_reports_${ts}.json`);
+    const reports = state.batchReports.map((report) => {
+      const cloned = enrichReportForInvestigation(report);
+      if (!cloned) return report;
+      cloned.investigation = buildInvestigationExport({ currentReport: cloned });
+      return cloned;
+    });
+    downloadJson(reports, `osint_reports_${ts}.json`);
     logAction("batch_export_downloaded", `${state.batchReports.length} reports`);
   });
 
@@ -5555,6 +5937,80 @@ function setupHudDrag() {
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp, true);
   });
+}
+
+function setInvestigationView(view = "graph") {
+  const nextView = String(view || "graph");
+  state.investigation.view = nextView;
+  const buttons = Array.from(document.querySelectorAll("[data-investigation-view]"));
+  const panels = Array.from(document.querySelectorAll("[data-investigation-panel]"));
+  for (const button of buttons) button.classList.toggle("active", button.getAttribute("data-investigation-view") === nextView);
+  for (const panel of panels) {
+    const on = panel.getAttribute("data-investigation-panel") === nextView;
+    panel.hidden = !on;
+    panel.classList.toggle("active", on);
+  }
+}
+
+function setupInvestigationSurface() {
+  setInvestigationView(state.investigation.view || "graph");
+
+  document.querySelectorAll("[data-investigation-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      setInvestigationView(button.getAttribute("data-investigation-view") || "graph");
+      if ((button.getAttribute("data-investigation-view") || "") === "sonar") void runDoctorChecks({ quietStatus: true });
+    });
+  });
+
+  elements.investigationGraph?.addEventListener("click", (event) => {
+    const target = event.target?.closest?.("[data-node-key]");
+    const key = target?.getAttribute?.("data-node-key");
+    if (!key) return;
+    state.investigation.selectedNodeKey = key;
+    renderInvestigationSurface();
+  });
+
+  elements.investigationGraph?.addEventListener("keydown", (event) => {
+    if (!["Enter", " "].includes(event.key)) return;
+    const target = event.target?.closest?.("[data-node-key]");
+    const key = target?.getAttribute?.("data-node-key");
+    if (!key) return;
+    event.preventDefault();
+    state.investigation.selectedNodeKey = key;
+    renderInvestigationSurface();
+  });
+
+  elements.btnRunSonar?.addEventListener("click", async () => {
+    await runDoctorChecks();
+    setStatus("Sonar updated");
+  });
+
+  elements.btnCopySwarmJson?.addEventListener("click", async () => {
+    const model = state.investigation.lastModel || buildInvestigationModel();
+    if (!model.swarm) return;
+    await copyText(JSON.stringify(model.swarm, null, 2));
+    setStatus("Copied swarm JSON");
+  });
+
+  elements.investigationSwarmOut?.addEventListener("change", (event) => {
+    const engine = event.target?.getAttribute?.("data-swarm-disposition");
+    if (!engine) return;
+    const run = state.lastEngineRun || loadLastRun();
+    if (!run) return;
+    LAUNCHPAD_CORE.updateRunOutcome?.({ run, engine, patch: { disposition: event.target.value || "pending" } });
+    persistLaunchpadRun(run);
+  });
+
+  elements.investigationSwarmOut?.addEventListener("input", (event) => {
+    const engine = event.target?.getAttribute?.("data-swarm-notes");
+    if (!engine) return;
+    const run = state.lastEngineRun || loadLastRun();
+    if (!run) return;
+    LAUNCHPAD_CORE.updateRunOutcome?.({ run, engine, patch: { notes: event.target.value || "" } });
+    persistLaunchpadRun(run);
+  });
+
+  renderInvestigationSurface();
 }
 
 function setupTabs() {
@@ -5858,9 +6314,11 @@ renderOnboardingStrip();
 validateLibs();
 void checkLocalServerHint();
 void runDoctorChecks();
+startDoctorSonarPolling();
 setupFx();
 setupHudDrag();
 setupTabs();
+setupInvestigationSurface();
 setupCommandPalette();
 setupCursorBubbles();
 setupButtonRipples();

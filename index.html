@@ -177,6 +177,7 @@
           <button class="tab" type="button" role="tab" aria-selected="false" data-tab="signals">Signals</button>
           <button class="tab" type="button" role="tab" aria-selected="false" data-tab="text">Text</button>
           <button class="tab" type="button" role="tab" aria-selected="false" data-tab="compare">Compare</button>
+          <button class="tab" type="button" role="tab" aria-selected="false" data-tab="investigation">Investigation</button>
         </div>
 
         <div class="tabpanels">
@@ -612,6 +613,61 @@
                   <div class="mono mono-box" id="cmpExplain">
                     dHash is a 64-bit perceptual heuristic. Lower Hamming distance means the thumbnails look closer, not that the files are proven to be the same image.
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="tabpanel" data-panel="investigation" role="tabpanel">
+            <div class="subcard hud" data-hud-key="investigation">
+              <div class="subcard-head">
+                <div class="subcard-title">Investigation</div>
+                <span class="pill pill-muted">graph + chronology</span>
+              </div>
+              <div class="hint">Correlate entities, inspect chronology, monitor source health, and track swarm outcomes from one shared investigation model.</div>
+              <div class="row row-tight investigation-subtabs" role="tablist" aria-label="Investigation views">
+                <button class="btn btn-secondary btn-small active" type="button" data-investigation-view="graph">Graph</button>
+                <button class="btn btn-secondary btn-small" type="button" data-investigation-view="timeline">Timeline</button>
+                <button class="btn btn-secondary btn-small" type="button" data-investigation-view="sonar">Sonar</button>
+                <button class="btn btn-secondary btn-small" type="button" data-investigation-view="swarm">Swarm</button>
+                <button id="btnRunSonar" class="btn btn-ghost btn-small" type="button" title="Refresh live source-health sonar">
+                  Refresh Sonar
+                </button>
+                <button id="btnCopySwarmJson" class="btn btn-ghost btn-small" type="button" disabled title="Copy the staged swarm run as JSON">
+                  Copy Swarm JSON
+                </button>
+              </div>
+              <div id="investigationSummary" class="mono mono-box">
+                Load an image, run OCR, or build a batch to populate the investigation graph and timeline.
+              </div>
+
+              <div class="investigation-view active" data-investigation-panel="graph">
+                <div class="investigation-grid">
+                  <div class="investigation-stage">
+                    <svg id="investigationGraph" class="investigation-graph" viewBox="0 0 860 480" role="img" aria-label="Investigation entity graph"></svg>
+                    <div id="investigationLegend" class="chips chips-mini" hidden></div>
+                  </div>
+                  <div id="investigationDetail" class="mono mono-box">
+                    Select a node to inspect linked files, evidence counts, and provenance.
+                  </div>
+                </div>
+              </div>
+
+              <div class="investigation-view" data-investigation-panel="timeline" hidden>
+                <div id="investigationTimeline" class="mono mono-box">
+                  No chronology yet. Add source timing, OCR dates, or analyst actions to build the timeline.
+                </div>
+              </div>
+
+              <div class="investigation-view" data-investigation-panel="sonar" hidden>
+                <div id="investigationSonarOut" class="mono mono-box">
+                  Running sonar…
+                </div>
+              </div>
+
+              <div class="investigation-view" data-investigation-panel="swarm" hidden>
+                <div id="investigationSwarmOut" class="mono mono-box">
+                  No launchpad or swarm run staged yet.
                 </div>
               </div>
             </div>

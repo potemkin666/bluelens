@@ -114,6 +114,20 @@ test("search tab is always the first panel shown on load", () => {
   assert.doesNotMatch(setupTabsBlock, /localStorage\.getItem\("ui:tab"\)/);
 });
 
+test("investigation surface exposes graph timeline sonar and swarm views", () => {
+  assert.match(indexHtml, /data-tab="investigation"/);
+  assert.match(indexHtml, /data-investigation-view="graph"/);
+  assert.match(indexHtml, /data-investigation-view="timeline"/);
+  assert.match(indexHtml, /data-investigation-view="sonar"/);
+  assert.match(indexHtml, /data-investigation-view="swarm"/);
+  assert.match(indexHtml, /id="investigationGraph"/);
+  assert.match(indexHtml, /id="investigationTimeline"/);
+  assert.match(indexHtml, /id="investigationSonarOut"/);
+  assert.match(indexHtml, /id="investigationSwarmOut"/);
+  assert.match(appJs, /function buildInvestigationModel\(/);
+  assert.match(appJs, /function renderInvestigationSurface\(/);
+});
+
 test("loading an image stays local until a launch action is chosen", () => {
   assert.doesNotMatch(appJs, /handleSearchAll\(\{ autoEnableShare: true, openLens: false \}\)/);
   assert.match(appJs, /window\.__osintActivateTab\?\.\("search"\);/);
@@ -199,6 +213,8 @@ test("reports export structured capture provenance and runtime metadata", () => 
   assert.match(appJs, /temporary_external_artifact_warning/);
   assert.match(appJs, /expected_expiry_window/);
   assert.match(appJs, /ocr_entity_review_entries/);
+  assert.match(appJs, /investigation: report\.investigation/);
+  assert.match(appJs, /report\.investigation = buildInvestigationExport/);
 });
 
 test("share provider UI is explicit about automatic host ranking", () => {
@@ -253,6 +269,9 @@ test("launchpad now renders queue-aware swarm cockpit state", () => {
   assert.match(appJs, /data-lp-open="pending"/);
   assert.match(appJs, /function prepareEngineSwarm\(/);
   assert.match(appJs, /ENGINE_SWARM_DELAY_MS/);
+  assert.match(indexHtml, /id="btnCopySwarmJson"/);
+  assert.match(appJs, /data-swarm-disposition/);
+  assert.match(appJs, /data-swarm-notes/);
   assert.match(waitHtml, /Uploading… \(check main tab\)\./);
 });
 

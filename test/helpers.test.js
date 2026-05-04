@@ -5,6 +5,8 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 
 const {
+  buildEntityGraph,
+  buildInvestigationTimeline,
   extractPivotsFromReport,
   hammingHex,
   parseDimensions,
@@ -53,6 +55,89 @@ test("extractPivotsFromReport keeps OCR handles to a single @ prefix", () => {
   assert.ok(!pivots.includes("@@alice"));
 });
 
+test("investigation graph keeps file/entity provenance and evidence counts", () => {
+  const graph = buildEntityGraph({
+    reports: [
+      {
+        file: { name: "alpha.png" },
+        ocr_text: "Contact @alpha via alpha@example.com on https://example.com/path",
+        key_fields: {
+          camera: "Test Camera",
+          software: "Editor X",
+          ocr_entities: {
+            handles: ["@alpha"],
+            emails: ["alpha@example.com"],
+            urls: ["https://example.com/path"],
+            phones: [],
+            details: {
+              handles: [{ value: "@alpha", offsets: [{ start: 8, end: 14, source: "handle_regex", raw: "@alpha", confidence: 0.94 }] }],
+              emails: [{ value: "alpha@example.com", offsets: [{ start: 19, end: 36, source: "email_regex", raw: "alpha@example.com", confidence: 0.99 }] }],
+              urls: [{ value: "https://example.com/path", offsets: [{ start: 40, end: 64, source: "url_regex", raw: "https://example.com/path", confidence: 0.99 }] }],
+            },
+          },
+        },
+        gps: { lat: 1.23456, lon: 2.34567 },
+      },
+      {
+        file: { name: "bravo.png" },
+        key_fields: {
+          ocr_entities: {
+            handles: ["@alpha"],
+            emails: [],
+            urls: [],
+            phones: [],
+            details: { handles: [{ value: "@alpha", offsets: [{ start: 0, end: 6, source: "handle_regex", raw: "@alpha", confidence: 0.94 }] }] },
+          },
+        },
+      },
+    ],
+  });
+
+  const handleNode = graph.nodes.find((node) => node.key === "handle:@alpha");
+  assert.equal(graph.summary.file_nodes, 2);
+  assert.ok(handleNode);
+  assert.equal(handleNode.file_count, 2);
+  assert.ok(handleNode.provenance[0].source);
+  assert.ok(graph.edges.some((edge) => edge.target === "handle:@alpha" && edge.file_count >= 1));
+});
+
+test("investigation timeline separates claimed capture, acquisition, export, and analyst actions", () => {
+  const timeline = buildInvestigationTimeline({
+    reports: [
+      {
+        file: { name: "alpha.png" },
+        generated_at: "2024-03-05T11:00:00Z",
+        source_reliability: { when_obtained: "2024-03-05T10:15" },
+        key_fields: {
+          captured_at: {
+            normalized: "2024-03-04T08:00:00",
+            display: "2024-03-04T08:00:00 (timezone unknown)",
+            has_timezone: false,
+          },
+          ocr_entities: {
+            dates: ["2024-03-04"],
+            details: {
+              dates: [{ value: "2024-03-04", offsets: [{ source: "date_iso", raw: "2024-03-04", confidence: 0.96 }] }],
+            },
+          },
+        },
+        session_action_log: [{ ts: "2024-03-05T11:05:00Z", event: "annotated", detail: "note" }],
+      },
+    ],
+    actionLog: [{ ts: "2024-03-05T11:06:00Z", event: "result_intake_ingested", detail: "2 lines" }],
+    lastEngineRun: { ts: Date.parse("2024-03-05T10:30:00Z"), mode: "swarm", targets: { lens: "x" } },
+    resultIntake: { last_ingested_at: "2024-03-05T11:07:00Z", entries: [{}, {}] },
+  });
+
+  const categories = new Set(timeline.events.map((event) => event.category));
+  assert.ok(categories.has("claimed_capture"));
+  assert.ok(categories.has("acquisition"));
+  assert.ok(categories.has("launch"));
+  assert.ok(categories.has("export"));
+  assert.ok(categories.has("analyst_action"));
+  assert.ok(timeline.events.some((event) => event.ambiguous));
+});
+
 test("local server exposes ping and durable wait-job handoff routes", async (t) => {
   const port = 8879;
   const cwd = path.resolve(__dirname, "..");
@@ -96,6 +181,11 @@ test("local server exposes ping and durable wait-job handoff routes", async (t) 
   assert.equal(doctorData.schema_version, "bluelens-report-v3");
   assert.match(doctorData.node_version, /^v\d+\./);
   assert.ok(Array.isArray(doctorData.upload_reachability));
+  assert.ok(Array.isArray(doctorData.cdn_reachability));
+  assert.ok(Array.isArray(doctorData.engine_availability));
+  assert.ok(Array.isArray(doctorData.recent_upload_attempts));
+  assert.equal(typeof doctorData.recommended_upload_host, "string");
+  assert.equal(typeof doctorData.history?.upload_hosts, "object");
 
   const jobId = `job-${Date.now()}`;
 
