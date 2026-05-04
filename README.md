@@ -38,6 +38,7 @@ If you prefer the direct command, `node server.js` is equivalent on supported No
 - OCR model files load from a CDN on first use.
 - Batch export currently omits failed files from the downloadable JSON bundle.
 - EXIF capture times are exported with raw value, normalized form, source field, and timezone ambiguity notes.
+- Server-side archive lookups default to the Internet Archive Wayback availability API and can be overridden with `BLUELENS_ARCHIVE_API_BASE`.
 - Run tests with `npm test`.
 - Open the in-app Help page for startup, privacy, troubleshooting, and defaults.
 
