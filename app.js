@@ -643,7 +643,7 @@ function parseResultIntakeRaw(raw, defaultEngine = "") {
     .filter(Boolean);
   const parsedEntries = [];
   for (const line of lines) {
-    const parts = line.includes("\t") ? line.split("\t").map((part) => part.trim()) : line.split(/\s+\|\s+/).map((part) => part.trim());
+    const parts = line.includes("\t") ? line.split("\t").map((part) => part.trim()) : line.split(/\s*\|\s*/).map((part) => part.trim());
     let engine = defaultEngine;
     let url = "";
     let title = "";
@@ -905,7 +905,8 @@ function getBatchEntityClusters(items = state.batchItems) {
   const addCluster = (type, value, fileName) => {
     const cleanValue = String(value || "").trim();
     if (!cleanValue) return;
-    const key = `${type}:${cleanValue.toLowerCase()}`;
+    const normalizedValue = cleanValue.toLowerCase();
+    const key = `${type}:${normalizedValue}`;
     const current = clusters.get(key) || { key, type, value: cleanValue, files: new Set(), count: 0 };
     current.files.add(fileName || "image");
     current.count += 1;
@@ -1650,7 +1651,7 @@ function openWaitJob(engine, label, { initialStatus = RUN_QUEUE_STATUS.uploading
   const waitUrl = `/wait.html?job=${encodeURIComponent(jobId)}&engine=${encodeURIComponent(engine)}&label=${encodeURIComponent(label || "")}`;
   const opened = Boolean(openUrl(waitUrl));
   publishWaitState(jobId, { engine, label: label || "", status: initialStatus });
-  logAction("wait_tab_opened", `${engine}${label ? ` (${label})` : ""}`);
+  logAction(opened ? "wait_tab_opened" : "wait_tab_blocked", `${engine}${label ? ` (${label})` : ""}`);
   return { jobId, opened };
 }
 
@@ -2284,7 +2285,7 @@ async function prepareLaunchpadRun({ engines = ENGINE_ORDER, openLens = true, mo
       detail: engine === "lens" && openLens ? "Wait tab can now open the provider target" : "Engine target prepared for manual intake",
     });
   }
-  if (waitJob?.jobId) publishWaitState(waitJob.jobId, { url });
+  if (waitJob?.jobId && waitJob.opened) publishWaitState(waitJob.jobId, { url });
   persistLaunchpadRun(run);
   return run;
 }
@@ -2310,7 +2311,7 @@ async function prepareEngineSwarm({ engines = ENGINE_ORDER, labelPrefix = "Swarm
     const engine = engines[index];
     const jobId = run.queue?.[engine]?.job_id || "";
     updateRunQueueStatus(run, engine, { status: RUN_QUEUE_STATUS.ready, detail: `Provider target staged (${index + 1}/${engines.length})` });
-    if (jobId) publishWaitState(jobId, { url });
+    if (jobId && !run.blocked?.[engine]) publishWaitState(jobId, { url });
     persistLaunchpadRun(run);
     if (index < engines.length - 1) await sleep(ENGINE_SWARM_DELAY_MS);
   }

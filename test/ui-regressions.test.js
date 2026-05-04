@@ -226,6 +226,11 @@ test("batch dashboard exposes aggregated entity follow-up controls", () => {
   assert.match(stylesCss, /\.entity-cluster-summary/);
 });
 
+test("result intake accepts loose pipe delimiters and tracks blocked wait tabs honestly", () => {
+  assert.ok(appJs.includes('split(/\\s*\\|\\s*/)'));
+  assert.match(appJs, /wait_tab_blocked/);
+});
+
 test("windows start script waits for ping before opening the browser", () => {
   assert.match(startCmd, /node server\.js/);
   assert.match(startCmd, /api\/ping/);
