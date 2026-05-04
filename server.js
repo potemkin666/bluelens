@@ -14,10 +14,21 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { URL } = require("url");
+const BLUELENS_CONFIG = require("./bluelens-config.js");
 
 const ROOT = __dirname;
-const PORT = process.env.PORT ? Number(process.env.PORT) : 8787;
-const WAIT_JOB_MAX_AGE_MS = 10 * 60 * 1000;
+const SERVER_CONFIG = BLUELENS_CONFIG.server || {};
+const WAIT_JOB_CONFIG = SERVER_CONFIG.waitJobs || {};
+const UPLOAD_CONFIG = SERVER_CONFIG.upload || {};
+const PORT = process.env.PORT ? Number(process.env.PORT) : SERVER_CONFIG.port || 8787;
+const WAIT_JOB_MAX_AGE_MS = WAIT_JOB_CONFIG.maxAgeMs || 10 * 60 * 1000;
+const WAIT_JOB_DEFAULT_TIMEOUT_MS = WAIT_JOB_CONFIG.defaultTimeoutMs || 25_000;
+const WAIT_JOB_MAX_TIMEOUT_MS = WAIT_JOB_CONFIG.maxTimeoutMs || 30_000;
+const WAIT_JOB_PRUNE_INTERVAL_MS = WAIT_JOB_CONFIG.pruneIntervalMs || 60 * 1000;
+const UPLOAD_TIMEOUT_MS = UPLOAD_CONFIG.timeoutMs || 35_000;
+const UPLOAD_HOSTS = Array.isArray(UPLOAD_CONFIG.hosts) ? UPLOAD_CONFIG.hosts : ["uguu", "catbox", "litterbox", "0x0"];
+const PREFERRED_HOSTS_BY_PURPOSE = UPLOAD_CONFIG.preferredHostsByPurpose || {};
+const LITTERBOX_EXPIRY = UPLOAD_CONFIG.litterboxExpiry || "72h";
 const WAIT_JOB_STORE_PATH = path.join(os.tmpdir(), "bluelens-wait-jobs-v1.json");
 
 // Durable wait-job handoff for wait tabs.
@@ -28,6 +39,21 @@ const WAIT_JOB_LISTENERS = new Map();
 // Upload host telemetry for auto-fastest selection.
 // host -> { ok: number, fail: number, avgMs: number }
 const UPLOAD_STATS = new Map();
+function reportServerIssue(scope, error, detail = null) {
+  const msg = error?.message || String(error || "unknown error");
+  if (detail) console.warn(`[BlueLens:${scope}] ${msg}`, detail);
+  else console.warn(`[BlueLens:${scope}] ${msg}`);
+}
+
+function safeJsonParse(txt, fallback, scope, detail = null) {
+  try {
+    return JSON.parse(txt);
+  } catch (error) {
+    if (scope) reportServerIssue(scope, error, detail);
+    return fallback;
+  }
+}
+
 function updateUploadStats(host, ok, ms) {
   const cur = UPLOAD_STATS.get(host) || { ok: 0, fail: 0, avgMs: 0 };
   if (ok) cur.ok += 1;
@@ -76,23 +102,23 @@ function persistWaitJobs() {
     const tmpPath = `${WAIT_JOB_STORE_PATH}.tmp`;
     fs.writeFileSync(tmpPath, JSON.stringify(Array.from(WAIT_JOBS.values()), null, 2), "utf8");
     fs.renameSync(tmpPath, WAIT_JOB_STORE_PATH);
-  } catch {
-    // ignore
+  } catch (error) {
+    reportServerIssue("wait-jobs.persist", error);
   }
 }
 
 function loadWaitJobs() {
   try {
     const raw = fs.readFileSync(WAIT_JOB_STORE_PATH, "utf8");
-    const parsed = JSON.parse(raw);
+    const parsed = safeJsonParse(raw, [], "wait-jobs.load.parse");
     const entries = Array.isArray(parsed) ? parsed : Object.values(parsed || {});
     for (const entry of entries) {
       const job = sanitizeWaitJob(entry);
       if (!job || job.expires_at <= Date.now()) continue;
       WAIT_JOBS.set(job.id, job);
     }
-  } catch {
-    // ignore
+  } catch (error) {
+    if (error?.code !== "ENOENT") reportServerIssue("wait-jobs.load", error);
   }
 }
 
@@ -108,7 +134,7 @@ function pruneWaitJobs(maxAgeMs = WAIT_JOB_MAX_AGE_MS) {
   }
   if (changed) persistWaitJobs();
 }
-setInterval(() => pruneWaitJobs(), 60 * 1000).unref?.();
+setInterval(() => pruneWaitJobs(), WAIT_JOB_PRUNE_INTERVAL_MS).unref?.();
 loadWaitJobs();
 
 function waitJobIdFromPath(pathname) {
@@ -171,7 +197,7 @@ function upsertWaitJob(jobId, patch = {}) {
   return next;
 }
 
-function waitForWaitJobUpdate(jobId, since = -1, timeoutMs = 25_000) {
+function waitForWaitJobUpdate(jobId, since = -1, timeoutMs = WAIT_JOB_DEFAULT_TIMEOUT_MS) {
   const current = getWaitJob(jobId);
   if (current && current.seq > since) return Promise.resolve(current);
 
@@ -271,15 +297,10 @@ async function handleUpload(req, res) {
     const uploadUguu = async () => {
       const fd = new FormData();
       fd.append("files[]", blob, filename);
-      const upstream = await fetchWithTimeout("https://uguu.se/upload.php", { method: "POST", body: fd }, 35_000);
+      const upstream = await fetchWithTimeout("https://uguu.se/upload.php", { method: "POST", body: fd }, UPLOAD_TIMEOUT_MS);
       const txt = await upstream.text();
       if (!upstream.ok) throw new Error(`uguu (${upstream.status})`);
-      let obj = null;
-      try {
-        obj = JSON.parse(txt);
-      } catch {
-        obj = null;
-      }
+      const obj = safeJsonParse(txt, null, "upload.uguu.parse", { host: "uguu" });
       const url = obj?.files?.[0]?.url;
       if (!url || !/^https?:\/\//i.test(url)) throw new Error("uguu (bad response)");
       return url;
@@ -289,7 +310,7 @@ async function handleUpload(req, res) {
       const fd = new FormData();
       fd.append("reqtype", "fileupload");
       fd.append("fileToUpload", blob, filename);
-      const upstream = await fetchWithTimeout("https://catbox.moe/user/api.php", { method: "POST", body: fd }, 35_000);
+      const upstream = await fetchWithTimeout("https://catbox.moe/user/api.php", { method: "POST", body: fd }, UPLOAD_TIMEOUT_MS);
       const txt = await upstream.text();
       if (!upstream.ok) throw new Error(`catbox (${upstream.status})`);
       const url = parseUrlFromText(txt);
@@ -300,12 +321,12 @@ async function handleUpload(req, res) {
     const uploadLitterbox = async () => {
       const fd = new FormData();
       fd.append("reqtype", "fileupload");
-      fd.append("time", "72h");
+      fd.append("time", LITTERBOX_EXPIRY);
       fd.append("fileToUpload", blob, filename);
       const upstream = await fetchWithTimeout(
         "https://litterbox.catbox.moe/resources/internals/api.php",
         { method: "POST", body: fd },
-        35_000,
+        UPLOAD_TIMEOUT_MS,
       );
       const txt = await upstream.text();
       if (!upstream.ok) throw new Error(`litterbox (${upstream.status})`);
@@ -317,7 +338,7 @@ async function handleUpload(req, res) {
     const upload0x0 = async () => {
       const fd = new FormData();
       fd.append("file", blob, filename);
-      const upstream = await fetchWithTimeout("https://0x0.st", { method: "POST", body: fd }, 35_000);
+      const upstream = await fetchWithTimeout("https://0x0.st", { method: "POST", body: fd }, UPLOAD_TIMEOUT_MS);
       const txt = await upstream.text();
       if (!upstream.ok) throw new Error(`0x0 (${upstream.status})`);
       const url = parseUrlFromText(txt);
@@ -325,17 +346,15 @@ async function handleUpload(req, res) {
       return url;
     };
 
-    const attempts = [
-      { name: "uguu", fn: uploadUguu },
-      { name: "catbox", fn: uploadCatbox },
-      { name: "litterbox", fn: uploadLitterbox },
-      { name: "0x0", fn: upload0x0 },
-    ];
+    const uploadFns = {
+      uguu: uploadUguu,
+      catbox: uploadCatbox,
+      litterbox: uploadLitterbox,
+      "0x0": upload0x0,
+    };
+    const attempts = UPLOAD_HOSTS.map((name) => ({ name, fn: uploadFns[name] })).filter((entry) => typeof entry.fn === "function");
 
-    const purposePreferredOrder =
-      purpose === "lens" || purpose === "google"
-        ? ["catbox", "0x0", "litterbox", "uguu"]
-        : ["uguu", "catbox", "0x0", "litterbox"];
+    const purposePreferredOrder = PREFERRED_HOSTS_BY_PURPOSE[purpose] || PREFERRED_HOSTS_BY_PURPOSE.default || UPLOAD_HOSTS;
 
     const purposeRank = (host) => {
       const i = purposePreferredOrder.indexOf(host);
@@ -385,6 +404,7 @@ async function handleUpload(req, res) {
       { "Content-Type": "application/json; charset=utf-8" },
     );
   } catch (e) {
+    reportServerIssue("upload.handle", e, { path: req.url });
     send(
       res,
       500,
@@ -403,7 +423,7 @@ async function handleWaitJobGet(req, res, u, jobId) {
   const sinceRaw = Number(u.searchParams.get("since"));
   const since = Number.isFinite(sinceRaw) ? sinceRaw : -1;
   const timeoutRaw = Number(u.searchParams.get("timeout"));
-  const timeoutMs = Number.isFinite(timeoutRaw) ? Math.max(0, Math.min(30_000, timeoutRaw)) : 25_000;
+  const timeoutMs = Number.isFinite(timeoutRaw) ? Math.max(0, Math.min(WAIT_JOB_MAX_TIMEOUT_MS, timeoutRaw)) : WAIT_JOB_DEFAULT_TIMEOUT_MS;
   const job = await waitForWaitJobUpdate(jobId, since, timeoutMs);
 
   if (job) {
@@ -422,11 +442,10 @@ async function handleWaitJobPost(req, res, jobId) {
     }
 
     const buf = await readBody(req, 1 * 1024 * 1024);
-    let obj = null;
-    try {
-      obj = JSON.parse(buf.toString("utf8"));
-    } catch {
-      obj = null;
+    const obj = safeJsonParse(buf.toString("utf8"), null, "wait-jobs.post.parse");
+    if (!obj || typeof obj !== "object") {
+      send(res, 400, JSON.stringify({ ok: false, error: "invalid_json" }), { "Content-Type": "application/json" });
+      return;
     }
 
     const patch = {
@@ -440,6 +459,7 @@ async function handleWaitJobPost(req, res, jobId) {
     const job = upsertWaitJob(jobId, patch);
     send(res, 200, JSON.stringify({ ok: true, job }), { "Content-Type": "application/json" });
   } catch (e) {
+    reportServerIssue("wait-jobs.post", e, { jobId });
     send(res, 500, JSON.stringify({ ok: false, error: e?.message || "unknown" }), { "Content-Type": "application/json" });
   }
 }

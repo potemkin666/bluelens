@@ -3,6 +3,7 @@
 /* global OCR_PIPELINE */
 /* global OSINT_LIB */
 /* global BLUELENS_HELPERS */
+/* global BLUELENS_CONFIG */
 
 const elements = {
   dropzone: document.getElementById("dropzone"),
@@ -92,6 +93,7 @@ const elements = {
   scanlineSlider: document.getElementById("scanlineSlider"),
   chromaticSlider: document.getElementById("chromaticSlider"),
   btnOverclock: document.getElementById("btnOverclock"),
+  chkFunMode: document.getElementById("chkFunMode"),
   chkChrome: document.getElementById("chkChrome"),
   chkHud: document.getElementById("chkHud"),
   btnOpenLens: document.getElementById("btnOpenLens"),
@@ -154,6 +156,113 @@ const sortBatchItems =
     });
   });
 
+const runtimeConfig = BLUELENS_CONFIG || {};
+const APP_CONFIG = runtimeConfig.app || {};
+const SERVER_CONFIG = runtimeConfig.server || {};
+const FX_CONFIG = runtimeConfig.fx || {};
+const STORAGE_KEYS = runtimeConfig.storageKeys || {};
+
+const ENGINE_ORDER = APP_CONFIG.engines?.order || ["lens", "bing", "tineye", "yandex", "google_images"];
+const ENGINE_LABEL = APP_CONFIG.engines?.labels || {
+  lens: "Lens",
+  bing: "Bing",
+  tineye: "TinEye",
+  yandex: "Yandex",
+  google_images: "Google",
+};
+const ENGINE_ICON = APP_CONFIG.engines?.icons || {
+  lens: "⌕",
+  bing: "⧉",
+  tineye: "◎",
+  yandex: "⟡",
+  google_images: "◉",
+};
+const BATCH_TOP_LENS_DEFAULT = APP_CONFIG.batch?.topLensDefault || 5;
+const BATCH_TOP_LENS_MAX = APP_CONFIG.batch?.topLensMax || 10;
+const BATCH_OCR_DEFAULT = APP_CONFIG.batch?.ocrDefault || 8;
+const BATCH_OCR_MAX = APP_CONFIG.batch?.ocrMax || 20;
+const OCR_FAST_PREPROCESS_MAX_DIM = APP_CONFIG.ocr?.fastPreprocessMaxDim || 1200;
+const OCR_BATCH_PREPROCESS_MAX_DIM = APP_CONFIG.ocr?.batchPreprocessMaxDim || 1400;
+const DHASH_BATCH_CLUSTER_THRESHOLD = APP_CONFIG.dhash?.batchClusterThreshold || 8;
+const DHASH_MUTATION_CLUSTER_THRESHOLD = APP_CONFIG.dhash?.mutationClusterThreshold || 10;
+const HOST_STATS_REFRESH_TIMEOUT_MS = APP_CONFIG.hostStats?.refreshTimeoutMs || 2000;
+const UPLOAD_PROXY_TIMEOUT_MS = APP_CONFIG.upload?.endpointTimeoutMs || 45000;
+const UPLOAD_PREFLIGHT_TIMEOUT_MS = APP_CONFIG.upload?.preflightTimeoutMs || 2500;
+const WAIT_JOB_DEFAULT_TIMEOUT_MS = SERVER_CONFIG.waitJobs?.defaultTimeoutMs || 25000;
+const LOCAL_SERVER_HINT_TIMEOUT_MS = APP_CONFIG.localServerHint?.timeoutMs || 900;
+const LOCAL_SERVER_HINT_MESSAGE = APP_CONFIG.localServerHint?.offlineMessage || "Local server offline — start `bluelens-start.cmd` (or `node server.js`) for Upload + Launchpad.";
+const WAIT_JOB_ENDPOINT_PREFIX = "/api/wait-jobs/";
+const SESSION_KEY = STORAGE_KEYS.session || "osint:session:v1";
+const LAST_RUN_KEY = STORAGE_KEYS.lastRun || "osint:lastRun:v1";
+const STORAGE_MISSION_PRESET_KEY = STORAGE_KEYS.missionPreset || "ui:missionPreset";
+const STORAGE_SHARE_SAFE_KEY = STORAGE_KEYS.shareSafe || "ui:shareSafe";
+const STORAGE_FX_SCANLINE_KEY = STORAGE_KEYS.fxScanline || "fx:scanline";
+const STORAGE_FX_CHROMATIC_KEY = STORAGE_KEYS.fxChromatic || "fx:chromatic";
+const STORAGE_FX_FUN_MODE_KEY = STORAGE_KEYS.fxFunMode || "fx:funMode";
+const STORAGE_FX_HUD_KEY = STORAGE_KEYS.fxHud || "fx:hud";
+const STORAGE_SKIN_CHROME_KEY = STORAGE_KEYS.skinChrome || "ui:skinChrome";
+const FX_SCANLINE_DEFAULT = Number.isFinite(FX_CONFIG.scanlineDefault) ? FX_CONFIG.scanlineDefault : 0;
+const FX_CHROMATIC_DEFAULT = Number.isFinite(FX_CONFIG.chromaticDefault) ? FX_CONFIG.chromaticDefault : 0;
+const FX_SCANLINE_FUN_DEFAULT = Number.isFinite(FX_CONFIG.scanlineFunDefault) ? FX_CONFIG.scanlineFunDefault : 0.18;
+const FX_CHROMATIC_FUN_DEFAULT = Number.isFinite(FX_CONFIG.chromaticFunDefault) ? FX_CONFIG.chromaticFunDefault : 0.7;
+const FX_SCANLINE_MAX = Number.isFinite(FX_CONFIG.scanlineMax) ? FX_CONFIG.scanlineMax : 0.35;
+const FX_CHROMATIC_MAX = Number.isFinite(FX_CONFIG.chromaticMax) ? FX_CONFIG.chromaticMax : 1.2;
+const FX_OVERCLOCK_SCANLINE = Number.isFinite(FX_CONFIG.overclockScanline) ? FX_CONFIG.overclockScanline : 0.28;
+const FX_OVERCLOCK_CHROMATIC = Number.isFinite(FX_CONFIG.overclockChromatic) ? FX_CONFIG.overclockChromatic : 1.05;
+const FX_FUN_MODE_DEFAULT = Boolean(FX_CONFIG.funModeDefault);
+const FX_HUD_DEFAULT = Boolean(FX_CONFIG.hudDefault);
+const FX_CHROME_DEFAULT = Boolean(FX_CONFIG.chromeDefault);
+
+const nonFatalErrorState = new Map();
+
+function reportNonFatalError(scope, error, { harmless = false, detail = null, dedupeMs = 0 } = {}) {
+  const msg = error?.message || String(error || "unknown error");
+  const key = `${scope}:${msg}`;
+  const now = Date.now();
+  if (dedupeMs > 0) {
+    const last = Number(nonFatalErrorState.get(key) || 0);
+    if (now - last < dedupeMs) return;
+    nonFatalErrorState.set(key, now);
+  }
+  const logger = harmless ? console.info : console.warn;
+  try {
+    if (detail) logger(`[BlueLens:${scope}] ${msg}`, detail);
+    else logger(`[BlueLens:${scope}] ${msg}`);
+  } catch {
+    // ignore
+  }
+}
+
+function readStorage(key, fallback, scope, storage = localStorage) {
+  try {
+    const value = storage.getItem(key);
+    return value == null ? fallback : value;
+  } catch (error) {
+    reportNonFatalError(scope, error, { harmless: true, detail: { key } });
+    return fallback;
+  }
+}
+
+function writeStorage(key, value, scope, storage = localStorage) {
+  try {
+    storage.setItem(key, value);
+    return true;
+  } catch (error) {
+    reportNonFatalError(scope, error, { harmless: true, detail: { key } });
+    return false;
+  }
+}
+
+function removeStorage(key, scope, storage = localStorage) {
+  try {
+    storage.removeItem(key);
+    return true;
+  } catch (error) {
+    reportNonFatalError(scope, error, { harmless: true, detail: { key } });
+    return false;
+  }
+}
+
 const state = {
   file: null,
   objectUrl: null,
@@ -168,6 +277,9 @@ const state = {
   uploadMeta: null,
   uiBusy: false,
   uploading: false,
+  funMode: FX_FUN_MODE_DEFAULT,
+  chromeSkinWanted: FX_CHROME_DEFAULT,
+  hudWanted: FX_HUD_DEFAULT,
   session: {
     started_at: Date.now(),
     uploads_ok: 0,
@@ -489,30 +601,14 @@ function reset() {
 
   try {
     document.dispatchEvent(new Event("osint:file-changed"));
-  } catch {
-    // ignore
+  } catch (error) {
+    reportNonFatalError("file-change.dispatch", error, { harmless: true, dedupeMs: 5000 });
   }
 }
 
 function openUrl(url) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
-
-const ENGINE_ORDER = ["lens", "bing", "tineye", "yandex", "google_images"];
-const ENGINE_LABEL = {
-  lens: "Lens",
-  bing: "Bing",
-  tineye: "TinEye",
-  yandex: "Yandex",
-  google_images: "Google",
-};
-const ENGINE_ICON = {
-  lens: "⌕",
-  bing: "⧉",
-  tineye: "◎",
-  yandex: "⟡",
-  google_images: "◉",
-};
 
 function renderEngineLaunchpad(run) {
   const el = elements.engineLinks;
@@ -615,53 +711,21 @@ function setupEngineLaunchpad() {
 }
 
 function setupSimpleUi() {
-  // Make "missions" the default control surface; tuck manual buttons into Advanced drawer.
-  try {
-    if (elements.btnRunMission) {
-      elements.btnRunMission.classList.remove("btn-secondary");
-      elements.btnRunMission.classList.add("btn");
-    }
+  if (!elements.missionPreset) return;
+  elements.missionPreset.hidden = false;
+  const saved = readStorage(STORAGE_MISSION_PRESET_KEY, "", "ui.missionPreset.read");
+  elements.missionPreset.value = saved || "share_search";
+  elements.missionPreset.addEventListener("change", () => {
+    writeStorage(STORAGE_MISSION_PRESET_KEY, elements.missionPreset.value || "share_search", "ui.missionPreset.write");
+  });
 
-    // Move Copy Report into the mission row (keeps IDs, reduces visible button clutter).
-    if (elements.missionRow && elements.btnCopyReport && elements.btnCopyReport.parentElement !== elements.missionRow) {
-      elements.missionRow.appendChild(elements.btnCopyReport);
-    }
-
-    // Move the manual action row into the Advanced drawer body.
-    const advBody = document.querySelector("details.drawer .drawer-body");
-    if (advBody && elements.manualRow && elements.manualRow.parentElement !== advBody) {
-      advBody.prepend(elements.manualRow);
-    }
-
-    // Default to the one thing most people want (persisted).
-    if (elements.missionPreset) {
-      elements.missionPreset.hidden = false;
-      let saved = "";
-      try {
-        saved = localStorage.getItem("ui:missionPreset") || "";
-      } catch {
-        saved = "";
-      }
-      elements.missionPreset.value = saved || "share_search";
-      elements.missionPreset.addEventListener("change", () => {
-        try {
-          localStorage.setItem("ui:missionPreset", elements.missionPreset.value || "share_search");
-        } catch {
-          // ignore
-        }
-      });
-    }
-
-    const syncRunLabel = () => {
-      if (!elements.btnRunMission || !elements.missionPreset) return;
-      const p = elements.missionPreset.value || "fast";
-      elements.btnRunMission.textContent = p === "share_search" ? "Upload + Launchpad" : p === "deep" ? "Deep OCR" : "Quick OCR";
-    };
-    elements.missionPreset?.addEventListener?.("change", syncRunLabel);
-    syncRunLabel();
-  } catch {
-    // ignore
-  }
+  const syncRunLabel = () => {
+    if (!elements.btnRunMission || !elements.missionPreset) return;
+    const p = elements.missionPreset.value || "fast";
+    elements.btnRunMission.textContent = p === "share_search" ? "Upload + Launchpad" : p === "deep" ? "Deep OCR" : "Quick OCR";
+  };
+  elements.missionPreset.addEventListener("change", syncRunLabel);
+  syncRunLabel();
 }
 
 function setupGlobalErrorSurface() {
@@ -689,15 +753,15 @@ function newWaitJobId() {
 function publishWaitState(jobId, data) {
   if (!jobId || !data) return;
   try {
-    void fetch(`/api/wait-jobs/${encodeURIComponent(jobId)}`, {
+    void fetch(`${WAIT_JOB_ENDPOINT_PREFIX}${encodeURIComponent(jobId)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(data),
-    }).catch(() => {
-      // ignore
+    }).catch((error) => {
+      reportNonFatalError("wait.publish.fetch", error, { detail: { jobId }, dedupeMs: 5000 });
     });
-  } catch {
-    // ignore
+  } catch (error) {
+    reportNonFatalError("wait.publish.init", error, { detail: { jobId }, dedupeMs: 5000 });
   }
 }
 
@@ -709,12 +773,15 @@ function openWaitJob(engine, label) {
   return jobId;
 }
 
+function isFunModeEnabled() {
+  return Boolean(state.funMode);
+}
+
 function pulseRadar(kind) {
   const el = elements.radar;
-  if (!el) return;
+  if (!el || !isFunModeEnabled()) return;
   el.classList.toggle("ocr", kind === "ocr");
   el.classList.remove("pulse");
-  // force reflow for restart
   void el.offsetWidth;
   el.classList.add("pulse");
   window.setTimeout(() => el.classList.remove("pulse"), 950);
@@ -737,47 +804,28 @@ function setShareControlsEnabled(fileLoaded) {
   }
 }
 
-const SESSION_KEY = "osint:session:v1";
-const LAST_RUN_KEY = "osint:lastRun:v1";
-
 function loadSession() {
   const fallback = { started_at: Date.now(), uploads_ok: 0, uploads_fail: 0, engines_opened: 0, last_host: "", last_ms: null };
-  try {
-    const raw = sessionStorage.getItem(SESSION_KEY) || "";
-    const obj = raw ? safeJsonParse(raw, fallback) : fallback;
-    if (!obj || typeof obj !== "object") return fallback;
-    return { ...fallback, ...obj };
-  } catch {
-    return fallback;
-  }
+  const raw = readStorage(SESSION_KEY, "", "session.read", sessionStorage);
+  const obj = raw ? safeJsonParse(raw, fallback, "session.parse", { harmless: true }) : fallback;
+  if (!obj || typeof obj !== "object") return fallback;
+  return { ...fallback, ...obj };
 }
 
 function loadLastRun() {
-  try {
-    const raw = sessionStorage.getItem(LAST_RUN_KEY) || "";
-    const obj = raw ? safeJsonParse(raw, null) : null;
-    if (!obj || typeof obj !== "object") return null;
-    if (!obj.targets || typeof obj.targets !== "object") return null;
-    return obj;
-  } catch {
-    return null;
-  }
+  const raw = readStorage(LAST_RUN_KEY, "", "launchpad.read", sessionStorage);
+  const obj = raw ? safeJsonParse(raw, null, "launchpad.parse", { harmless: true }) : null;
+  if (!obj || typeof obj !== "object") return null;
+  if (!obj.targets || typeof obj.targets !== "object") return null;
+  return obj;
 }
 
 function saveLastRun(run) {
-  try {
-    sessionStorage.setItem(LAST_RUN_KEY, JSON.stringify(run || null));
-  } catch {
-    // ignore
-  }
+  writeStorage(LAST_RUN_KEY, JSON.stringify(run || null), "launchpad.write", sessionStorage);
 }
 
 function saveSession() {
-  try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(state.session));
-  } catch {
-    // ignore
-  }
+  writeStorage(SESSION_KEY, JSON.stringify(state.session), "session.write", sessionStorage);
 }
 
 function fmtMs(ms) {
@@ -838,7 +886,7 @@ function triageSignalsForReport(report) {
   return { lead, gps, repost: Number.isFinite(repost) ? repost : null, software, lowRes, hasExif, ent, entCount, tags, w, h, mp };
 }
 
-function clusterBatchItems(items, threshold = 8) {
+function clusterBatchItems(items, threshold = DHASH_BATCH_CLUSTER_THRESHOLD) {
   const clusters = [];
   for (const it of items) {
     const dh = it?.report?.hashes?.dhash || "";
@@ -901,7 +949,7 @@ function renderBatchDashboard() {
     }
   }
 
-  const clusters = clusterBatchItems(items, 8);
+  const clusters = clusterBatchItems(items, DHASH_BATCH_CLUSTER_THRESHOLD);
 
   const applyFilters = () => {
     const q = String(state.batchUi.query || "").toLowerCase().trim();
@@ -1049,7 +1097,7 @@ function renderBatchDashboard() {
     }
     const openTop = e.target?.getAttribute?.("data-batch-open-top");
     if (openTop != null) {
-      void openBatchTopLens(5);
+      void openBatchTopLens(BATCH_TOP_LENS_DEFAULT);
     }
     const openSel = e.target?.getAttribute?.("data-batch-open-sel");
     if (openSel != null) {
@@ -1106,7 +1154,7 @@ async function fileToUploadForBatch(file) {
   return clean || file;
 }
 
-async function openBatchTopLens(n = 5) {
+async function openBatchTopLens(n = BATCH_TOP_LENS_DEFAULT) {
   if (state.uiBusy) return;
   const items = Array.isArray(state.batchItems) ? state.batchItems.filter((x) => x?.file && x?.report) : [];
   if (items.length === 0) return;
@@ -1116,7 +1164,7 @@ async function openBatchTopLens(n = 5) {
   const pick = items
     .slice()
     .sort((a, b) => (b.triage?.lead || 0) - (a.triage?.lead || 0))
-    .slice(0, Math.max(1, Math.min(10, n)));
+    .slice(0, Math.max(1, Math.min(BATCH_TOP_LENS_MAX, n)));
 
   const jobIds = [];
   for (let i = 0; i < pick.length; i += 1) {
@@ -1147,7 +1195,7 @@ async function openBatchSelectedLens() {
   const picked = items.filter((it) => Boolean(selected?.[it.id]));
   if (picked.length === 0) return;
 
-  const cap = Math.min(10, picked.length);
+  const cap = Math.min(BATCH_TOP_LENS_MAX, picked.length);
   const pick = picked.slice(0, cap);
 
   const jobIds = [];
@@ -1176,8 +1224,9 @@ async function ocrForBatchFile(file, lang) {
   const url = URL.createObjectURL(file);
   try {
     try {
-      enhanced = await OCR_PIPELINE.preprocessOtsu(url, { maxDim: 1400 });
-    } catch {
+      enhanced = await OCR_PIPELINE.preprocessOtsu(url, { maxDim: OCR_BATCH_PREPROCESS_MAX_DIM });
+    } catch (error) {
+      reportNonFatalError("ocr.batch.preprocess", error, { harmless: true, detail: { file: file?.name || "" }, dedupeMs: 5000 });
       enhanced = null;
     }
     const rr = await worker.recognize(enhanced || file);
@@ -1187,12 +1236,12 @@ async function ocrForBatchFile(file, lang) {
   }
 }
 
-async function runBatchOcrTopCandidates(n = 8) {
+async function runBatchOcrTopCandidates(n = BATCH_OCR_DEFAULT) {
   if (state.uiBusy) return;
   const items = Array.isArray(state.batchItems) ? state.batchItems.filter((x) => x?.file && x?.report) : [];
   if (items.length === 0) return;
 
-  const cap = Math.max(1, Math.min(20, Number(n) || 8));
+  const cap = Math.max(1, Math.min(BATCH_OCR_MAX, Number(n) || BATCH_OCR_DEFAULT));
   for (const it of items) if (!it.triage) it.triage = triageSignalsForReport(it.report);
 
   const pick = items
@@ -1313,7 +1362,7 @@ async function refreshHostStats() {
   if (!elements.hostStatsOut) return;
   try {
     const controller = new AbortController();
-    const t = window.setTimeout(() => controller.abort(), 2000);
+    const t = window.setTimeout(() => controller.abort(), HOST_STATS_REFRESH_TIMEOUT_MS);
     const res = await fetch("/api/upload-stats", { cache: "no-store", signal: controller.signal });
     window.clearTimeout(t);
     if (!res.ok) throw new Error("no server");
@@ -1340,7 +1389,8 @@ async function refreshHostStats() {
 
     elements.hostStatsOut.textContent = lines.join("\n");
     elements.hostStatsOut.hidden = false;
-  } catch {
+  } catch (error) {
+    reportNonFatalError("host-stats.refresh", error, { harmless: true, dedupeMs: 5000 });
     elements.hostStatsOut.hidden = true;
   }
 }
@@ -1352,7 +1402,7 @@ async function uploadViaLocalProxy(file, purpose = "") {
   // Prefer local proxy to avoid CORS limitations in browsers when posting to third-party hosts.
   const ab = await file.arrayBuffer();
   const controller = new AbortController();
-  const t = window.setTimeout(() => controller.abort(), 45_000);
+  const t = window.setTimeout(() => controller.abort(), UPLOAD_PROXY_TIMEOUT_MS);
   let res;
   try {
     res = await fetch("/api/upload", {
@@ -1365,23 +1415,19 @@ async function uploadViaLocalProxy(file, purpose = "") {
       body: ab,
       signal: controller.signal,
     });
-  } catch {
+  } catch (error) {
     window.clearTimeout(t);
     state.session = loadSession();
     state.session.uploads_fail += 1;
     saveSession();
     void refreshHostStats();
+    reportNonFatalError("upload.proxy.fetch", error, { detail: { purpose }, dedupeMs: 5000 });
     throw new Error("Local upload endpoint unreachable. Start `node server.js` and reload.");
   }
   window.clearTimeout(t);
 
   const txt = (await res.text()).trim();
-  let parsed = null;
-  try {
-    parsed = txt ? JSON.parse(txt) : null;
-  } catch {
-    parsed = null;
-  }
+  const parsed = txt ? safeJsonParse(txt, null, "upload.proxy.parse", { harmless: true, detail: { status: res.status } }) : null;
 
   if (!res.ok) {
     state.session = loadSession();
@@ -1456,11 +1502,12 @@ async function ensurePublicUrl({ purpose = "" } = {}) {
     // Quick preflight so we don't open a bunch of dead-end tabs.
     try {
       const controller = new AbortController();
-      const t = window.setTimeout(() => controller.abort(), 2500);
+      const t = window.setTimeout(() => controller.abort(), UPLOAD_PREFLIGHT_TIMEOUT_MS);
       const r = await fetch("/api/ping", { cache: "no-store", signal: controller.signal });
       window.clearTimeout(t);
       if (!r.ok) throw new Error("ping failed");
-    } catch {
+    } catch (error) {
+      reportNonFatalError("upload.preflight", error, { harmless: true, dedupeMs: 5000 });
       throw new Error("Local server not running. Start `node server.js` and reload.");
     }
 
@@ -1480,7 +1527,8 @@ async function ensurePublicUrl({ purpose = "" } = {}) {
         if (state.cleanBlob) {
           try {
             await computeCleanSignalsFromBlob(state.cleanBlob);
-          } catch {
+          } catch (error) {
+            reportNonFatalError("clean-signals.compute", error, { harmless: true, dedupeMs: 5000 });
             state.cleanSignals = null;
             renderCleanSignals();
           }
@@ -1744,7 +1792,7 @@ async function generateMutationFiles() {
   ];
 }
 
-function clusterByDhash(items, threshold = 10) {
+function clusterByDhash(items, threshold = DHASH_MUTATION_CLUSTER_THRESHOLD) {
   const clusters = [];
   for (const it of items) {
     const dh = it?.dhash || "";
@@ -1934,8 +1982,8 @@ function buildPivotSearchUrlsFromEntities(ent) {
       const parsed = new URL(u);
       const host = (parsed.hostname || "").replace(/^www\./i, "");
       if (host) domains.push(host);
-    } catch {
-      // ignore
+    } catch (error) {
+      reportNonFatalError("pivot.domains.parse", error, { harmless: true, detail: { value: u }, dedupeMs: 5000 });
     }
   }
 
@@ -2417,10 +2465,11 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 2_000);
 }
 
-function safeJsonParse(txt, fallback) {
+function safeJsonParse(txt, fallback, scope = "", { harmless = true, detail = null } = {}) {
   try {
     return JSON.parse(txt);
-  } catch {
+  } catch (error) {
+    if (scope) reportNonFatalError(scope, error, { harmless, detail });
     return fallback;
   }
 }
@@ -2908,7 +2957,7 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
     if (mode === "fast") {
       let enhanced = null;
       try {
-        enhanced = await OCR_PIPELINE.preprocessOtsu(state.objectUrl, { maxDim: 1200 });
+        enhanced = await OCR_PIPELINE.preprocessOtsu(state.objectUrl, { maxDim: OCR_FAST_PREPROCESS_MAX_DIM });
       } catch {
         enhanced = null;
       }
@@ -3285,8 +3334,9 @@ function setupDnD() {
           const ext = blob.type === "image/jpeg" ? "jpg" : blob.type === "image/webp" ? "webp" : "png";
           const name = `drop_${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
           await analyzeFile(new File([blob], name, { type: blob.type || "image/png" }));
-        } catch {
-          // ignore
+        } catch (error) {
+          reportNonFatalError("drop.data-url.ingest", error, { detail: { source: "data-url" }, dedupeMs: 5000 });
+          elements.exifOut.textContent = "Could not ingest the dropped image data. Save the image locally and choose the file instead.";
         }
         return;
       }
@@ -3303,7 +3353,8 @@ function setupDnD() {
         const ext = blob.type === "image/jpeg" ? "jpg" : blob.type === "image/webp" ? "webp" : "png";
         const name = `drop_${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
         await analyzeFile(new File([blob], name, { type: blob.type || "image/png" }));
-      } catch {
+      } catch (error) {
+        reportNonFatalError("drop.remote-url.ingest", error, { detail: { url }, dedupeMs: 5000 });
         elements.exifOut.textContent =
           "Could not ingest dragged image URL (likely CORS). Save the image locally and drop the file, or copy-paste the image.";
       } finally {
@@ -3336,8 +3387,8 @@ function setupActions() {
         try {
           await ensurePublicUrl();
           setStatus("Ready");
-        } catch {
-          // ensurePublicUrl already updated UI
+        } catch (error) {
+          reportNonFatalError("upload.retry", error, { harmless: true, dedupeMs: 5000 });
         }
       });
     });
@@ -3345,22 +3396,13 @@ function setupActions() {
 
   // Share-safe mode: use clean copy for uploads.
   if (elements.chkShareSafe) {
-    let saved = "0";
-    try {
-      saved = localStorage.getItem("ui:shareSafe") || "0";
-    } catch {
-      saved = "0";
-    }
+    const saved = readStorage(STORAGE_SHARE_SAFE_KEY, "0", "share-safe.read");
     state.shareSafe = saved === "1";
     elements.chkShareSafe.checked = state.shareSafe;
 
     elements.chkShareSafe.addEventListener("change", () => {
       state.shareSafe = Boolean(elements.chkShareSafe.checked);
-      try {
-        localStorage.setItem("ui:shareSafe", state.shareSafe ? "1" : "0");
-      } catch {
-        // ignore
-      }
+      writeStorage(STORAGE_SHARE_SAFE_KEY, state.shareSafe ? "1" : "0", "share-safe.write");
       // Changing artifacts invalidates the previously shared URL.
       if (state.shareEnabled) {
         state.publicUrl = "";
@@ -3515,7 +3557,7 @@ function setupActions() {
         }
       }
 
-      const clusters = clusterByDhash(muts.filter((m) => m.dhash), 10);
+      const clusters = clusterByDhash(muts.filter((m) => m.dhash), DHASH_MUTATION_CLUSTER_THRESHOLD);
       for (let ci = 0; ci < clusters.length; ci += 1) {
         for (const m of clusters[ci].items) m.cluster = ci + 1;
       }
@@ -3715,12 +3757,13 @@ async function checkLocalServerHint() {
   // Non-blocking hint: uploads/search need the local server.
   try {
     const controller = new AbortController();
-    const t = window.setTimeout(() => controller.abort(), 900);
+    const t = window.setTimeout(() => controller.abort(), LOCAL_SERVER_HINT_TIMEOUT_MS);
     const res = await fetch("/api/ping", { cache: "no-store", signal: controller.signal });
     window.clearTimeout(t);
     if (!res.ok) throw new Error("ping");
-  } catch {
-    setStatusLine("Local server offline — start `bluelens-start.cmd` (or `node server.js`) for Upload + Launchpad.");
+  } catch (error) {
+    reportNonFatalError("server-hint.ping", error, { harmless: true, dedupeMs: 5000 });
+    setStatusLine(LOCAL_SERVER_HINT_MESSAGE);
   }
 }
 
@@ -3730,72 +3773,114 @@ function setFxVars(scanline, chromatic) {
   if (typeof chromatic === "number") root.style.setProperty("--chromatic", String(chromatic));
 }
 
-function setupFx() {
-  const scanline = Number(localStorage.getItem("fx:scanline") || "0.18");
-  const chromatic = Number(localStorage.getItem("fx:chromatic") || "0.70");
-  const hudEnabled = localStorage.getItem("fx:hud") === "1";
+function setFxControlsEnabled(enabled) {
+  if (elements.scanlineSlider) elements.scanlineSlider.disabled = !enabled;
+  if (elements.chromaticSlider) elements.chromaticSlider.disabled = !enabled;
+  if (elements.btnOverclock) elements.btnOverclock.disabled = !enabled;
+  if (elements.chkChrome) elements.chkChrome.disabled = !enabled;
+  if (elements.chkHud) elements.chkHud.disabled = !enabled;
+}
 
-  if (elements.scanlineSlider) elements.scanlineSlider.value = String(Math.max(0, Math.min(0.35, scanline)));
-  if (elements.chromaticSlider) elements.chromaticSlider.value = String(Math.max(0, Math.min(1.2, chromatic)));
-  if (elements.chkHud) elements.chkHud.checked = hudEnabled;
+function resetHudLayout() {
+  document.querySelectorAll(".hud.floating").forEach((c) => {
+    c.classList.remove("floating");
+    c.style.removeProperty("left");
+    c.style.removeProperty("top");
+    c.style.removeProperty("width");
+  });
+}
 
+function applyChromeSkin() {
+  document.body.classList.toggle("skin-chrome", Boolean(state.chromeSkinWanted && isFunModeEnabled()));
+}
+
+function applyHudMode() {
+  const on = Boolean(state.hudWanted && isFunModeEnabled());
+  document.body.classList.toggle("hud-mode", on);
+  if (!on) {
+    resetHudLayout();
+    return;
+  }
+  document.querySelectorAll(".hud").forEach((card) => {
+    const key = card.getAttribute("data-hud-key");
+    if (!key) return;
+    const raw = readStorage(`hud:${key}`, "", `hud.${key}.read`);
+    if (!raw) return;
+    const p = safeJsonParse(raw, null, `hud.${key}.parse`, { harmless: true });
+    if (!p) return;
+    if (typeof p.left !== "number" || typeof p.top !== "number") return;
+    if (typeof p.width !== "number") return;
+    card.classList.add("floating");
+    card.style.left = `${p.left}px`;
+    card.style.top = `${p.top}px`;
+    card.style.width = `${p.width}px`;
+  });
+}
+
+function applyFunMode(enabled, { persist = true } = {}) {
+  state.funMode = Boolean(enabled);
+  document.body.classList.toggle("fun-mode", state.funMode);
+  const scanline = state.funMode ? Number(elements.scanlineSlider?.value || FX_SCANLINE_FUN_DEFAULT) : FX_SCANLINE_DEFAULT;
+  const chromatic = state.funMode ? Number(elements.chromaticSlider?.value || FX_CHROMATIC_FUN_DEFAULT) : FX_CHROMATIC_DEFAULT;
   setFxVars(scanline, chromatic);
-  document.body.classList.toggle("hud-mode", hudEnabled);
+  setFxControlsEnabled(state.funMode);
+  applyHudMode();
+  applyChromeSkin();
+  if (persist) writeStorage(STORAGE_FX_FUN_MODE_KEY, state.funMode ? "1" : "0", "fx.fun-mode.write");
+}
 
+function setupFx() {
+  const funMode = readStorage(STORAGE_FX_FUN_MODE_KEY, FX_FUN_MODE_DEFAULT ? "1" : "0", "fx.fun-mode.read") === "1";
+  const scanline = Number(readStorage(STORAGE_FX_SCANLINE_KEY, String(FX_SCANLINE_FUN_DEFAULT), "fx.scanline.read"));
+  const chromatic = Number(readStorage(STORAGE_FX_CHROMATIC_KEY, String(FX_CHROMATIC_FUN_DEFAULT), "fx.chromatic.read"));
+  state.hudWanted = readStorage(STORAGE_FX_HUD_KEY, FX_HUD_DEFAULT ? "1" : "0", "fx.hud.read") === "1";
+  state.chromeSkinWanted = readStorage(STORAGE_SKIN_CHROME_KEY, FX_CHROME_DEFAULT ? "1" : "0", "fx.chrome.read") === "1";
+
+  if (elements.chkFunMode) elements.chkFunMode.checked = funMode;
+  if (elements.scanlineSlider)
+    elements.scanlineSlider.value = String(Math.max(0, Math.min(FX_SCANLINE_MAX, Number.isFinite(scanline) ? scanline : FX_SCANLINE_FUN_DEFAULT)));
+  if (elements.chromaticSlider)
+    elements.chromaticSlider.value = String(Math.max(0, Math.min(FX_CHROMATIC_MAX, Number.isFinite(chromatic) ? chromatic : FX_CHROMATIC_FUN_DEFAULT)));
+  if (elements.chkHud) elements.chkHud.checked = state.hudWanted;
+  if (elements.chkChrome) elements.chkChrome.checked = state.chromeSkinWanted;
+
+  applyFunMode(funMode, { persist: false });
+
+  elements.chkFunMode?.addEventListener("change", () => {
+    applyFunMode(Boolean(elements.chkFunMode.checked));
+  });
   elements.scanlineSlider?.addEventListener("input", () => {
     const v = Number(elements.scanlineSlider.value);
-    setFxVars(v, null);
-    localStorage.setItem("fx:scanline", String(v));
+    writeStorage(STORAGE_FX_SCANLINE_KEY, String(v), "fx.scanline.write");
+    if (isFunModeEnabled()) setFxVars(v, null);
   });
 
   elements.chromaticSlider?.addEventListener("input", () => {
     const v = Number(elements.chromaticSlider.value);
-    setFxVars(null, v);
-    localStorage.setItem("fx:chromatic", String(v));
+    writeStorage(STORAGE_FX_CHROMATIC_KEY, String(v), "fx.chromatic.write");
+    if (isFunModeEnabled()) setFxVars(null, v);
   });
 
   elements.btnOverclock?.addEventListener("click", () => {
-    const s = 0.28;
-    const c = 1.05;
+    const s = FX_OVERCLOCK_SCANLINE;
+    const c = FX_OVERCLOCK_CHROMATIC;
     if (elements.scanlineSlider) elements.scanlineSlider.value = String(s);
     if (elements.chromaticSlider) elements.chromaticSlider.value = String(c);
-    setFxVars(s, c);
-    localStorage.setItem("fx:scanline", String(s));
-    localStorage.setItem("fx:chromatic", String(c));
+    writeStorage(STORAGE_FX_SCANLINE_KEY, String(s), "fx.scanline.write");
+    writeStorage(STORAGE_FX_CHROMATIC_KEY, String(c), "fx.chromatic.write");
+    if (!isFunModeEnabled() && elements.chkFunMode) elements.chkFunMode.checked = true;
+    applyFunMode(true);
   });
 
   elements.chkHud?.addEventListener("change", () => {
-    const on = Boolean(elements.chkHud.checked);
-    localStorage.setItem("fx:hud", on ? "1" : "0");
-    document.body.classList.toggle("hud-mode", on);
-    if (!on) {
-      // Snap everything back into layout
-      document.querySelectorAll(".hud.floating").forEach((c) => {
-        c.classList.remove("floating");
-        c.style.removeProperty("left");
-        c.style.removeProperty("top");
-        c.style.removeProperty("width");
-      });
-    } else {
-      // Restore saved positions
-      document.querySelectorAll(".hud").forEach((card) => {
-        const key = card.getAttribute("data-hud-key");
-        if (!key) return;
-        const raw = localStorage.getItem(`hud:${key}`);
-        if (!raw) return;
-        try {
-          const p = JSON.parse(raw);
-          if (typeof p.left !== "number" || typeof p.top !== "number") return;
-          if (typeof p.width !== "number") return;
-          card.classList.add("floating");
-          card.style.left = `${p.left}px`;
-          card.style.top = `${p.top}px`;
-          card.style.width = `${p.width}px`;
-        } catch {
-          // ignore
-        }
-      });
-    }
+    state.hudWanted = Boolean(elements.chkHud.checked);
+    writeStorage(STORAGE_FX_HUD_KEY, state.hudWanted ? "1" : "0", "fx.hud.write");
+    applyHudMode();
+  });
+  elements.chkChrome?.addEventListener("change", () => {
+    state.chromeSkinWanted = Boolean(elements.chkChrome.checked);
+    writeStorage(STORAGE_SKIN_CHROME_KEY, state.chromeSkinWanted ? "1" : "0", "fx.chrome.write");
+    applyChromeSkin();
   });
 }
 
@@ -3823,7 +3908,7 @@ function setupHudDrag() {
     const top = Number.parseFloat(card.style.top);
     const width = Number.parseFloat(card.style.width);
     if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width)) return;
-    localStorage.setItem(`hud:${key}`, JSON.stringify({ left, top, width }));
+    writeStorage(`hud:${key}`, JSON.stringify({ left, top, width }), `hud.${key}.write`);
   };
 
   document.addEventListener("pointerdown", (e) => {
@@ -3872,7 +3957,7 @@ function setupTabs() {
     for (const p of panels) {
       p.classList.toggle("active", p.getAttribute("data-panel") === name);
     }
-    localStorage.setItem("ui:tab", name);
+    writeStorage("ui:tab", name, "tabs.write");
   };
 
   window.__osintActivateTab = activate;
@@ -3887,6 +3972,7 @@ function setupTabs() {
 function setupCursorBubbles() {
   let last = 0;
   window.addEventListener("pointermove", (e) => {
+    if (!isFunModeEnabled()) return;
     const now = performance.now();
     if (now - last < 140) return;
     last = now;
@@ -3928,6 +4014,7 @@ function setupHoloTilt() {
   };
 
   card.addEventListener("pointermove", (e) => {
+    if (!isFunModeEnabled()) return;
     lastX = e.clientX;
     lastY = e.clientY;
     if (raf) return;
@@ -3946,6 +4033,7 @@ function setupButtonRipples() {
   document.addEventListener(
     "pointerdown",
     (e) => {
+      if (!isFunModeEnabled()) return;
       const btn = e.target?.closest?.(".btn");
       if (!btn) return;
       if (btn.disabled) return;
@@ -3966,27 +4054,7 @@ function setupButtonRipples() {
 }
 
 function setupChromeSkin() {
-  if (!elements.chkChrome) return;
-  const apply = (on) => {
-    document.body.classList.toggle("skin-chrome", Boolean(on));
-    try {
-      localStorage.setItem("ui:skinChrome", on ? "1" : "0");
-    } catch {
-      // ignore
-    }
-  };
-
-  let saved = "0";
-  try {
-    saved = localStorage.getItem("ui:skinChrome") || "0";
-  } catch {
-    saved = "0";
-  }
-  const on = saved === "1";
-  elements.chkChrome.checked = on;
-  apply(on);
-
-  elements.chkChrome.addEventListener("change", () => apply(elements.chkChrome.checked));
+  applyChromeSkin();
 }
 
 function setupCommandPalette() {
@@ -4131,6 +4199,7 @@ function setupCommandPalette() {
 }
 
 function triggerGlitterStorm(intensity = 52) {
+  if (!isFunModeEnabled()) return;
   if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const layer = document.createElement("div");
   layer.className = "glitter-storm";

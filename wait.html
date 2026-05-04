@@ -102,7 +102,11 @@
       </div>
     </div>
 
+    <script src="./bluelens-config.js"></script>
     <script>
+      const runtimeConfig = window.BLUELENS_CONFIG || {};
+      const waitJobTimeoutMs = runtimeConfig?.server?.waitJobs?.defaultTimeoutMs || 25000;
+      const waitDiagnostics = new Map();
       const params = new URLSearchParams(location.search);
       const jobId = params.get("job") || "";
       let engine = params.get("engine") || "";
@@ -115,6 +119,19 @@
       const link = document.getElementById("link");
 
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const reportWaitIssue = (scope, error, dedupeMs = 4000) => {
+        const msg = error?.message || String(error || "unknown error");
+        const key = `${scope}:${msg}`;
+        const now = Date.now();
+        const last = Number(waitDiagnostics.get(key) || 0);
+        if (now - last < dedupeMs) return;
+        waitDiagnostics.set(key, now);
+        try {
+          console.info(`[BlueLens:wait.${scope}] ${msg}`);
+        } catch {
+          // ignore
+        }
+      };
 
       const setHeading = (nextLabel) => {
         title.textContent = "";
@@ -197,11 +214,12 @@
         while (!stopped) {
           try {
             const r = await fetch(
-              `/api/wait-jobs/${encodeURIComponent(jobId)}?since=${encodeURIComponent(lastSeq)}&timeout=25000`,
+              `/api/wait-jobs/${encodeURIComponent(jobId)}?since=${encodeURIComponent(lastSeq)}&timeout=${encodeURIComponent(waitJobTimeoutMs)}`,
               { cache: "no-store" },
             );
             if (!r.ok) {
               if (r.status === 404) {
+                reportWaitIssue("not-found", new Error("wait job not yet created"));
                 setMessage("Waiting for local handoff…", true);
                 await sleep(500);
                 continue;
@@ -211,7 +229,8 @@
             const data = await r.json();
             if (applyJob(data?.job)) return;
             if (data?.timeout) setMessage("Still waiting for the upload job… reconnecting.", true);
-          } catch {
+          } catch (error) {
+            reportWaitIssue("poll", error);
             setMessage("Connection lost. Reconnecting…", true);
             await sleep(1000);
           }

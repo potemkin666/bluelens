@@ -5,6 +5,8 @@ const path = require("node:path");
 
 const indexHtml = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
 const appJs = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+const helpHtml = fs.readFileSync(path.join(__dirname, "..", "help.html"), "utf8");
+const stylesCss = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
 const setupTabsBlock = appJs.match(/function setupTabs\(\) \{[\s\S]*?\n\}/)?.[0] || "";
 
 test("mission preset selector stays reachable in the HTML", () => {
@@ -13,6 +15,13 @@ test("mission preset selector stays reachable in the HTML", () => {
   assert.match(indexHtml, />Quick OCR</);
   assert.match(indexHtml, />Deep OCR</);
   assert.match(indexHtml, />Upload \+ Launchpad</);
+});
+
+test("help button points to the rendered help page", () => {
+  assert.match(indexHtml, /href="\.\/help\.html"/);
+  assert.doesNotMatch(indexHtml, /href="\.\/README\.md"/);
+  assert.match(helpHtml, />BlueLens Help</);
+  assert.match(helpHtml, />Operator defaults</);
 });
 
 test("search-all UI is framed as link preparation, not automatic querying", () => {
@@ -25,6 +34,13 @@ test("search-all UI is framed as link preparation, not automatic querying", () =
 test("sharing copy matches the automatic upload flow", () => {
   assert.match(indexHtml, /Automatic launch uploads the image to generate a temporary public URL as soon as you choose a file\./);
   assert.doesNotMatch(indexHtml, /Enable one-click provider launcher/);
+});
+
+
+test("primary and secondary actions stay in a static order", () => {
+  assert.ok(indexHtml.indexOf('id="missionRow"') < indexHtml.indexOf('id="manualRow"'));
+  assert.doesNotMatch(appJs, /advBody\.prepend\(elements\.manualRow\)/);
+  assert.doesNotMatch(appJs, /appendChild\(elements\.btnCopyReport\)/);
 });
 
 test("landing UI stays focused on image search", () => {
@@ -55,6 +71,15 @@ test("command palette copy uses fixed UTF-8 text and row clicks run the clicked 
   assert.match(indexHtml, /placeholder="Type a command…"/);
   assert.match(indexHtml, />Enter • ↑\/↓ • Esc</);
   assert.match(appJs, /const chosen = list\[idx\];/);
+});
+
+
+test("operator theme is calm by default and fun mode is explicit", () => {
+  assert.match(indexHtml, /id="chkFunMode"/);
+  assert.match(appJs, /applyFunMode\(funMode, \{ persist: false \}\)/);
+  assert.match(stylesCss, /--scanline: 0;/);
+  assert.match(stylesCss, /--chromatic: 0;/);
+  assert.match(stylesCss, /body\.fun-mode \.bg-overlay/);
 });
 
 test("mutation lab copy is clearly framed as analyst review", () => {

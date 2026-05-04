@@ -30,6 +30,7 @@ Open:
 - Upload proxy uses multi-host failover (Uguu -> Catbox -> Litterbox -> 0x0).
 - "Prepare Engine Links" opens Lens first, then shows clickable provider links in-console for manual follow-up.
 - Run tests with `npm test`.
+- Open the in-app Help page for startup, privacy, troubleshooting, and defaults.
 
 ## Desktop icon (Windows)
 

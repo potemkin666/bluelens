@@ -29,9 +29,7 @@
       </div>
       <div class="header-actions">
         <button id="btnReset" class="btn btn-ghost" type="button" title="Clear everything.">Reset</button>
-        <a class="btn btn-ghost" href="./README.md" target="_blank" rel="noreferrer" title="Run instructions + notes."
-          >Help</a
-        >
+        <a class="btn btn-ghost" href="./help.html" title="Startup, privacy, troubleshooting, and defaults.">Help</a>
       </div>
     </header>
 
@@ -82,48 +80,55 @@
           </button>
         </div>
 
-        <div id="manualRow" class="row">
-          <button
-            id="btnSearchAll"
-            class="btn"
-            type="button"
-            disabled
-            data-ico="⌕"
-            title="Uploads once, opens Lens, and prepares manual links for the other providers."
-          >
-            Prepare Engine Links
-          </button>
-          <button
-            id="btnRunPass"
-            class="btn btn-secondary"
-            type="button"
-            disabled
-            data-ico="⚡"
-            title="Runs OCR and refreshes attribution/repost signals."
-          >
-            OSINT Pass
-          </button>
-          <button
-            id="btnCopyReport"
-            class="btn btn-ghost"
-            type="button"
-            disabled
-            data-ico="⎘"
-            title="Copies a human-readable report (Markdown + embedded JSON). Shift-click for JSON only."
-          >
-            Copy Report
-          </button>
-        </div>
+        <div class="action-stack" aria-label="Primary and secondary actions">
+          <div class="action-group action-group-primary">
+            <div class="field-label">Primary action</div>
+            <div id="missionRow" class="row row-tight">
+              <select id="missionPreset" class="select" disabled title="One mission = one run">
+                <option value="fast">Quick OCR</option>
+                <option value="deep">Deep OCR</option>
+                <option value="share_search">Upload + Launchpad</option>
+              </select>
+              <button id="btnRunMission" class="btn" type="button" disabled title="Runs the selected mission preset">Run</button>
+            </div>
+            <div class="hint">Choose the default workflow here, then run it without the layout shifting after load.</div>
+          </div>
 
-        <div id="missionRow" class="row row-tight">
-          <select id="missionPreset" class="select" disabled title="One mission = one run">
-            <option value="fast">Quick OCR</option>
-            <option value="deep">Deep OCR</option>
-            <option value="share_search">Upload + Launchpad</option>
-          </select>
-          <button id="btnRunMission" class="btn btn-secondary" type="button" disabled title="Runs the selected mission preset">
-            Run
-          </button>
+          <div class="action-group action-group-secondary">
+            <div class="field-label">Secondary actions</div>
+            <div id="manualRow" class="row row-tight">
+              <button
+                id="btnSearchAll"
+                class="btn btn-secondary"
+                type="button"
+                disabled
+                data-ico="⌕"
+                title="Uploads once, opens Lens, and prepares manual links for the other providers."
+              >
+                Prepare Engine Links
+              </button>
+              <button
+                id="btnRunPass"
+                class="btn btn-secondary"
+                type="button"
+                disabled
+                data-ico="⚡"
+                title="Runs OCR and refreshes attribution/repost signals."
+              >
+                OSINT Pass
+              </button>
+              <button
+                id="btnCopyReport"
+                class="btn btn-ghost"
+                type="button"
+                disabled
+                data-ico="⎘"
+                title="Copies a human-readable report (Markdown + embedded JSON). Shift-click for JSON only."
+              >
+                Copy Report
+              </button>
+            </div>
+          </div>
         </div>
 
         <div class="grid console-grid" aria-label="Quick facts">
@@ -271,18 +276,23 @@
                 <div class="subcard hud" data-hud-key="fx">
                   <div class="subcard-head">
                     <div class="subcard-title">FX</div>
-                    <span class="pill">Y2K</span>
+                    <span class="pill">optional</span>
                   </div>
+                  <label class="toggle toggle-mini" title="Enable ambient motion, chrome, and HUD experiments">
+                    <input id="chkFunMode" type="checkbox" />
+                    <span class="toggle-ui" aria-hidden="true"></span>
+                    <span class="toggle-text">Fun mode (ambient FX, chrome skin, HUD drag)</span>
+                  </label>
                   <div class="row row-tight">
-                <label class="field" title="Scanlines intensity">
-                  <span class="field-label">Scan</span>
-                  <input id="scanlineSlider" class="input range" type="range" min="0" max="0.35" step="0.01" />
-                </label>
-                <label class="field" title="Chromatic hover split intensity">
-                  <span class="field-label">Split</span>
-                  <input id="chromaticSlider" class="input range" type="range" min="0" max="1.2" step="0.05" />
-                </label>
-                    <button id="btnOverclock" class="btn btn-secondary" type="button" title="Max it out.">Overclock</button>
+                    <label class="field" title="Scanlines intensity">
+                      <span class="field-label">Scan</span>
+                      <input id="scanlineSlider" class="input range" type="range" min="0" max="0.35" step="0.01" />
+                    </label>
+                    <label class="field" title="Chromatic hover split intensity">
+                      <span class="field-label">Split</span>
+                      <input id="chromaticSlider" class="input range" type="range" min="0" max="1.2" step="0.05" />
+                    </label>
+                    <button id="btnOverclock" class="btn btn-secondary" type="button" title="Apply the louder FX preset." disabled>Overclock</button>
                   </div>
                   <label class="toggle toggle-mini" title="Blue-chrome 2001 music player skin">
                     <input id="chkChrome" type="checkbox" />
@@ -294,6 +304,7 @@
                     <span class="toggle-ui" aria-hidden="true"></span>
                     <span class="toggle-text">HUD mode</span>
                   </label>
+                  <div class="hint">BlueLens starts in a restrained operator theme. Turn on Fun mode if you want the aquarium.</div>
                 </div>
               </div>
             </details>
@@ -534,6 +545,7 @@
     <script src="https://unpkg.com/exifr/dist/full.umd.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/js-sha256@0.11.0/build/sha256.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/spark-md5@3.0.2/spark-md5.min.js"></script>
+    <script src="./bluelens-config.js"></script>
     <script src="./bluelens-helpers.js"></script>
     <script src="./osint-lib.js"></script>
     <script src="./ocr-pipeline.js"></script>
