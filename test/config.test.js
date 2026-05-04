@@ -11,5 +11,6 @@ test("shared config exports key runtime defaults", () => {
   assert.equal(config.app.dhash.batchClusterThreshold, 8);
   assert.equal(config.fx.funModeDefault, false);
   assert.ok(Array.isArray(config.help.defaults));
-  assert.ok(config.help.defaults.length >= 5);
+  assert.ok(config.help.defaults.some((row) => row.label === "Local server port"));
+  assert.ok(config.help.defaults.some((row) => row.label === "Wait-job long poll"));
 });

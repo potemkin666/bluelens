@@ -223,6 +223,10 @@ function reportNonFatalError(scope, error, { harmless = false, detail = null, de
     const last = Number(nonFatalErrorState.get(key) || 0);
     if (now - last < dedupeMs) return;
     nonFatalErrorState.set(key, now);
+    if (nonFatalErrorState.size > 200) {
+      const oldestKey = nonFatalErrorState.keys().next().value;
+      if (oldestKey) nonFatalErrorState.delete(oldestKey);
+    }
   }
   const logger = harmless ? console.info : console.warn;
   try {
