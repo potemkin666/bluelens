@@ -16,12 +16,6 @@ $s.WorkingDirectory = $root
 $s.WindowStyle = 1
 $s.Description = "Start BlueLens (local OSINT console)"
 
-# Optional icon (falls back to default if missing)
-$ico = Join-Path $root "assets\\bluelens.ico"
-if (Test-Path $ico) {
-  $s.IconLocation = $ico
-}
-
 $s.Save()
 
 Write-Host "Created desktop shortcut:" $lnkPath

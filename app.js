@@ -253,6 +253,8 @@ const FX_FUN_MODE_DEFAULT = Boolean(FX_CONFIG.funModeDefault);
 const FX_HUD_DEFAULT = Boolean(FX_CONFIG.hudDefault);
 const FX_CHROME_DEFAULT = Boolean(FX_CONFIG.chromeDefault);
 const COMPARE_DIFF_SIZE = 96;
+const TEMP_EXTERNAL_ARTIFACT_WARNING = "Temporary external artifact — third-party upload URLs may expire or disappear before a reader opens the report.";
+const TEMP_EXTERNAL_ARTIFACT_NOTE = "Host retention is controlled by the third-party service and is not guaranteed by BlueLens.";
 const compareDiffScratchA = document.createElement("canvas");
 const compareDiffScratchB = document.createElement("canvas");
 const EXPORT_RUNTIME_CONFIG_SOURCE = JSON.stringify({
@@ -376,6 +378,7 @@ const state = {
     manual_notes: "",
     analyst_confidence: "unverified",
   },
+  sourceReviewLog: [],
   insights: {
     metadata_suspicion_score: null,
     metadata_suspicion_band: null,
@@ -395,6 +398,8 @@ const state = {
   },
   exif: null,
   entityConfidence: {},
+  entityReviewLog: [],
+  ocrDerivedEntries: [],
   lastEngineRun: null,
   manualNotes: "",
   actionLog: [],
@@ -436,6 +441,132 @@ function logAction(event, detail = "") {
   state.actionLog.push({ ts, event: String(event || "event"), detail: detail ? String(detail) : "" });
   if (state.actionLog.length > 200) state.actionLog = state.actionLog.slice(-200);
   renderActionLog();
+}
+
+function appendReviewEntry(listName, entry, max = 400) {
+  state[listName] = Array.isArray(state[listName]) ? state[listName] : [];
+  state[listName].push(entry);
+  if (state[listName].length > max) state[listName] = state[listName].slice(-max);
+}
+
+function createReviewEntry({
+  source = "manual",
+  scope = "annotation",
+  field = "",
+  value = null,
+  previousValue = null,
+  entityType = null,
+  entityKey = null,
+  entityValue = null,
+  note = "",
+} = {}) {
+  return {
+    ts: new Date().toISOString(),
+    source: String(source || "manual"),
+    scope: String(scope || "annotation"),
+    field: field ? String(field) : null,
+    value,
+    previous_value: previousValue,
+    entity_type: entityType ? String(entityType) : null,
+    entity_key: entityKey ? String(entityKey) : null,
+    entity_value: entityValue == null ? null : String(entityValue),
+    note: note ? String(note) : null,
+  };
+}
+
+function updateSourceInfoField(field, value, { source = "manual", note = "" } = {}) {
+  state.sourceInfo = state.sourceInfo || {};
+  const normalized = typeof value === "string" ? value : value == null ? "" : String(value);
+  const previous = typeof state.sourceInfo[field] === "string" ? state.sourceInfo[field] : state.sourceInfo[field] == null ? "" : String(state.sourceInfo[field]);
+  if (normalized === previous) return false;
+  state.sourceInfo[field] = normalized;
+  appendReviewEntry(
+    "sourceReviewLog",
+    createReviewEntry({
+      source,
+      scope: "source_reliability",
+      field,
+      value: normalized,
+      previousValue: previous || null,
+      note,
+    }),
+  );
+  return true;
+}
+
+function uploadExpiryWindowForHost(host) {
+  if (!host) return null;
+  if (host === "litterbox") return SERVER_CONFIG.upload?.litterboxExpiry || "72h";
+  return "unknown";
+}
+
+function uploadRetentionNoteForHost(host) {
+  if (!host) return null;
+  if (host === "litterbox") {
+    return `Litterbox uploads are configured for ${SERVER_CONFIG.upload?.litterboxExpiry || "72h"} and should be treated as disposable.`;
+  }
+  return TEMP_EXTERNAL_ARTIFACT_NOTE;
+}
+
+function buildUploadLifecycleMeta(uploadMeta = state.uploadMeta, purpose = state.publicUrlPurpose || "") {
+  if (!uploadMeta && !state.publicUrl) return null;
+  const host = uploadMeta?.host || null;
+  return {
+    ...(uploadMeta && typeof uploadMeta === "object" ? uploadMeta : {}),
+    host,
+    purpose: uploadMeta?.purpose || purpose || null,
+    created_at: uploadMeta?.created_at || null,
+    expected_expiry_window: uploadMeta?.expected_expiry_window || uploadExpiryWindowForHost(host),
+    retention_note: uploadMeta?.retention_note || uploadRetentionNoteForHost(host),
+    temporary_external_artifact: Boolean(host || state.publicUrl),
+    temporary_external_artifact_warning: uploadMeta?.temporary_external_artifact_warning || TEMP_EXTERNAL_ARTIFACT_WARNING,
+  };
+}
+
+function recordEntityConfidenceReview({ entityType, entityKey, entityValue, confidence }) {
+  if (!entityKey) return;
+  state.entityConfidence = state.entityConfidence || {};
+  const normalized = confidence || "unverified";
+  const previous = state.entityConfidence[entityKey] || "unverified";
+  if (normalized === previous) return;
+  state.entityConfidence[entityKey] = normalized;
+  appendReviewEntry(
+    "entityReviewLog",
+    createReviewEntry({
+      source: "manual",
+      scope: "ocr_entity",
+      field: "confidence",
+      value: normalized,
+      previousValue: previous,
+      entityType,
+      entityKey,
+      entityValue,
+      note: "Analyst confidence label",
+    }),
+  );
+}
+
+function buildCurrentOcrReviewEntries() {
+  const derived = Array.isArray(state.ocrDerivedEntries) ? state.ocrDerivedEntries.slice() : [];
+  const currentKeys = new Set(derived.map((entry) => entry.entity_key).filter(Boolean));
+  const manual = Array.isArray(state.entityReviewLog)
+    ? state.entityReviewLog.filter((entry) => !entry?.entity_key || currentKeys.has(entry.entity_key))
+    : [];
+  const merged = [...derived, ...manual];
+  return merged.length ? merged : null;
+}
+
+function formatReviewHistory(entries, empty = "- —") {
+  if (!Array.isArray(entries) || entries.length === 0) return empty;
+  return entries
+    .map((entry) => {
+      const scope = entry?.source || entry?.scope || "entry";
+      const target = entry?.field || entry?.entity_key || entry?.entity_type || "value";
+      const value = entry?.entity_value || entry?.value || "—";
+      const note = entry?.note ? ` · ${entry.note}` : "";
+      return `- ${entry?.ts || "—"} · ${scope} · ${target} · ${value}${note}`;
+    })
+    .join("\n");
 }
 
 function renderOnboardingStrip() {
@@ -680,6 +811,8 @@ function reset() {
   state.ocrRunning = false;
   state.lastOcrMode = "not_run";
   state.entityConfidence = {};
+  state.entityReviewLog = [];
+  state.ocrDerivedEntries = [];
   state.lastEngineRun = null;
   state.batchReports = [];
   state.batchItems = [];
@@ -695,6 +828,7 @@ function reset() {
     manual_notes: "",
     analyst_confidence: "unverified",
   };
+  state.sourceReviewLog = [];
   state.insights = { metadata_suspicion_score: null, metadata_suspicion_band: null, metadata_suspicion_inputs: [] };
   state.mutations = [];
   if (state.compare?.objectUrl) URL.revokeObjectURL(state.compare.objectUrl);
@@ -1663,7 +1797,18 @@ async function uploadViaLocalProxy(file, purpose = "") {
   }
 
   if (parsed && typeof parsed === "object" && parsed.url) {
-    state.uploadMeta = { host: parsed.host || null, ms: parsed.ms || null, attempts: parsed.attempts || null };
+    const host = parsed.host || null;
+    state.uploadMeta = {
+      host,
+      ms: parsed.ms || null,
+      attempts: parsed.attempts || null,
+      created_at: new Date().toISOString(),
+      purpose: purpose || null,
+      expected_expiry_window: uploadExpiryWindowForHost(host),
+      retention_note: uploadRetentionNoteForHost(host),
+      temporary_external_artifact: true,
+      temporary_external_artifact_warning: TEMP_EXTERNAL_ARTIFACT_WARNING,
+    };
     state.session = loadSession();
     state.session.uploads_ok += 1;
     state.session.last_host = String(parsed.host || "");
@@ -2229,6 +2374,9 @@ function buildMarkdownReport(report) {
   const capturedAt = kf.captured_at || null;
   const sr = r.source_reliability || {};
   const entities = kf.ocr_entities || {};
+  const upload = r.upload || {};
+  const sourceReviewEntries = Array.isArray(sr.review_entries) ? sr.review_entries : [];
+  const ocrReviewEntries = Array.isArray(kf.ocr_entity_review_entries) ? kf.ocr_entity_review_entries : [];
 
   const lines = [];
   lines.push(`# OSINT Report`);
@@ -2274,7 +2422,12 @@ function buildMarkdownReport(report) {
   lines.push(`- URL: ${r.public_url ? `${r.public_url}` : "—"}`);
   lines.push(`- Upload artifact: \`${r.public_upload_artifact || "—"}\``);
   lines.push(`- Share safe: \`${r.share_safe ? "on" : "off"}\``);
-  lines.push(`- Upload host: \`${r.upload?.host || "—"}\``);
+  lines.push(`- Upload host: \`${upload.host || "—"}\``);
+  lines.push(`- Created: ${upload.created_at ? `\`${upload.created_at}\`` : "—"}`);
+  lines.push(`- Purpose: ${upload.purpose ? `\`${upload.purpose}\`` : "—"}`);
+  lines.push(`- Expected expiry window: ${upload.expected_expiry_window ? `\`${upload.expected_expiry_window}\`` : "—"}`);
+  lines.push(`- Retention note: ${upload.retention_note || "—"}`);
+  lines.push(`- Warning: ${upload.temporary_external_artifact_warning || "—"}`);
   if (r.export_metadata?.runtime_config_fingerprint) lines.push(`- Runtime fingerprint: \`${r.export_metadata.runtime_config_fingerprint}\``);
   lines.push("");
   lines.push(`## OCR Pivots`);
@@ -2286,6 +2439,10 @@ function buildMarkdownReport(report) {
   lines.push(`- Emails: ${e.length ? e.map((x) => `\`${x}\``).join(" · ") : "—"}`);
   lines.push(`- Handles: ${h.length ? h.map((x) => `\`${x}\``).join(" · ") : "—"}`);
   lines.push(`- Phones: ${p.length ? p.map((x) => `\`${x}\``).join(" · ") : "—"}`);
+  lines.push(`- Review entry count: \`${ocrReviewEntries.length}\``);
+  lines.push("");
+  lines.push(`### OCR Annotation History`);
+  lines.push(formatReviewHistory(ocrReviewEntries));
   lines.push("");
   lines.push(`## Source Reliability`);
   lines.push(`- Where: ${sr.where_obtained ? `\`${sr.where_obtained}\`` : "—"}`);
@@ -2294,6 +2451,9 @@ function buildMarkdownReport(report) {
   lines.push(`- Original filename: ${sr.original_filename ? `\`${sr.original_filename}\`` : "—"}`);
   lines.push(`- Analyst confidence (manual): \`${sr.analyst_confidence || "unverified"}\``);
   lines.push(`- Manual notes: ${sr.manual_notes ? `\`${sr.manual_notes}\`` : "—"}`);
+  lines.push("");
+  lines.push(`### Source Review History`);
+  lines.push(formatReviewHistory(sourceReviewEntries));
   lines.push("");
   lines.push(`## Launchpad`);
   const targets = r.launchpad?.targets || {};
@@ -2476,6 +2636,7 @@ function normalizeCapturedAt(exifObj) {
 }
 
 function buildExportMetadata({ ocrMode = state.lastOcrMode || "not_run", ocrLanguage = elements.ocrLang?.value || OCR_DEFAULT_LANGUAGE, uploadMeta = state.uploadMeta ? { ...state.uploadMeta } : null } = {}) {
+  const upload = buildUploadLifecycleMeta(uploadMeta, uploadMeta?.purpose || state.publicUrlPurpose || "");
   return {
     schema_version: EXPORT_SCHEMA_VERSION,
     app_version: APP_VERSION,
@@ -2493,9 +2654,14 @@ function buildExportMetadata({ ocrMode = state.lastOcrMode || "not_run", ocrLang
     upload_host_metadata: {
       preferred_host_order: SERVER_CONFIG.upload?.hosts || [],
       preferred_hosts_by_purpose: SERVER_CONFIG.upload?.preferredHostsByPurpose || {},
-      selected_host: uploadMeta?.host || null,
-      selected_host_latency_ms: uploadMeta?.ms || null,
-      attempt_count: Array.isArray(uploadMeta?.attempts) ? uploadMeta.attempts.length : null,
+      selected_host: upload?.host || null,
+      selected_host_latency_ms: upload?.ms || null,
+      attempt_count: Array.isArray(upload?.attempts) ? upload.attempts.length : null,
+      selected_strategy: elements.shareProvider?.value || null,
+      created_at: upload?.created_at || null,
+      expected_expiry_window: upload?.expected_expiry_window || null,
+      retention_note: upload?.retention_note || null,
+      temporary_external_artifact_warning: upload?.temporary_external_artifact_warning || null,
     },
   };
 }
@@ -2947,12 +3113,16 @@ function extractPivotsFromReport(report) {
 function buildOsintReport() {
   const keyFields = extractKeyFieldsObj(state.exif);
   const exportMetadata = buildExportMetadata();
+  const upload = buildUploadLifecycleMeta();
   return {
     schema_version: EXPORT_SCHEMA_VERSION,
     app_version: APP_VERSION,
     generated_at: new Date().toISOString(),
     export_metadata: exportMetadata,
-    source_reliability: { ...state.sourceInfo },
+    source_reliability: {
+      ...state.sourceInfo,
+      review_entries: Array.isArray(state.sourceReviewLog) && state.sourceReviewLog.length ? state.sourceReviewLog.slice() : null,
+    },
     file: state.file
       ? {
           name: state.file.name || null,
@@ -2966,7 +3136,7 @@ function buildOsintReport() {
     public_url: state.publicUrl || null,
     public_upload_artifact: state.publicUrl ? state.publicUrlArtifact || "original" : null,
     share_safe: Boolean(state.shareSafe),
-    upload: state.uploadMeta ? { ...state.uploadMeta } : null,
+    upload,
     gps: state.gps ? { lat: state.gps.lat, lon: state.gps.lon } : null,
     insights: {
       metadata_suspicion_score: state.insights.metadata_suspicion_score,
@@ -2983,6 +3153,7 @@ function buildOsintReport() {
       software: keyFields.software || elements.kfSoftware?.textContent || null,
       ocr_entities: state.ocrText ? OCR_PIPELINE?.extractEntities?.(state.ocrText) || null : null,
       ocr_entity_confidence: state.entityConfidence && Object.keys(state.entityConfidence).length ? { ...state.entityConfidence } : null,
+      ocr_entity_review_entries: buildCurrentOcrReviewEntries(),
     },
     exif: state.exif || null,
     ocr_text: state.ocrText || null,
@@ -3165,6 +3336,9 @@ async function downloadEvidencePack() {
     `OCR mode: ${report.ocr?.mode || "not_run"}`,
     `OCR language: ${report.ocr?.selected_model || OCR_DEFAULT_LANGUAGE}`,
     `Upload host: ${report.upload?.host || "—"}`,
+    `Upload created: ${report.upload?.created_at || "—"}`,
+    `Upload expiry window: ${report.upload?.expected_expiry_window || "—"}`,
+    `Upload warning: ${report.upload?.temporary_external_artifact_warning || "—"}`,
     `Capture time: ${report.key_fields?.captured_at?.display || report.key_fields?.captured || "—"}`,
   ].join("\n");
   const entries = [
@@ -3282,12 +3456,14 @@ function renderOcrEntities(text) {
     ent.urls.length + ent.emails.length + ent.handles.length + ent.phones.length;
 
   if (!total) {
+    state.ocrDerivedEntries = [];
     wrap.hidden = true;
     wrap.innerHTML = "";
     if (elements.btnPivotSearch) elements.btnPivotSearch.disabled = true;
     return;
   }
 
+  const derivedEntries = [];
   wrap.hidden = false;
   wrap.innerHTML = "";
   if (elements.btnPivotSearch) elements.btnPivotSearch.disabled = false;
@@ -3331,7 +3507,7 @@ function renderOcrEntities(text) {
     parent.appendChild(chip);
   };
 
-  const addConfidence = (parent, key) => {
+  const addConfidence = (parent, { entityType, entityKey, entityValue }) => {
     const sel = document.createElement("select");
     sel.className = "select chip-select";
     sel.title = "Analyst confidence (manual)";
@@ -3339,12 +3515,26 @@ function renderOcrEntities(text) {
       `<option value="unverified">?</option>` +
       `<option value="likely">~</option>` +
       `<option value="confirmed">✓</option>`;
+    sel.value = state.entityConfidence?.[entityKey] || "unverified";
     sel.addEventListener("change", () => {
-      state.sourceInfo = state.sourceInfo || {};
-      state.entityConfidence = state.entityConfidence || {};
-      state.entityConfidence[key] = sel.value;
+      recordEntityConfidenceReview({ entityType, entityKey, entityValue, confidence: sel.value || "unverified" });
     });
     parent.appendChild(sel);
+  };
+
+  const addDerivedEntry = ({ entityType, entityKey, entityValue, note }) => {
+    derivedEntries.push(
+      createReviewEntry({
+        source: "derived",
+        scope: "ocr_entity",
+        field: "detected",
+        value: entityValue,
+        entityType,
+        entityKey,
+        entityValue,
+        note,
+      }),
+    );
   };
 
   const google = (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`;
@@ -3366,7 +3556,8 @@ function renderOcrEntities(text) {
       addLinkChip(row, "TikTok", `https://www.tiktok.com/@${encodeURIComponent(h)}`, { title: "Open TikTok profile" });
       addLinkChip(row, "X", `https://x.com/${encodeURIComponent(h)}`, { title: "Open X profile" });
       addLinkChip(row, "Search", google(`@${h}`), { title: "Search handle" });
-      addConfidence(row, `handle:${h.toLowerCase()}`);
+      addDerivedEntry({ entityType: "handle", entityKey: `handle:${h.toLowerCase()}`, entityValue: `@${h}`, note: "Direct OCR hit" });
+      addConfidence(row, { entityType: "handle", entityKey: `handle:${h.toLowerCase()}`, entityValue: `@${h}` });
       g.appendChild(row);
     }
   }
@@ -3381,12 +3572,14 @@ function renderOcrEntities(text) {
       addLinkChip(row, short, u, { title: "Open URL" });
       if (d) {
         addInfoChip(row, "Derived domain follow-up");
+        addDerivedEntry({ entityType: "domain", entityKey: `domain:${d}`, entityValue: d, note: "Derived from OCR URL/domain text" });
         addLinkChip(row, "WHOIS", `https://www.whois.com/whois/${encodeURIComponent(d)}`, { title: "WHOIS lookup" });
         addLinkChip(row, "DNS", `https://dns.google/resolve?name=${encodeURIComponent(d)}&type=A`, { title: "DNS over HTTPS (Google)" });
         addLinkChip(row, "CRT", `https://crt.sh/?q=${encodeURIComponent(d)}`, { title: "Certificate transparency" });
         addLinkChip(row, "Search", google(`site:${d}`), { title: "Search site" });
-        addConfidence(row, `domain:${d}`);
+        addConfidence(row, { entityType: "domain", entityKey: `domain:${d}`, entityValue: d });
       } else {
+        addDerivedEntry({ entityType: "url", entityKey: `url:${String(u).toLowerCase()}`, entityValue: u, note: "Direct OCR hit" });
         addLinkChip(row, "Search", google(u), { title: "Search URL" });
       }
       g.appendChild(row);
@@ -3402,7 +3595,8 @@ function renderOcrEntities(text) {
       addInfoChip(row, "Manual search");
       addLinkChip(row, "Search", google(`"${e}"`), { title: "Search email" });
       addLinkChip(row, "Breach?", google(`"${e}" breach`), { title: "Search breach mentions" });
-      addConfidence(row, `email:${e.toLowerCase()}`);
+      addDerivedEntry({ entityType: "email", entityKey: `email:${e.toLowerCase()}`, entityValue: e, note: "Direct OCR hit" });
+      addConfidence(row, { entityType: "email", entityKey: `email:${e.toLowerCase()}`, entityValue: e });
       g.appendChild(row);
     }
   }
@@ -3418,10 +3612,12 @@ function renderOcrEntities(text) {
       addInfoChip(row, "Manual search");
       const q = n?.e164 || n?.digits || p;
       addLinkChip(row, "Search", google(`"${q}"`), { title: "Search phone" });
-      addConfidence(row, `phone:${String(q).replace(/\s+/g, "")}`);
+      addDerivedEntry({ entityType: "phone", entityKey: `phone:${String(q).replace(/\s+/g, "")}`, entityValue: label, note: "Direct OCR hit" });
+      addConfidence(row, { entityType: "phone", entityKey: `phone:${String(q).replace(/\s+/g, "")}`, entityValue: label });
       g.appendChild(row);
     }
   }
+  state.ocrDerivedEntries = derivedEntries;
 }
 
 function detectScriptHint(text) {
@@ -3704,7 +3900,7 @@ async function analyzeFile(file) {
 
     if (!elements.srcOrig.value) {
       elements.srcOrig.value = file.name || "";
-      state.sourceInfo.original_filename = elements.srcOrig.value;
+      updateSourceInfoField("original_filename", elements.srcOrig.value, { source: "derived", note: "Loaded from current local file name" });
     }
 
     setStatus("Ready");
@@ -4001,13 +4197,13 @@ function setupActions() {
   }
 
   const syncSourceInfo = () => {
-    state.sourceInfo.where_obtained = elements.srcWhere.value || "";
-    state.sourceInfo.when_obtained = elements.srcWhen.value || "";
-    state.sourceInfo.who_provided = elements.srcWho.value || "";
-    state.sourceInfo.original_filename = elements.srcOrig.value || "";
-    state.sourceInfo.manual_notes = elements.manualNotes?.value || "";
+    updateSourceInfoField("where_obtained", elements.srcWhere.value || "");
+    updateSourceInfoField("when_obtained", elements.srcWhen.value || "");
+    updateSourceInfoField("who_provided", elements.srcWho.value || "");
+    updateSourceInfoField("original_filename", elements.srcOrig.value || "");
+    updateSourceInfoField("manual_notes", elements.manualNotes?.value || "");
     state.manualNotes = state.sourceInfo.manual_notes;
-    if (elements.confLevel) state.sourceInfo.analyst_confidence = elements.confLevel.value || "unverified";
+    if (elements.confLevel) updateSourceInfoField("analyst_confidence", elements.confLevel.value || "unverified");
   };
   elements.srcWhere.addEventListener("input", syncSourceInfo);
   elements.srcWhen.addEventListener("input", syncSourceInfo);
@@ -4838,6 +5034,7 @@ function triggerGlitterStorm(intensity = 52) {
   window.setTimeout(() => layer.remove(), 1050);
 }
 
+setupGlobalErrorSurface();
 wireReverseSearchButtons();
 setupDnD();
 populateOcrLanguageOptions();
@@ -4858,4 +5055,3 @@ state.session = loadSession();
 void refreshHostStats();
 setupEngineLaunchpad();
 setupSimpleUi();
-setupGlobalErrorSurface();

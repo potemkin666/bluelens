@@ -9,6 +9,7 @@ const helpHtml = fs.readFileSync(path.join(__dirname, "..", "help.html"), "utf8"
 const stylesCss = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
 const waitHtml = fs.readFileSync(path.join(__dirname, "..", "wait.html"), "utf8");
 const startCmd = fs.readFileSync(path.join(__dirname, "..", "bluelens-start.cmd"), "utf8");
+const desktopIconPs1 = fs.readFileSync(path.join(__dirname, "..", "create-desktop-icon.ps1"), "utf8");
 const oceanBgPath = path.join(__dirname, "..", "assets", "ocean-bg.jpg");
 const setupTabsBlock = appJs.match(/function setupTabs\(\) \{[\s\S]*?\n\}/)?.[0] || "";
 
@@ -65,7 +66,8 @@ test("caseboard UI is removed from the landing workflow", () => {
 
 test("source reliability state no longer uses stale caseInfo naming", () => {
   assert.match(appJs, /sourceInfo:/);
-  assert.match(appJs, /source_reliability: \{ \.\.\.state\.sourceInfo \}/);
+  assert.match(appJs, /source_reliability:\s*\{\s*\.\.\.state\.sourceInfo,/);
+  assert.match(appJs, /review_entries: Array\.isArray\(state\.sourceReviewLog\)/);
   assert.doesNotMatch(appJs, /caseInfo/);
 });
 
@@ -155,6 +157,14 @@ test("reports export structured capture provenance and runtime metadata", () => 
   assert.match(appJs, /runtime_config_fingerprint/);
   assert.match(appJs, /ocr_language/);
   assert.match(appJs, /upload_host_metadata/);
+  assert.match(appJs, /temporary_external_artifact_warning/);
+  assert.match(appJs, /expected_expiry_window/);
+  assert.match(appJs, /ocr_entity_review_entries/);
+});
+
+test("share provider UI is explicit about automatic host ranking", () => {
+  assert.match(indexHtml, /Automatic host selection — the local proxy ranks temporary hosts/);
+  assert.match(indexHtml, />Automatic host selection \(ranked failover\)</);
 });
 
 test("wait tab uses backoff and exposes reopen guidance", () => {
@@ -195,4 +205,12 @@ test("windows start script waits for ping before opening the browser", () => {
   assert.match(startCmd, /api\/ping/);
   assert.match(startCmd, /Invoke-WebRequest/);
   assert.ok(startCmd.indexOf("node server.js") < startCmd.lastIndexOf("start \"\" \"%BLUELENS_URL%\""));
+  assert.doesNotMatch(desktopIconPs1, /bluelens\.ico/);
+  assert.doesNotMatch(desktopIconPs1, /IconLocation/);
+});
+
+test("global error surface is installed before storage-backed startup work", () => {
+  assert.ok(appJs.indexOf("setupGlobalErrorSurface();") < appJs.indexOf("void runDoctorChecks();"));
+  assert.ok(appJs.indexOf("setupGlobalErrorSurface();") < appJs.indexOf("setupFx();"));
+  assert.doesNotMatch(setupTabsBlock, /localStorage\.setItem\("ui:tab"/);
 });
