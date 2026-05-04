@@ -255,7 +255,7 @@ test("onboarding and evidence-pack UI expose operator caveats and export path", 
   assert.match(indexHtml, /id="manualNotes"/);
   assert.match(indexHtml, /id="actionLogOut"/);
   assert.match(appJs, /function downloadEvidencePack\(\)/);
-  assert.match(appJs, /function runDoctorChecks\(\)/);
+  assert.match(appJs, /async function runDoctorChecks\(/);
   assert.match(appJs, /function ingestResults\(raw\)/);
   assert.match(appJs, /function renderMissionOutput\(\)/);
   assert.match(indexHtml, /Quick start: 1\) load image/);
