@@ -340,11 +340,12 @@
     const raw = String(value || "").trim();
     if (!raw) return null;
     let parsed = Date.parse(raw);
-    if (!Number.isFinite(parsed) && /^\d{4}-\d{2}-\d{2}$/.test(raw)) parsed = Date.parse(`${raw}T00:00:00Z`);
+    const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(raw);
+    if (!Number.isFinite(parsed) && dateOnly) parsed = Date.parse(`${raw}T00:00:00Z`);
     return {
       ts_ms: Number.isFinite(parsed) ? parsed : null,
       label: raw,
-      ambiguous: ambiguous || (/T\d{2}:\d{2}/.test(raw) && !/(Z|[+-]\d{2}:?\d{2})$/i.test(raw)),
+      ambiguous: ambiguous || dateOnly || (/T\d{2}:\d{2}/.test(raw) && !/(Z|[+-]\d{2}:?\d{2})$/i.test(raw)),
     };
   }
 
