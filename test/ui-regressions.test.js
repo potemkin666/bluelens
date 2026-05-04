@@ -90,7 +90,7 @@ test("OCR UI uses manual models and weak script hints", () => {
   assert.match(indexHtml, /<option value="chi_sim">Chinese \(Simplified\)</);
   assert.match(appJs, /function detectScriptHint\(text\)/);
   assert.match(appJs, /Weak script hint: \$\{hint\.label\}/);
-  assert.doesNotMatch(appJs, /elements\.ocrLang\.value = hint/);
+  assert.doesNotMatch(appJs, /elements\.ocrLang\.value\s*=\s*hint/);
 });
 
 test("OCR pivots are framed as manual follow-ups", () => {
