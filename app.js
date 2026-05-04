@@ -3515,11 +3515,11 @@ function renderOcrEntities(text) {
       `<option value="unverified">?</option>` +
       `<option value="likely">~</option>` +
       `<option value="confirmed">✓</option>`;
-    sel.value = state.entityConfidence?.[entityKey] || "unverified";
     sel.addEventListener("change", () => {
       recordEntityConfidenceReview({ entityType, entityKey, entityValue, confidence: sel.value || "unverified" });
     });
     parent.appendChild(sel);
+    sel.value = state.entityConfidence?.[entityKey] || "unverified";
   };
 
   const addDerivedEntry = ({ entityType, entityKey, entityValue, note }) => {
@@ -3572,7 +3572,7 @@ function renderOcrEntities(text) {
       addLinkChip(row, short, u, { title: "Open URL" });
       if (d) {
         addInfoChip(row, "Derived domain follow-up");
-        addDerivedEntry({ entityType: "domain", entityKey: `domain:${d}`, entityValue: d, note: "Derived from OCR URL/domain text" });
+        addDerivedEntry({ entityType: "domain", entityKey: `domain:${d}`, entityValue: d, note: "Derived OCR follow-up" });
         addLinkChip(row, "WHOIS", `https://www.whois.com/whois/${encodeURIComponent(d)}`, { title: "WHOIS lookup" });
         addLinkChip(row, "DNS", `https://dns.google/resolve?name=${encodeURIComponent(d)}&type=A`, { title: "DNS over HTTPS (Google)" });
         addLinkChip(row, "CRT", `https://crt.sh/?q=${encodeURIComponent(d)}`, { title: "Certificate transparency" });
