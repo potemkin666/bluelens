@@ -55,10 +55,13 @@ const elements = {
   compareInput: document.getElementById("compareInput"),
   compareImg: document.getElementById("compareImg"),
   compareEmpty: document.getElementById("compareEmpty"),
+  compareDiffCanvas: document.getElementById("compareDiffCanvas"),
+  compareDiffEmpty: document.getElementById("compareDiffEmpty"),
   cmpA: document.getElementById("cmpA"),
   cmpB: document.getElementById("cmpB"),
   cmpDist: document.getElementById("cmpDist"),
   cmpVerdict: document.getElementById("cmpVerdict"),
+  cmpExplain: document.getElementById("cmpExplain"),
   chkEnableShare: document.getElementById("chkEnableShare"),
   chkShareSafe: document.getElementById("chkShareSafe"),
   shareProvider: document.getElementById("shareProvider"),
@@ -380,6 +383,7 @@ const state = {
     file: null,
     objectUrl: null,
     dhash: "",
+    diffScore: null,
   },
   signals: {
     sha256: "",
@@ -691,7 +695,7 @@ function reset() {
   state.insights = { metadata_suspicion_score: null, metadata_suspicion_band: null, metadata_suspicion_inputs: [] };
   state.mutations = [];
   if (state.compare?.objectUrl) URL.revokeObjectURL(state.compare.objectUrl);
-  state.compare = { file: null, objectUrl: null, dhash: "" };
+  state.compare = { file: null, objectUrl: null, dhash: "", diffScore: null };
 
   if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
   state.objectUrl = null;
@@ -748,10 +752,20 @@ function reset() {
   elements.compareImg.removeAttribute("src");
   elements.compareImg.style.display = "none";
   elements.compareEmpty.style.display = "grid";
+  if (elements.compareDiffCanvas) {
+    const ctx = elements.compareDiffCanvas.getContext("2d");
+    ctx?.clearRect(0, 0, elements.compareDiffCanvas.width || 0, elements.compareDiffCanvas.height || 0);
+    elements.compareDiffCanvas.style.display = "none";
+  }
+  if (elements.compareDiffEmpty) elements.compareDiffEmpty.style.display = "grid";
   elements.cmpA.textContent = "—";
   elements.cmpB.textContent = "—";
   elements.cmpDist.textContent = "—";
   elements.cmpVerdict.textContent = "—";
+  if (elements.cmpExplain) {
+    elements.cmpExplain.textContent =
+      "dHash is a 64-bit perceptual heuristic. Lower Hamming distance means the thumbnails look closer, not that the files are proven to be the same image.";
+  }
   setButtonsEnabled(false);
   setShareControlsEnabled(false);
   setShareStatus("Not shared");
@@ -1570,17 +1584,21 @@ async function refreshHostStats() {
         const ok = Number(v?.ok || 0);
         const fail = Number(v?.fail || 0);
         const avgMs = Number(v?.avgMs || 0);
-        const n = Math.max(1, ok + fail);
-        const fr = fail / n;
-        const badge = fr >= 0.4 ? "HOT" : fr >= 0.2 ? "WARN" : "OK";
-        return { host, ok, fail, avgMs, fr, badge };
+        const attempts = ok + fail;
+        return { host, ok, fail, avgMs, attempts };
       })
-      .sort((a, b) => a.fr - b.fr || a.avgMs - b.avgMs);
+      .filter((row) => row.attempts > 0)
+      .sort((a, b) => b.attempts - a.attempts || a.avgMs - b.avgMs);
 
     const session = state.session || loadSession();
+    const sessionAttempts = session.uploads_ok + session.uploads_fail;
+    if (!rows.length && sessionAttempts === 0) {
+      elements.hostStatsOut.hidden = true;
+      return;
+    }
     const lines = [
-      `Session: engines ${session.engines_opened} · uploads ${session.uploads_ok}/${session.uploads_ok + session.uploads_fail} · last ${session.last_host || "—"} ${fmtMs(session.last_ms)}`,
-      rows.length ? `Hosts: ${rows.map((r) => `${r.host} ${r.badge} ok${r.ok}/f${r.fail} avg${fmtMs(r.avgMs)}`).join(" · ")}` : "Hosts: —",
+      `Upload stats (session-only diagnostic): engines ${session.engines_opened} · uploads ok ${session.uploads_ok} · fail ${session.uploads_fail} · last ${session.last_host || "—"} ${fmtMs(session.last_ms)}`,
+      rows.length ? `Hosts: ${rows.map((r) => `${r.host} ok ${r.ok} · fail ${r.fail} · avg ${fmtMs(r.avgMs)}`).join(" · ")}` : "Hosts: no completed upload samples yet",
     ];
 
     elements.hostStatsOut.textContent = lines.join("\n");
@@ -3704,16 +3722,70 @@ async function analyzeFile(file) {
 
 function clearCompare() {
   if (state.compare?.objectUrl) URL.revokeObjectURL(state.compare.objectUrl);
-  state.compare = { file: null, objectUrl: null, dhash: "" };
+  state.compare = { file: null, objectUrl: null, dhash: "", diffScore: null };
   elements.compareInput.value = "";
   elements.compareImg.removeAttribute("src");
   elements.compareImg.style.display = "none";
   elements.compareEmpty.style.display = "grid";
+  if (elements.compareDiffCanvas) {
+    const ctx = elements.compareDiffCanvas.getContext("2d");
+    ctx?.clearRect(0, 0, elements.compareDiffCanvas.width || 0, elements.compareDiffCanvas.height || 0);
+    elements.compareDiffCanvas.style.display = "none";
+  }
+  if (elements.compareDiffEmpty) elements.compareDiffEmpty.style.display = "grid";
   elements.cmpA.textContent = state.signals.dhash || "—";
   elements.cmpB.textContent = "—";
   elements.cmpDist.textContent = "—";
   elements.cmpVerdict.textContent = "—";
+  if (elements.cmpExplain) {
+    elements.cmpExplain.textContent =
+      "dHash is a 64-bit perceptual heuristic. Lower Hamming distance means the thumbnails look closer, not that the files are proven to be the same image.";
+  }
   elements.btnClearCompare.disabled = true;
+}
+
+function renderCompareDiff(baseImg, compareImg, size = 96) {
+  if (!elements.compareDiffCanvas) return null;
+  const canvas = elements.compareDiffCanvas;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  canvas.width = size;
+  canvas.height = size;
+  ctx.clearRect(0, 0, size, size);
+
+  const scratchA = document.createElement("canvas");
+  scratchA.width = size;
+  scratchA.height = size;
+  const scratchB = document.createElement("canvas");
+  scratchB.width = size;
+  scratchB.height = size;
+  const ctxA = scratchA.getContext("2d", { willReadFrequently: true });
+  const ctxB = scratchB.getContext("2d", { willReadFrequently: true });
+  if (!ctxA || !ctxB) return null;
+
+  ctxA.drawImage(baseImg, 0, 0, size, size);
+  ctxB.drawImage(compareImg, 0, 0, size, size);
+  const imgA = ctxA.getImageData(0, 0, size, size);
+  const imgB = ctxB.getImageData(0, 0, size, size);
+  const out = ctx.createImageData(size, size);
+
+  let total = 0;
+  for (let i = 0; i < imgA.data.length; i += 4) {
+    const dr = Math.abs(imgA.data[i] - imgB.data[i]);
+    const dg = Math.abs(imgA.data[i + 1] - imgB.data[i + 1]);
+    const db = Math.abs(imgA.data[i + 2] - imgB.data[i + 2]);
+    const diff = Math.round((dr + dg + db) / 3);
+    total += diff;
+    out.data[i] = diff;
+    out.data[i + 1] = Math.max(0, 255 - diff);
+    out.data[i + 2] = 255 - Math.round(diff / 2);
+    out.data[i + 3] = 255;
+  }
+
+  ctx.putImageData(out, 0, 0);
+  canvas.style.display = "block";
+  if (elements.compareDiffEmpty) elements.compareDiffEmpty.style.display = "none";
+  return Math.round(total / (size * size));
 }
 
 async function analyzeCompareFile(file) {
@@ -3723,9 +3795,12 @@ async function analyzeCompareFile(file) {
     state.compare.file = file;
 
     let standalone;
+    let baseStandalone;
     try {
+      baseStandalone = await loadImageStandalone(state.file);
       standalone = await loadImageStandalone(file);
     } catch {
+      if (baseStandalone?.url) URL.revokeObjectURL(baseStandalone.url);
       elements.cmpVerdict.textContent = "Could not decode comparison image.";
       return;
     }
@@ -3739,6 +3814,11 @@ async function analyzeCompareFile(file) {
 
     const dh = computeDHash(standalone.img);
     state.compare.dhash = dh;
+    try {
+      state.compare.diffScore = renderCompareDiff(baseStandalone.img, standalone.img);
+    } finally {
+      URL.revokeObjectURL(baseStandalone.url);
+    }
 
     elements.cmpA.textContent = state.signals.dhash || "—";
     elements.cmpB.textContent = dh || "—";
@@ -3747,16 +3827,22 @@ async function analyzeCompareFile(file) {
     if (dist === null) {
       elements.cmpDist.textContent = "—";
       elements.cmpVerdict.textContent = "Could not compare.";
+      if (elements.cmpExplain) {
+        elements.cmpExplain.textContent = "BlueLens could not derive a valid dHash distance from one of the images.";
+      }
       return;
     }
 
-    elements.cmpDist.textContent = String(dist);
-    let verdict = "Different";
-    if (dist === 0) verdict = "Perceptual match";
-    else if (dist <= 6) verdict = "Likely same image";
-    else if (dist <= 12) verdict = "Very similar";
-    else if (dist <= 20) verdict = "Similar";
+    elements.cmpDist.textContent = `${dist} / 64 · lower is closer`;
+    let verdict = "No near-duplicate signal from dHash alone";
+    if (dist <= 12) verdict = "Possible near-duplicate";
+    else if (dist <= 20) verdict = "Possible near-duplicate (weak dHash signal)";
     elements.cmpVerdict.textContent = verdict;
+    if (elements.cmpExplain) {
+      const diffText = Number.isFinite(state.compare.diffScore) ? ` Thumbnail diff intensity: ${state.compare.diffScore}/255.` : "";
+      elements.cmpExplain.textContent =
+        `dHash compares tiny perceptual thumbnails; 0 means identical hashes and larger numbers mean less visual agreement.${diffText} Treat this as a screening signal, not proof that two files are the same image.`;
+    }
     elements.btnClearCompare.disabled = false;
     setStatus("Ready");
   });

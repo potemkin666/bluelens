@@ -44,3 +44,5 @@ npm run desktop-icon
 ```
 
 Or double-click `bluelens-start.cmd`.
+
+The start script now waits for the local server to answer `/api/ping` before opening the browser.

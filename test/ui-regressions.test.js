@@ -8,6 +8,7 @@ const appJs = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
 const helpHtml = fs.readFileSync(path.join(__dirname, "..", "help.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
 const waitHtml = fs.readFileSync(path.join(__dirname, "..", "wait.html"), "utf8");
+const startCmd = fs.readFileSync(path.join(__dirname, "..", "bluelens-start.cmd"), "utf8");
 const setupTabsBlock = appJs.match(/function setupTabs\(\) \{[\s\S]*?\n\}/)?.[0] || "";
 
 test("mission preset selector stays reachable in the HTML", () => {
@@ -111,6 +112,23 @@ test("metadata suspicion copy avoids faux-precise repost scoring", () => {
   assert.doesNotMatch(appJs, /elements\.repostScore\.textContent = `\$\{score\}\/100`/);
 });
 
+test("compare UI frames dHash as a heuristic with thumbnail diffing", () => {
+  assert.match(indexHtml, /Perceptual thumbnail difference preview/);
+  assert.match(indexHtml, />No thumbnail diff yet\./);
+  assert.match(indexHtml, />Hamming \(0–64\)</);
+  assert.match(appJs, /function renderCompareDiff\(baseImg, compareImg, size = 96\)/);
+  assert.match(appJs, /Possible near-duplicate/);
+  assert.match(appJs, /No near-duplicate signal from dHash alone/);
+  assert.doesNotMatch(appJs, /Likely same image/);
+  assert.doesNotMatch(appJs, /Very similar/);
+});
+
+test("host stats are framed as diagnostic raw counts, not mood badges", () => {
+  assert.match(appJs, /Upload stats \(session-only diagnostic\):/);
+  assert.match(appJs, /ok \$\{r\.ok\} · fail \$\{r\.fail\}/);
+  assert.doesNotMatch(appJs, /const badge = fr >= 0\.4 \? "HOT"/);
+});
+
 test("reports export structured capture provenance and runtime metadata", () => {
   assert.match(appJs, /function normalizeCapturedAt\(exifObj\)/);
   assert.match(appJs, /Timezone not present in EXIF field/);
@@ -152,4 +170,11 @@ test("onboarding and evidence-pack UI expose operator caveats and export path", 
   assert.match(indexHtml, /Operator workflow: 1\) load image locally/);
   assert.match(appJs, /Batch export omits failures/);
   assert.match(helpHtml, />Doctor</);
+});
+
+test("windows start script waits for ping before opening the browser", () => {
+  assert.match(startCmd, /node server\.js/);
+  assert.match(startCmd, /api\/ping/);
+  assert.match(startCmd, /Invoke-WebRequest/);
+  assert.ok(startCmd.indexOf("node server.js") < startCmd.lastIndexOf("start \"\" \"%BLUELENS_URL%\""));
 });

@@ -551,6 +551,10 @@
                   <img id="compareImg" alt="Comparison preview" />
                   <div id="compareEmpty" class="preview-empty">No comparison image.</div>
                 </div>
+                <div class="compare-preview">
+                  <canvas id="compareDiffCanvas" aria-label="Perceptual thumbnail difference preview"></canvas>
+                  <div id="compareDiffEmpty" class="preview-empty">No thumbnail diff yet.</div>
+                </div>
                 <div class="compare-meta">
                   <div class="kv">
                     <div class="k">dHash A</div>
@@ -567,6 +571,9 @@
                   <div class="kv">
                     <div class="k">Verdict</div>
                     <div id="cmpVerdict" class="v">—</div>
+                  </div>
+                  <div class="mono mono-box" id="cmpExplain">
+                    dHash is a 64-bit perceptual heuristic. Lower Hamming distance means the thumbnails look closer, not that the files are proven to be the same image.
                   </div>
                 </div>
               </div>
