@@ -260,6 +260,15 @@ const FX_HUD_DEFAULT = Boolean(FX_CONFIG.hudDefault);
 const FX_CHROME_DEFAULT = Boolean(FX_CONFIG.chromeDefault);
 const COMPARE_DIFF_SIZE = 96;
 const ENGINE_SWARM_DELAY_MS = 260;
+const RUN_QUEUE_STATUS = {
+  queued: "queued",
+  uploading: "uploading",
+  ready: "ready",
+  prepared: "prepared",
+  opened: "opened",
+  blocked: "blocked",
+  error: "error",
+};
 const UNKNOWN_EXPIRY_WINDOW = "unknown";
 const TEMP_EXTERNAL_ARTIFACT_WARNING = "Temporary external artifact — third-party upload URLs may expire or disappear before a reader opens the report.";
 const TEMP_EXTERNAL_ARTIFACT_NOTE = "Host retention is controlled by the third-party service and is not guaranteed by BlueLens.";
@@ -570,10 +579,10 @@ function canonicalizeExternalUrl(raw) {
     kept.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
     parsed.search = "";
     for (const [key, value] of kept) parsed.searchParams.append(key, value);
-    const canonicalUrl = parsed.toString();
+    const canonical_url = parsed.toString();
     return {
       raw: input,
-      canonical_url: canonicalUrl,
+      canonical_url,
       domain: parsed.hostname || "",
       path: parsed.pathname || "/",
     };
@@ -1412,7 +1421,7 @@ function updateRunQueueStatus(run, engine, patch = {}) {
   run.queue = run.queue && typeof run.queue === "object" ? run.queue : {};
   const current = run.queue[engine] && typeof run.queue[engine] === "object" ? run.queue[engine] : {};
   run.queue[engine] = {
-    status: current.status || "queued",
+    status: current.status || RUN_QUEUE_STATUS.queued,
     attempts: Number(current.attempts || 0),
     updated_at: new Date().toISOString(),
     ...current,
@@ -1442,11 +1451,11 @@ function openTargetsForRun(run, engines) {
       run.opened[engine] = true;
       delete run.blocked[engine];
       openedCount += 1;
-      updateRunQueueStatus(run, engine, { status: "opened" });
+      updateRunQueueStatus(run, engine, { status: RUN_QUEUE_STATUS.opened });
     } else {
       run.blocked[engine] = true;
       blockedCount += 1;
-      updateRunQueueStatus(run, engine, { status: "blocked" });
+      updateRunQueueStatus(run, engine, { status: RUN_QUEUE_STATUS.blocked });
     }
   }
   run.ts = Date.now();
@@ -1490,7 +1499,7 @@ function renderEngineLaunchpad(run) {
   const queueCards = engines
     .map((eng) => {
       const q = queue?.[eng] || {};
-      const status = blocked?.[eng] ? "blocked" : opened?.[eng] ? "opened" : q.status || (r.targets?.[eng] ? "prepared" : "idle");
+      const status = blocked?.[eng] ? RUN_QUEUE_STATUS.blocked : opened?.[eng] ? RUN_QUEUE_STATUS.opened : q.status || (r.targets?.[eng] ? RUN_QUEUE_STATUS.prepared : "idle");
       const detail = [
         q.job_id ? `job ${q.job_id.slice(0, 12)}…` : "",
         Number.isFinite(q.attempts) && q.attempts > 0 ? `attempts ${q.attempts}` : "",
@@ -1559,7 +1568,7 @@ function setupEngineLaunchpad() {
       mode === "chosen"
         ? ENGINE_ORDER.filter((eng) => chosen?.[eng] !== false && r.targets?.[eng])
         : mode === "pending"
-          ? ENGINE_ORDER.filter((eng) => r.targets?.[eng] && ["queued", "blocked", "error"].includes(String(queue?.[eng]?.status || "")))
+          ? ENGINE_ORDER.filter((eng) => r.targets?.[eng] && [RUN_QUEUE_STATUS.queued, RUN_QUEUE_STATUS.blocked, RUN_QUEUE_STATUS.error].includes(String(queue?.[eng]?.status || "")))
           : ENGINE_ORDER.filter((eng) => r.targets?.[eng]);
     const { openedCount, blockedCount } = openTargetsForRun(r, openList);
     persistLaunchpadRun(r);
@@ -1635,7 +1644,7 @@ function publishWaitState(jobId, data) {
   }
 }
 
-function openWaitJob(engine, label, { initialStatus = "uploading" } = {}) {
+function openWaitJob(engine, label, { initialStatus = RUN_QUEUE_STATUS.uploading } = {}) {
   const jobId = newWaitJobId();
   const waitUrl = `/wait.html?job=${encodeURIComponent(jobId)}&engine=${encodeURIComponent(engine)}&label=${encodeURIComponent(label || "")}`;
   const opened = Boolean(openUrl(waitUrl));
@@ -2220,7 +2229,12 @@ function createEngineRunRecord({ engines = ENGINE_ORDER, mode = "launchpad", url
   const targets = {};
   const chosen = {};
   for (const engine of engines) {
-    queue[engine] = { status: url ? "prepared" : "queued", attempts: 0, updated_at: new Date().toISOString(), detail: url ? "Target prepared" : "Awaiting upload handoff" };
+    queue[engine] = {
+      status: url ? RUN_QUEUE_STATUS.prepared : RUN_QUEUE_STATUS.queued,
+      attempts: 0,
+      updated_at: new Date().toISOString(),
+      detail: url ? "Target prepared" : "Awaiting upload handoff",
+    };
     chosen[engine] = true;
     targets[engine] = url ? reverseSearchUrl(engine, url) : "";
   }
@@ -2253,7 +2267,7 @@ async function prepareLaunchpadRun({ engines = ENGINE_ORDER, openLens = true, mo
     updateRunQueueStatus(run, "lens", {
       job_id: waitJob.jobId,
       attempts: 1,
-      status: waitJob.opened ? "uploading" : "blocked",
+      status: waitJob.opened ? RUN_QUEUE_STATUS.uploading : RUN_QUEUE_STATUS.blocked,
       detail: waitJob.opened ? "Lens wait tab is awaiting upload handoff" : "Lens wait tab was blocked before handoff",
     });
     if (!waitJob.opened) run.blocked.lens = true;
@@ -2265,7 +2279,7 @@ async function prepareLaunchpadRun({ engines = ENGINE_ORDER, openLens = true, mo
   run.targets = Object.fromEntries(engines.map((engine) => [engine, reverseSearchUrl(engine, url)]));
   for (const engine of engines) {
     updateRunQueueStatus(run, engine, {
-      status: engine === "lens" && openLens ? "ready" : "prepared",
+      status: engine === "lens" && openLens ? RUN_QUEUE_STATUS.ready : RUN_QUEUE_STATUS.prepared,
       detail: engine === "lens" && openLens ? "Wait tab can now open the provider target" : "Engine target prepared for manual intake",
     });
   }
@@ -2277,11 +2291,11 @@ async function prepareLaunchpadRun({ engines = ENGINE_ORDER, openLens = true, mo
 async function prepareEngineSwarm({ engines = ENGINE_ORDER, labelPrefix = "Swarm" } = {}) {
   const run = createEngineRunRecord({ engines, mode: "swarm" });
   for (const engine of engines) {
-    const wait = openWaitJob(engine, `${labelPrefix} · ${ENGINE_LABEL[engine] || engine}`, { initialStatus: "queued" });
+    const wait = openWaitJob(engine, `${labelPrefix} · ${ENGINE_LABEL[engine] || engine}`, { initialStatus: RUN_QUEUE_STATUS.queued });
     updateRunQueueStatus(run, engine, {
       job_id: wait.jobId,
       attempts: 1,
-      status: wait.opened ? "queued" : "blocked",
+      status: wait.opened ? RUN_QUEUE_STATUS.queued : RUN_QUEUE_STATUS.blocked,
       detail: wait.opened ? "Wait tab queued for upload handoff" : "Wait tab blocked before upload handoff",
     });
     if (!wait.opened) run.blocked[engine] = true;
@@ -2294,7 +2308,7 @@ async function prepareEngineSwarm({ engines = ENGINE_ORDER, labelPrefix = "Swarm
   for (let index = 0; index < engines.length; index += 1) {
     const engine = engines[index];
     const jobId = run.queue?.[engine]?.job_id || "";
-    updateRunQueueStatus(run, engine, { status: "ready", detail: `Provider target staged (${index + 1}/${engines.length})` });
+    updateRunQueueStatus(run, engine, { status: RUN_QUEUE_STATUS.ready, detail: `Provider target staged (${index + 1}/${engines.length})` });
     if (jobId) publishWaitState(jobId, { url });
     persistLaunchpadRun(run);
     if (index < engines.length - 1) await sleep(ENGINE_SWARM_DELAY_MS);
@@ -2665,7 +2679,7 @@ async function handleQuickJump(engine) {
   updateRunQueueStatus(run, engine, {
     job_id: waitJob.jobId,
     attempts: 1,
-    status: waitJob.opened ? "uploading" : "blocked",
+    status: waitJob.opened ? RUN_QUEUE_STATUS.uploading : RUN_QUEUE_STATUS.blocked,
     detail: waitJob.opened ? "Quick jump wait tab is awaiting upload handoff" : "Quick jump wait tab was blocked",
   });
   if (!waitJob.opened) run.blocked[engine] = true;
@@ -2680,7 +2694,7 @@ async function handleQuickJump(engine) {
       const url = await ensurePublicUrl({ purpose: engine === "lens" ? "lens" : "" });
       run.url = url;
       run.targets[engine] = reverseSearchUrl(engine, url);
-      updateRunQueueStatus(run, engine, { status: "ready", detail: "Provider target prepared from upload handoff" });
+      updateRunQueueStatus(run, engine, { status: RUN_QUEUE_STATUS.ready, detail: "Provider target prepared from upload handoff" });
       publishWaitState(waitJob.jobId, { url });
       persistLaunchpadRun(run);
       setStatus("Ready");
@@ -2688,7 +2702,7 @@ async function handleQuickJump(engine) {
       const msg = e?.message || "unknown error";
       setShareStatus("Upload failed");
       elements.publicUrlOut.textContent = `Upload failed: ${msg}`;
-      updateRunQueueStatus(run, engine, { status: "error", detail: msg });
+      updateRunQueueStatus(run, engine, { status: RUN_QUEUE_STATUS.error, detail: msg });
       publishWaitState(waitJob.jobId, { err: msg });
       persistLaunchpadRun(run);
       openUrl(reverseSearchUploadPage(engine));
