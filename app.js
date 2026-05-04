@@ -435,6 +435,9 @@ const state = {
   doctorReport: null,
 };
 
+const LAUNCHPAD_CORE = window.BLUELENS_LAUNCHPAD || {};
+const OCR_ENTITIES_UI = window.BLUELENS_OCR_ENTITIES || {};
+
 function setStatus(label, tone = "muted") {
   elements.statusPill.textContent = label;
   elements.statusPill.classList.toggle("pill-muted", tone === "muted");
@@ -794,80 +797,19 @@ function ingestResults(raw) {
 }
 
 function normalizeReconEntities(text) {
-  const ent = OCR_PIPELINE?.extractEntities?.(text) || { urls: [], emails: [], handles: [], phones: [] };
-  const extra = extractHandlesAndDomains(text);
-  const handles = Array.from(
-    new Set(
-      [...(ent.handles || []), ...(extra.handles || [])]
-        .map((value) => OCR_PIPELINE?.normalizeHandle?.(value) || String(value || "").replace(/^@/, "").trim())
-        .filter(Boolean)
-        .map((value) => `@${value}`),
-    ),
-  );
-  const domains = Array.from(
-    new Set(
-      [
-        ...(ent.urls || []).map((value) => OCR_PIPELINE?.normalizeDomain?.(value)),
-        ...(extra.domains || []).map((value) => OCR_PIPELINE?.normalizeDomain?.(value)),
-      ].filter(Boolean),
-    ),
-  );
-  const phones = Array.from(
-    new Set(
-      (ent.phones || [])
-        .map((value) => OCR_PIPELINE?.normalizePhone?.(value))
-        .filter(Boolean)
-        .map((value) => value.e164 || value.digits || value.raw),
-    ),
-  );
-  return { ent, handles, domains, phones };
+  return OCR_ENTITIES_UI.normalizeReconEntities({
+    text,
+    ocrPipeline: OCR_PIPELINE,
+    extractHandlesAndDomains,
+  });
 }
 
 function buildHandleReconOutput({ handles }) {
-  const items = handles.slice(0, 8).map((handle) => {
-    const clean = handle.replace(/^@/, "");
-    return {
-      type: "handle",
-      label: handle,
-      meta: "OCR-derived handle pivot",
-      lines: ["Direct profile sweep prepared", "Use intake queue to merge pasted hits from engines or socials"],
-      links: [
-        { label: "Instagram", url: `https://www.instagram.com/${encodeURIComponent(clean)}/` },
-        { label: "TikTok", url: `https://www.tiktok.com/@${encodeURIComponent(clean)}` },
-        { label: "X", url: `https://x.com/${encodeURIComponent(clean)}` },
-        { label: "Search", url: `https://www.google.com/search?q=${encodeURIComponent(handle)}` },
-      ],
-    };
-  });
-  return {
-    mission: "handle_recon",
-    summary: handles.length ? `Handle recon prepared ${handles.length} normalized handles.` : "Handle recon found no stable OCR handles.",
-    items,
-  };
+  return OCR_ENTITIES_UI.buildHandleReconOutput({ handles });
 }
 
 function buildDomainReconOutput({ ent, domains }) {
-  const items = domains.slice(0, 8).map((domain) => {
-    const relatedUrls = (ent.urls || []).filter((url) => (OCR_PIPELINE?.normalizeDomain?.(url) || "") === domain).slice(0, 2);
-    return {
-      type: "domain",
-      label: domain,
-      meta: `${relatedUrls.length} OCR-linked URL${relatedUrls.length === 1 ? "" : "s"}`,
-      lines: [...relatedUrls, "Normalized for site, WHOIS, DNS, CRT, and archive follow-up"],
-      links: [
-        { label: "Site search", url: `https://www.google.com/search?q=${encodeURIComponent(`site:${domain}`)}` },
-        { label: "WHOIS", url: `https://www.whois.com/whois/${encodeURIComponent(domain)}` },
-        { label: "DNS", url: `https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=A` },
-        { label: "CRT", url: `https://crt.sh/?q=${encodeURIComponent(domain)}` },
-        { label: "Archive", url: `https://web.archive.org/web/*/${encodeURIComponent(`https://${domain}/*`)}` },
-      ],
-    };
-  });
-  return {
-    mission: "domain_recon",
-    summary: domains.length ? `Domain recon normalized ${domains.length} domains from OCR and URL pivots.` : "Domain recon found no domains to normalize.",
-    items,
-  };
+  return OCR_ENTITIES_UI.buildDomainReconOutput({ ent, domains, normalizeDomain: OCR_PIPELINE?.normalizeDomain });
 }
 
 function buildMetadataPassOutput() {
@@ -1598,24 +1540,11 @@ function openUrl(url) {
 }
 
 function getRunEngines(run) {
-  const fromTargets = Object.keys(run?.targets || {});
-  const fromQueue = Object.keys(run?.queue || {});
-  return Array.from(new Set([...ENGINE_ORDER.filter((engine) => fromTargets.includes(engine) || fromQueue.includes(engine)), ...fromTargets, ...fromQueue])).filter(Boolean);
+  return LAUNCHPAD_CORE.getRunEngines({ run, engineOrder: ENGINE_ORDER });
 }
 
 function updateRunQueueStatus(run, engine, patch = {}) {
-  if (!run || !engine) return run;
-  run.queue = run.queue && typeof run.queue === "object" ? run.queue : {};
-  const current = run.queue[engine] && typeof run.queue[engine] === "object" ? run.queue[engine] : {};
-  run.queue[engine] = {
-    status: current.status || RUN_QUEUE_STATUS.queued,
-    attempts: Number(current.attempts || 0),
-    updated_at: new Date().toISOString(),
-    ...current,
-    ...patch,
-    updated_at: patch.updated_at || new Date().toISOString(),
-  };
-  return run;
+  return LAUNCHPAD_CORE.updateRunQueueStatus({ run, engine, patch, runQueueStatus: RUN_QUEUE_STATUS });
 }
 
 function persistLaunchpadRun(run) {
@@ -1625,28 +1554,14 @@ function persistLaunchpadRun(run) {
 }
 
 function openTargetsForRun(run, engines) {
-  if (!run || !run.targets) return { openedCount: 0, blockedCount: 0 };
-  const openList = Array.from(new Set((engines || []).filter((engine) => run.targets?.[engine])));
-  let openedCount = 0;
-  let blockedCount = 0;
-  run.opened = run.opened && typeof run.opened === "object" ? run.opened : {};
-  run.blocked = run.blocked && typeof run.blocked === "object" ? run.blocked : {};
-  for (const engine of openList) {
-    const target = run.targets[engine];
-    const opened = openUrl(target);
-    if (opened) {
-      run.opened[engine] = true;
-      delete run.blocked[engine];
-      openedCount += 1;
-      updateRunQueueStatus(run, engine, { status: RUN_QUEUE_STATUS.opened });
-    } else {
-      run.blocked[engine] = true;
-      blockedCount += 1;
-      updateRunQueueStatus(run, engine, { status: RUN_QUEUE_STATUS.blocked });
-    }
-  }
-  run.ts = Date.now();
-  return { openedCount, blockedCount };
+  return LAUNCHPAD_CORE.openTargetsForRun({
+    run,
+    engines,
+    engineOrder: ENGINE_ORDER,
+    openUrl,
+    updateRunQueueStatus,
+    runQueueStatus: RUN_QUEUE_STATUS,
+  });
 }
 
 function getMissionPresetLabel(preset) {
@@ -2413,30 +2328,14 @@ async function ensureReconContext({ mode = "deep" } = {}) {
 }
 
 function createEngineRunRecord({ engines = ENGINE_ORDER, mode = "launchpad", url = "", artifact = state.publicUrlArtifact || "original" } = {}) {
-  const queue = {};
-  const targets = {};
-  const chosen = {};
-  for (const engine of engines) {
-    queue[engine] = {
-      status: url ? RUN_QUEUE_STATUS.prepared : RUN_QUEUE_STATUS.queued,
-      attempts: 0,
-      updated_at: new Date().toISOString(),
-      detail: url ? "Target prepared" : "Awaiting upload handoff",
-    };
-    chosen[engine] = true;
-    targets[engine] = url ? reverseSearchUrl(engine, url) : "";
-  }
-  return {
-    ts: Date.now(),
+  return LAUNCHPAD_CORE.createEngineRunRecord({
+    engines,
     mode,
     url,
     artifact,
-    targets,
-    chosen,
-    opened: {},
-    blocked: {},
-    queue,
-  };
+    reverseSearchUrl,
+    runQueueStatus: RUN_QUEUE_STATUS,
+  });
 }
 
 function buildMissionSummaryOutput(title, lines = []) {
@@ -2448,60 +2347,86 @@ function buildMissionSummaryOutput(title, lines = []) {
 }
 
 async function prepareLaunchpadRun({ engines = ENGINE_ORDER, openLens = true, mode = "launchpad", labelPrefix = "Launchpad" } = {}) {
-  const run = createEngineRunRecord({ engines, mode });
-  let waitJob = null;
-  if (openLens && engines.includes("lens")) {
-    waitJob = openWaitJob("lens", `${labelPrefix} · Lens`);
-    updateRunQueueStatus(run, "lens", {
-      job_id: waitJob.jobId,
-      attempts: 1,
-      status: waitJob.opened ? RUN_QUEUE_STATUS.uploading : RUN_QUEUE_STATUS.blocked,
-      detail: waitJob.opened ? "Lens wait tab is awaiting upload handoff" : "Lens wait tab was blocked before handoff",
-    });
-    if (!waitJob.opened) run.blocked.lens = true;
-  }
-  persistLaunchpadRun(run);
-  const url = await ensurePublicUrl({ purpose: "lens" });
-  run.url = url;
-  run.artifact = state.publicUrlArtifact || "original";
-  run.targets = Object.fromEntries(engines.map((engine) => [engine, reverseSearchUrl(engine, url)]));
-  for (const engine of engines) {
-    updateRunQueueStatus(run, engine, {
-      status: engine === "lens" && openLens ? RUN_QUEUE_STATUS.ready : RUN_QUEUE_STATUS.prepared,
-      detail: engine === "lens" && openLens ? "Wait tab can now open the provider target" : "Engine target prepared for manual intake",
-    });
-  }
-  if (waitJob?.jobId && waitJob.opened) publishWaitState(waitJob.jobId, { url });
-  persistLaunchpadRun(run);
-  return run;
+  return await LAUNCHPAD_CORE.prepareLaunchpadRun({
+    engines,
+    openLens,
+    mode,
+    labelPrefix,
+    createRun: createEngineRunRecord,
+    openWaitJob,
+    updateRunQueueStatus,
+    persistRun: persistLaunchpadRun,
+    ensurePublicUrl,
+    reverseSearchUrl,
+    publishWaitState,
+    runQueueStatus: RUN_QUEUE_STATUS,
+    getArtifact: () => state.publicUrlArtifact || "original",
+  });
 }
 
 async function prepareEngineSwarm({ engines = ENGINE_ORDER, labelPrefix = "Swarm" } = {}) {
-  const run = createEngineRunRecord({ engines, mode: "swarm" });
-  for (const engine of engines) {
-    const wait = openWaitJob(engine, `${labelPrefix} · ${ENGINE_LABEL[engine] || engine}`, { initialStatus: RUN_QUEUE_STATUS.queued });
-    updateRunQueueStatus(run, engine, {
-      job_id: wait.jobId,
-      attempts: 1,
-      status: wait.opened ? RUN_QUEUE_STATUS.queued : RUN_QUEUE_STATUS.blocked,
-      detail: wait.opened ? "Wait tab queued for upload handoff" : "Wait tab blocked before upload handoff",
-    });
-    if (!wait.opened) run.blocked[engine] = true;
+  return await LAUNCHPAD_CORE.prepareEngineSwarm({
+    engines,
+    labelPrefix,
+    createRun: createEngineRunRecord,
+    openWaitJob,
+    updateRunQueueStatus,
+    persistRun: persistLaunchpadRun,
+    ensurePublicUrl,
+    reverseSearchUrl,
+    publishWaitState,
+    runQueueStatus: RUN_QUEUE_STATUS,
+    getArtifact: () => state.publicUrlArtifact || "original",
+    sleep,
+    delayMs: ENGINE_SWARM_DELAY_MS,
+    engineLabel: ENGINE_LABEL,
+  });
+}
+
+async function prepareLaunchpad({
+  openLens = true,
+  autoEnableShare = false,
+  source = "launchpad",
+  busyLabel = "Preparing engine links…",
+  prompt = "To prepare provider links from one upload, BlueLens needs one temporary public handoff URL. Allow the upload?",
+  labelPrefix = "Launchpad",
+  summaryTitle = "Prepare Engine Links",
+  summaryLines = [],
+  successStatusLine = "Launchpad ready",
+} = {}) {
+  if (!state.file || state.uiBusy) return null;
+
+  if (!state.shareEnabled) {
+    if (!autoEnableShare) {
+      const ok = ensureMissionShareEnabled(prompt);
+      if (!ok) return null;
+    } else {
+      state.shareEnabled = true;
+      elements.chkEnableShare.checked = true;
+      setShareControlsEnabled(true);
+    }
   }
-  persistLaunchpadRun(run);
-  const url = await ensurePublicUrl({ purpose: "lens" });
-  run.url = url;
-  run.artifact = state.publicUrlArtifact || "original";
-  run.targets = Object.fromEntries(engines.map((engine) => [engine, reverseSearchUrl(engine, url)]));
-  for (let index = 0; index < engines.length; index += 1) {
-    const engine = engines[index];
-    const jobId = run.queue?.[engine]?.job_id || "";
-    updateRunQueueStatus(run, engine, { status: RUN_QUEUE_STATUS.ready, detail: `Provider target staged (${index + 1}/${engines.length})` });
-    if (jobId && !run.blocked?.[engine]) publishWaitState(jobId, { url });
-    persistLaunchpadRun(run);
-    if (index < engines.length - 1) await sleep(ENGINE_SWARM_DELAY_MS);
-  }
-  return run;
+
+  return await withUiLock(busyLabel, async () => {
+    const run = await prepareLaunchpadRun({ engines: ENGINE_ORDER, openLens, mode: "launchpad", labelPrefix });
+    logAction("launchpad_prepared", `source=${source} targets=${Object.keys(run.targets || {}).length} artifact=${run.artifact}`);
+
+    state.session = loadSession();
+    if (openLens) state.session.engines_opened += 1;
+    saveSession();
+    void refreshHostStats();
+
+    triggerGlitterStorm(68);
+    setMissionOutput(buildMissionSummaryOutput(summaryTitle, summaryLines));
+    setStatusLine(successStatusLine);
+    setStatus("Ready");
+    return run;
+  }).catch((e) => {
+    setShareStatus("Upload failed");
+    const msg = e?.message || "unknown error";
+    elements.publicUrlOut.textContent = `Upload failed: ${msg}`;
+    return null;
+  });
 }
 
 async function runMissionPreset(preset) {
@@ -2543,20 +2468,20 @@ async function runMissionPreset(preset) {
     }
 
     if (p === "share_search") {
-      if (!ensureMissionShareEnabled("Launchpad mission needs one temporary public upload to prepare reverse-search targets. Allow the upload?")) return;
-      setStatusLine("Upload: … · Lens: …");
-      const run = await prepareLaunchpadRun({ engines: ENGINE_ORDER, openLens: true, mode: "launchpad", labelPrefix: "Mission" });
-      logAction("launchpad_prepared", `targets=${Object.keys(run.targets || {}).length} artifact=${run.artifact}`);
-      state.session = loadSession();
-      state.session.engines_opened += 1;
-      saveSession();
-      void refreshHostStats();
-      setMissionOutput(buildMissionSummaryOutput("Upload + Launchpad", [
-        `Prepared ${Object.keys(run.targets || {}).length} engine targets from one upload`,
-        `Result intake queue remains live for pasted findings and deduped analyst merge`,
-      ]));
-      setStatusLine("Upload: ✓ · Lens: ✓ · Launchpad ready");
-      setStatus("Ready");
+      await prepareLaunchpad({
+        openLens: true,
+        autoEnableShare: false,
+        source: "mission:share_search",
+        busyLabel: "Preparing mission launchpad…",
+        prompt: "Launchpad mission needs one temporary public upload to prepare reverse-search targets. Allow the upload?",
+        labelPrefix: "Mission",
+        summaryTitle: "Upload + Launchpad",
+        summaryLines: [
+          `Prepared ${ENGINE_ORDER.length} engine targets from one upload`,
+          "Result intake queue remains live for pasted findings and deduped analyst merge",
+        ],
+        successStatusLine: "Upload: ✓ · Lens: ✓ · Launchpad ready",
+      });
       return;
     }
 
@@ -2886,41 +2811,19 @@ async function handleQuickJump(engine) {
 }
 
 async function handleSearchAll({ autoEnableShare = false, openLens = true } = {}) {
-  if (!state.file) return;
-  if (state.uiBusy) return;
-
-  if (!state.shareEnabled) {
-    if (!autoEnableShare) {
-      const ok = ensureMissionShareEnabled(
-        "To prepare provider links from one upload, BlueLens needs one temporary public handoff URL. Allow the upload?",
-      );
-      if (!ok) return;
-    } else {
-      state.shareEnabled = true;
-      elements.chkEnableShare.checked = true;
-      setShareControlsEnabled(true);
-    }
-  }
-
-  await withUiLock("Preparing engine links…", async () => {
-    const run = await prepareLaunchpadRun({ engines: ENGINE_ORDER, openLens, mode: "launchpad", labelPrefix: "Launchpad" });
-    logAction("launchpad_prepared", `targets=${Object.keys(run.targets || {}).length} artifact=${run.artifact}`);
-
-    state.session = loadSession();
-    if (openLens) state.session.engines_opened += 1;
-    saveSession();
-    void refreshHostStats();
-
-    triggerGlitterStorm(68);
-    setMissionOutput(buildMissionSummaryOutput("Prepare Engine Links", [
-      `Prepared ${Object.keys(run.targets || {}).length} engine targets from one upload`,
+  await prepareLaunchpad({
+    openLens,
+    autoEnableShare,
+    source: "search-all",
+    busyLabel: "Preparing engine links…",
+    prompt: "To prepare provider links from one upload, BlueLens needs one temporary public handoff URL. Allow the upload?",
+    labelPrefix: "Launchpad",
+    summaryTitle: "Prepare Engine Links",
+    summaryLines: [
+      `Prepared ${ENGINE_ORDER.length} engine targets from one upload`,
       "Paste titles, snippets, and URLs back into Result Intake so BlueLens can normalize and dedupe the findings",
-    ]));
-    setStatus("Ready");
-  }).catch((e) => {
-    setShareStatus("Upload failed");
-    const msg = e?.message || "unknown error";
-    elements.publicUrlOut.textContent = `Upload failed: ${msg}`;
+    ],
+    successStatusLine: openLens ? "Upload: ✓ · Lens: ✓ · Launchpad ready" : "Upload: ✓ · Launchpad ready",
   });
 }
 
@@ -3220,6 +3123,14 @@ function buildPivotSearchUrlsFromEntities(ent) {
   for (const u of (ent?.urls || []).slice(0, 5)) add(`https://web.archive.org/web/*/${encodeURIComponent(u)}`);
   for (const e of (ent?.emails || []).slice(0, 6)) add(google(`"${e}"`));
   for (const p of (ent?.phones || []).slice(0, 4)) add(google(`"${p}"`));
+  for (const person of (ent?.people || []).slice(0, 4)) add(google(`"${person}"`));
+  for (const org of (ent?.organizations || []).slice(0, 4)) add(google(`"${org}"`));
+  for (const loc of (ent?.locations || []).slice(0, 4)) {
+    add(google(`"${loc}" location`));
+    add(`https://www.google.com/maps/search/${encodeURIComponent(loc)}`);
+  }
+  for (const date of (ent?.dates || []).slice(0, 4)) add(google(`"${date}"`));
+  for (const alias of (ent?.aliases || []).slice(0, 4)) add(google(`"${alias}"`));
   for (const hRaw of (ent?.handles || []).slice(0, 8)) {
     const h = String(hRaw || "").replace(/^@/, "").trim();
     if (!h) continue;
@@ -3315,10 +3226,20 @@ function buildMarkdownReport(report) {
   const e = Array.isArray(entities.emails) ? entities.emails.slice(0, 8) : [];
   const h = Array.isArray(entities.handles) ? entities.handles.slice(0, 8) : [];
   const p = Array.isArray(entities.phones) ? entities.phones.slice(0, 6) : [];
+  const people = Array.isArray(entities.people) ? entities.people.slice(0, 6) : [];
+  const orgs = Array.isArray(entities.organizations) ? entities.organizations.slice(0, 6) : [];
+  const locations = Array.isArray(entities.locations) ? entities.locations.slice(0, 6) : [];
+  const dates = Array.isArray(entities.dates) ? entities.dates.slice(0, 6) : [];
+  const aliases = Array.isArray(entities.aliases) ? entities.aliases.slice(0, 6) : [];
   lines.push(`- URLs: ${u.length ? u.map((x) => x).join(" · ") : "—"}`);
   lines.push(`- Emails: ${e.length ? e.map((x) => `\`${x}\``).join(" · ") : "—"}`);
   lines.push(`- Handles: ${h.length ? h.map((x) => `\`${x}\``).join(" · ") : "—"}`);
   lines.push(`- Phones: ${p.length ? p.map((x) => `\`${x}\``).join(" · ") : "—"}`);
+  lines.push(`- People: ${people.length ? people.map((x) => `\`${x}\``).join(" · ") : "—"}`);
+  lines.push(`- Organizations: ${orgs.length ? orgs.map((x) => `\`${x}\``).join(" · ") : "—"}`);
+  lines.push(`- Locations: ${locations.length ? locations.map((x) => `\`${x}\``).join(" · ") : "—"}`);
+  lines.push(`- Dates: ${dates.length ? dates.map((x) => `\`${x}\``).join(" · ") : "—"}`);
+  lines.push(`- Aliases: ${aliases.length ? aliases.map((x) => `\`${x}\``).join(" · ") : "—"}`);
   lines.push(`- Review entry count: \`${ocrReviewEntries.length}\``);
   lines.push(`- Structured task count: \`${r.key_fields?.ocr_entity_tasks ? Object.keys(r.key_fields.ocr_entity_tasks).length : 0}\``);
   lines.push("");
@@ -4356,254 +4277,32 @@ async function getOcrWorker(lang) {
 }
 
 function renderOcrEntities(text) {
-  const wrap = elements.ocrEntities;
-  if (!wrap) return;
-
-  const ent = OCR_PIPELINE?.extractEntities?.(text) || { urls: [], emails: [], handles: [], phones: [] };
-  const total =
-    ent.urls.length + ent.emails.length + ent.handles.length + ent.phones.length;
-
-  if (!total) {
-    state.ocrDerivedEntries = [];
-    wrap.hidden = true;
-    wrap.innerHTML = "";
-    if (elements.btnPivotSearch) elements.btnPivotSearch.disabled = true;
-    return;
-  }
-
-  const derivedEntries = [];
-  wrap.hidden = false;
-  wrap.innerHTML = "";
-  if (elements.btnPivotSearch) elements.btnPivotSearch.disabled = false;
-
-  const group = (title, source) => {
-    const g = document.createElement("div");
-    g.className = "pivot-group";
-    const head = document.createElement("div");
-    head.className = "pivot-head";
-    head.textContent = source ? `${title} — ${source}` : title;
-    g.appendChild(head);
-    wrap.appendChild(g);
-    return g;
-  };
-
-  const addLinkChip = (parent, label, url, { title } = {}) => {
-    const a = document.createElement("a");
-    a.className = "chip chip-link";
-    a.href = url;
-    a.target = "_blank";
-    a.rel = "noreferrer";
-    a.title = title || label;
-    a.textContent = label;
-    parent.appendChild(a);
-  };
-
-  const addCopyChip = (parent, label, value) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "chip";
-    b.title = `Copy ${label}`;
-    b.textContent = label;
-    b.addEventListener("click", () => void copyText(value));
-    parent.appendChild(b);
-  };
-
-  const addInfoChip = (parent, label) => {
-    const chip = document.createElement("span");
-    chip.className = "chip";
-    chip.textContent = label;
-    parent.appendChild(chip);
-  };
-
-  const addTaskButton = (parent, { entityType, entityKey, entityValue }) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "chip";
-    button.title = "Run structured acquisition task";
-    button.textContent = "Acquire";
-    parent.appendChild(button);
-
-    const box = document.createElement("div");
-    box.className = "pivot-task-box";
-    box.hidden = true;
-    parent.appendChild(box);
-
-    renderPivotTaskResult(box, state.pivotTaskResults?.[entityKey] || null);
-    button.addEventListener("click", async () => {
-      button.disabled = true;
-      renderPivotTaskResult(box, {
-        status: "loading",
-        summary: "Running structured acquisition…",
-        lines: [`Lead: ${entityValue}`],
-        links: [],
-      });
-      try {
-        const result = await runPivotStructuredTask({ entityType, entityKey, entityValue });
-        setPivotTaskResult(entityKey, result);
-        renderPivotTaskResult(box, result);
-        logAction("pivot_task_acquired", `${entityType}:${entityValue}`);
-      } catch (error) {
-        const failed = {
-          status: "error",
-          summary: "Structured acquisition failed.",
-          lines: [error?.message || "unknown error"],
-          links: [],
-          entity_type: entityType,
-          entity_key: entityKey,
-          entity_value: entityValue,
-          fetched_at: new Date().toISOString(),
-        };
-        setPivotTaskResult(entityKey, failed);
-        renderPivotTaskResult(box, failed);
-      } finally {
-        button.disabled = false;
-      }
-    });
-  };
-
-  const addConfidence = (parent, { entityType, entityKey, entityValue }) => {
-    const sel = document.createElement("select");
-    sel.className = "select chip-select";
-    sel.title = "Analyst confidence (manual)";
-    sel.innerHTML =
-      `<option value="unverified">?</option>` +
-      `<option value="likely">~</option>` +
-      `<option value="confirmed">✓</option>`;
-    parent.appendChild(sel);
-    sel.value = state.entityConfidence?.[entityKey] || "unverified";
-    sel.addEventListener("change", () => {
-      recordEntityConfidenceReview({ entityType, entityKey, entityValue, confidence: sel.value || "unverified" });
-    });
-  };
-
-  const addDerivedEntry = ({ entityType, entityKey, entityValue, note }) => {
-    derivedEntries.push(
-      createReviewEntry({
-        source: "derived",
-        scope: "ocr_entity",
-        field: "detected",
-        value: entityValue,
-        entityType,
-        entityKey,
-        entityValue,
-        note,
-      }),
-    );
-  };
-
-  const google = (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`;
-  const note = document.createElement("div");
-  note.className = "pivot-head";
-  note.textContent = "Manual pivots only — these are templated follow-ups from OCR hits, not investigative scoring.";
-  wrap.appendChild(note);
-
-  if (ent.handles.length) {
-    const g = group("Handles", "Source: direct OCR hit · Confidence: direct text");
-    for (const raw of ent.handles.slice(0, 6)) {
-      const h = OCR_PIPELINE?.normalizeHandle?.(raw) || raw.replace(/^@/, "");
-      if (!h) continue;
-      const row = document.createElement("div");
-      row.className = "pivot-row";
-      addCopyChip(row, `@${h}`, `@${h}`);
-      addInfoChip(row, "Manual follow-up");
-      addLinkChip(row, "IG", `https://www.instagram.com/${encodeURIComponent(h)}/`, { title: "Open Instagram profile" });
-      addLinkChip(row, "TikTok", `https://www.tiktok.com/@${encodeURIComponent(h)}`, { title: "Open TikTok profile" });
-      addLinkChip(row, "X", `https://x.com/${encodeURIComponent(h)}`, { title: "Open X profile" });
-      addLinkChip(row, "Search", google(`@${h}`), { title: "Search handle" });
-      addDerivedEntry({ entityType: "handle", entityKey: `handle:${h.toLowerCase()}`, entityValue: `@${h}`, note: "Direct OCR hit" });
-      addConfidence(row, { entityType: "handle", entityKey: `handle:${h.toLowerCase()}`, entityValue: `@${h}` });
-      addTaskButton(row, { entityType: "handle", entityKey: `handle:${h.toLowerCase()}`, entityValue: `@${h}` });
-      g.appendChild(row);
-    }
-  }
-
-  if (ent.urls.length) {
-    const g = group("URLs / Domains", "Source: direct OCR hit · Confidence: direct text");
-    for (const u of ent.urls.slice(0, 6)) {
-      const d = OCR_PIPELINE?.normalizeDomain?.(u);
-      const row = document.createElement("div");
-      row.className = "pivot-row";
-      const short = String(u).replace(/^https?:\/\//i, "").slice(0, 44);
-      addLinkChip(row, short, u, { title: "Open URL" });
-      if (d) {
-        addInfoChip(row, "Derived domain follow-up");
-        addDerivedEntry({ entityType: "domain", entityKey: `domain:${d}`, entityValue: d, note: "Derived OCR follow-up" });
-        addLinkChip(row, "WHOIS", `https://www.whois.com/whois/${encodeURIComponent(d)}`, { title: "WHOIS lookup" });
-        addLinkChip(row, "DNS", `https://dns.google/resolve?name=${encodeURIComponent(d)}&type=A`, { title: "DNS over HTTPS (Google)" });
-        addLinkChip(row, "CRT", `https://crt.sh/?q=${encodeURIComponent(d)}`, { title: "Certificate transparency" });
-        addLinkChip(row, "Search", google(`site:${d}`), { title: "Search site" });
-        addConfidence(row, { entityType: "domain", entityKey: `domain:${d}`, entityValue: d });
-        addTaskButton(row, { entityType: "domain", entityKey: `domain:${d}`, entityValue: d });
-      } else {
-        addDerivedEntry({ entityType: "url", entityKey: `url:${String(u).toLowerCase()}`, entityValue: u, note: "Direct OCR hit" });
-        addLinkChip(row, "Search", google(u), { title: "Search URL" });
-        addTaskButton(row, { entityType: "url", entityKey: `url:${String(u).toLowerCase()}`, entityValue: u });
-      }
-      g.appendChild(row);
-    }
-  }
-
-  if (ent.emails.length) {
-    const g = group("Emails", "Source: direct OCR hit · Confidence: direct text");
-    for (const e of ent.emails.slice(0, 6)) {
-      const row = document.createElement("div");
-      row.className = "pivot-row";
-      addCopyChip(row, e, e);
-      addInfoChip(row, "Manual search");
-      addLinkChip(row, "Search", google(`"${e}"`), { title: "Search email" });
-      addLinkChip(row, "Breach?", google(`"${e}" breach`), { title: "Search breach mentions" });
-      addDerivedEntry({ entityType: "email", entityKey: `email:${e.toLowerCase()}`, entityValue: e, note: "Direct OCR hit" });
-      addConfidence(row, { entityType: "email", entityKey: `email:${e.toLowerCase()}`, entityValue: e });
-      addTaskButton(row, { entityType: "email", entityKey: `email:${e.toLowerCase()}`, entityValue: e });
-      g.appendChild(row);
-    }
-  }
-
-  if (ent.phones.length) {
-    const g = group("Phones", "Source: direct OCR hit · Confidence: direct text");
-    for (const p of ent.phones.slice(0, 6)) {
-      const n = OCR_PIPELINE?.normalizePhone?.(p);
-      const row = document.createElement("div");
-      row.className = "pivot-row";
-      const label = n?.e164 ? `${n.e164}${n.country_hint ? ` (${n.country_hint})` : ""}` : p;
-      addCopyChip(row, label, n?.e164 || p);
-      addInfoChip(row, "Manual search");
-      const q = n?.e164 || n?.digits || p;
-      addLinkChip(row, "Search", google(`"${q}"`), { title: "Search phone" });
-      addDerivedEntry({ entityType: "phone", entityKey: `phone:${String(q).replace(/\s+/g, "")}`, entityValue: label, note: "Direct OCR hit" });
-      addConfidence(row, { entityType: "phone", entityKey: `phone:${String(q).replace(/\s+/g, "")}`, entityValue: label });
-      addTaskButton(row, { entityType: "phone", entityKey: `phone:${String(q).replace(/\s+/g, "")}`, entityValue: label });
-      g.appendChild(row);
-    }
-  }
-  state.ocrDerivedEntries = derivedEntries;
+  OCR_ENTITIES_UI.renderOcrEntities({
+    text,
+    state,
+    elements,
+    ocrPipeline: OCR_PIPELINE,
+    copyText,
+    renderPivotTaskResult,
+    runPivotStructuredTask,
+    setPivotTaskResult,
+    logAction,
+    recordEntityConfidenceReview,
+    createReviewEntry,
+  });
 }
 
 function detectScriptHint(text) {
-  const t = String(text || "");
-  if (!t) return null;
-  const ranked = OCR_SCRIPT_HINTS
-    .map((script) => ({ ...script, score: (t.match(script.test) || []).length }))
-    .filter((script) => script.score > 0)
-    .sort((a, b) => b.score - a.score);
-  const top = ranked[0];
-  if (!top) return null;
-  if (top.label !== "Latin" && top.score < 2) return null;
-  if (top.label === "Latin" && top.score < 8) return null;
-  return top;
+  return OCR_ENTITIES_UI.detectScriptHint({ text, scriptHints: OCR_SCRIPT_HINTS });
 }
 
 function renderOcrLangHint(text) {
-  const el = elements.ocrLangHint;
-  if (!el) return;
-  const hint = detectScriptHint(text);
-  if (!hint) {
-    el.hidden = true;
-    return;
-  }
-  const labels = hint.models.slice(0, 3).map((code) => getOcrLanguageLabel(code)).join(" / ");
-  el.hidden = false;
-  el.textContent = `Weak script hint: ${hint.label} → try ${labels}`;
+  OCR_ENTITIES_UI.renderOcrLangHint({
+    text,
+    element: elements.ocrLangHint,
+    scriptHints: OCR_SCRIPT_HINTS,
+    getOcrLanguageLabel,
+  });
 }
 
 async function runOcrForCurrent({ mode = "deep" } = {}) {

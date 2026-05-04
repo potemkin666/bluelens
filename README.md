@@ -39,6 +39,7 @@ If you prefer the direct command, `node server.js` is equivalent on supported No
 - Batch export currently omits failed files from the downloadable JSON bundle.
 - EXIF capture times are exported with raw value, normalized form, source field, and timezone ambiguity notes.
 - Server-side archive lookups default to the Internet Archive Wayback availability API and can be overridden with `BLUELENS_ARCHIVE_API_BASE`.
+- `BLUELENS_ALLOW_PRIVATE_FETCH=1` is only for controlled local testing; do not enable it for untrusted targets because it disables the acquisition layer's private-network fetch guardrails.
 - Run tests with `npm test`.
 - Open the in-app Help page for startup, privacy, troubleshooting, and defaults.
 

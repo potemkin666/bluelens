@@ -10,6 +10,8 @@ const stylesCss = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf
 const waitHtml = fs.readFileSync(path.join(__dirname, "..", "wait.html"), "utf8");
 const startCmd = fs.readFileSync(path.join(__dirname, "..", "bluelens-start.cmd"), "utf8");
 const desktopIconPs1 = fs.readFileSync(path.join(__dirname, "..", "create-desktop-icon.ps1"), "utf8");
+const launchpadCoreJs = fs.readFileSync(path.join(__dirname, "..", "launchpad-core.js"), "utf8");
+const ocrEntitiesUiJs = fs.readFileSync(path.join(__dirname, "..", "ocr-entities-ui.js"), "utf8");
 const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
 const readmeMd = fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8");
 const faviconSvgPath = path.join(__dirname, "..", "favicon.svg");
@@ -141,19 +143,22 @@ test("OCR UI uses manual models and weak script hints", () => {
   assert.match(indexHtml, /Weak script hint/);
   assert.match(indexHtml, /<option value="rus">Russian</);
   assert.match(indexHtml, /<option value="chi_sim">Chinese \(Simplified\)</);
-  assert.match(appJs, /function detectScriptHint\(text\)/);
-  assert.match(appJs, /Weak script hint: \$\{hint\.label\}/);
+  assert.match(ocrEntitiesUiJs, /const detectScriptHint = \(\{ text, scriptHints = \[\] \}\) =>/);
+  assert.match(ocrEntitiesUiJs, /Weak script hint: \$\{hint\.label\}/);
   assert.doesNotMatch(appJs, /elements\.ocrLang\.value\s*=\s*hint/);
 });
 
 test("OCR pivots are framed as manual follow-ups", () => {
   assert.match(indexHtml, />Manual pivots</);
-  assert.match(appJs, /Manual pivots only — these are templated follow-ups from OCR hits/);
+  assert.match(ocrEntitiesUiJs, /Manual pivots only — these are templated follow-ups from OCR hits/);
   assert.match(appJs, /Manual pivots \(\$\{targets\.length\}\)/);
   assert.match(appJs, /function runPivotStructuredTask\(/);
-  assert.match(appJs, /pivot_task_acquired/);
+  assert.match(ocrEntitiesUiJs, /pivot_task_acquired/);
   assert.match(appJs, /\/api\/metadata\?/);
   assert.match(appJs, /\/api\/discover\?/);
+  assert.match(appJs, /People: /);
+  assert.match(appJs, /Organizations: /);
+  assert.match(appJs, /Locations: /);
 });
 
 test("metadata suspicion copy avoids faux-precise repost scoring", () => {
@@ -256,7 +261,22 @@ test("batch dashboard exposes aggregated entity follow-up controls", () => {
 
 test("result intake accepts loose pipe delimiters and tracks blocked wait tabs honestly", () => {
   assert.ok(appJs.includes('split(/\\s*\\|\\s*/)'));
+  assert.ok(appJs.includes('split("\\t")'));
   assert.match(appJs, /wait_tab_blocked/);
+});
+
+test("browser modules split launchpad core and OCR entity UI out of app.js", () => {
+  assert.match(indexHtml, /src="\.\/launchpad-core\.js"/);
+  assert.match(indexHtml, /src="\.\/ocr-entities-ui\.js"/);
+  assert.match(appJs, /const LAUNCHPAD_CORE = window\.BLUELENS_LAUNCHPAD \|\| \{\};/);
+  assert.match(appJs, /const OCR_ENTITIES_UI = window\.BLUELENS_OCR_ENTITIES \|\| \{\};/);
+  assert.match(appJs, /async function prepareLaunchpad\(/);
+  assert.match(launchpadCoreJs, /const createEngineRunRecord = \(\{/);
+  assert.match(ocrEntitiesUiJs, /const renderOcrEntities = \(\{/);
+  assert.match(appJs, /source: "mission:share_search"/);
+  assert.match(appJs, /source: "search-all"/);
+  assert.doesNotMatch(appJs, /const run = await prepareLaunchpadRun\(\{ engines: ENGINE_ORDER, openLens: true, mode: "launchpad", labelPrefix: "Mission" \}\);/);
+  assert.doesNotMatch(appJs, /const run = await prepareLaunchpadRun\(\{ engines: ENGINE_ORDER, openLens, mode: "launchpad", labelPrefix: "Launchpad" \}\);/);
 });
 
 test("windows start script waits for ping before opening the browser", () => {
