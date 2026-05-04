@@ -4402,7 +4402,6 @@ function setupCommandPalette() {
       row.addEventListener("click", () => {
         const chosen = action;
         if (!chosen) return;
-        activeIndex = idx;
         setOpen(false);
         chosen.run();
       });

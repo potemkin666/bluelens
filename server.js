@@ -42,8 +42,8 @@ const WAIT_JOB_LISTENERS = new Map();
 const UPLOAD_STATS = new Map();
 function reportServerIssue(scope, error, detail = null) {
   const msg = error?.message || String(error || "unknown error");
-  if (detail) console.warn(`[BlueLens:${scope}] ${msg}`, detail);
-  else console.warn(`[BlueLens:${scope}] ${msg}`);
+  if (detail) console.warn("[BlueLens]", { scope, message: msg, detail });
+  else console.warn("[BlueLens]", { scope, message: msg });
 }
 
 function safeJsonParse(txt, fallback, scope, detail = null) {
