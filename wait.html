@@ -98,6 +98,7 @@
         <div id="title"><strong>Engine</strong> &mdash; waiting for public image URL&hellip;</div>
         <div id="msg" class="muted" style="margin-top: 8px" aria-live="polite"></div>
         <div id="link" style="margin-top: 10px"></div>
+        <div id="recovery" class="muted" style="margin-top: 10px" hidden></div>
         <button id="close">Close</button>
       </div>
     </div>
@@ -106,6 +107,12 @@
     <script>
       const runtimeConfig = window.BLUELENS_CONFIG || {};
       const waitJobTimeoutMs = runtimeConfig?.server?.waitJobs?.defaultTimeoutMs || 25000;
+      const waitPageConfig = runtimeConfig?.app?.waitPage || {};
+      const initialRetryMs = waitPageConfig.initialRetryMs || 350;
+      const maxRetryMs = waitPageConfig.maxRetryMs || 5000;
+      const backoffFactor = waitPageConfig.backoffFactor || 1.8;
+      const missingJobTerminalMs = waitPageConfig.missingJobTerminalMs || 12000;
+      const stalledJobTerminalMs = waitPageConfig.stalledJobTerminalMs || 45000;
       const waitDiagnostics = new Map();
       const params = new URLSearchParams(location.search);
       const jobId = params.get("job") || "";
@@ -113,10 +120,15 @@
       let label = params.get("label") || engine || "Engine";
       let lastSeq = -1;
       let stopped = false;
+      let retryMs = initialRetryMs;
+      let firstSeenServerStartedAt = null;
+      let lastProgressAt = Date.now();
+      let missingSince = 0;
 
       const title = document.getElementById("title");
       const msg = document.getElementById("msg");
       const link = document.getElementById("link");
+      const recovery = document.getElementById("recovery");
 
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
       const reportWaitIssue = (scope, error, dedupeMs = 4000) => {
@@ -157,6 +169,38 @@
         msg.append(text);
       };
 
+      const setRecovery = (text) => {
+        if (!recovery) return;
+        recovery.hidden = false;
+        recovery.innerHTML = "";
+        recovery.append(text);
+        recovery.append(" ");
+        const a = document.createElement("a");
+        a.href = "./index.html";
+        a.target = "_blank";
+        a.rel = "noreferrer";
+        a.textContent = "Open main tab";
+        recovery.appendChild(a);
+      };
+
+      const stopWithRecovery = (text) => {
+        stopped = true;
+        setMessage(text);
+        setRecovery("If the handoff died with a restart or expired upload state, reopen from the main tab and launch again.");
+      };
+
+      const applyMeta = (meta) => {
+        const serverStartedAt = Number(meta?.server_started_at || 0);
+        if (!Number.isFinite(serverStartedAt) || serverStartedAt <= 0) return;
+        if (firstSeenServerStartedAt == null) {
+          firstSeenServerStartedAt = serverStartedAt;
+          return;
+        }
+        if (serverStartedAt !== firstSeenServerStartedAt) {
+          stopWithRecovery("Local handoff server restarted before this wait tab finished.");
+        }
+      };
+
       setHeading(label);
       setMessage("Connecting to local handoff…", true);
 
@@ -185,7 +229,10 @@
           setHeading(label);
         }
         if (job.engine) engine = job.engine;
-        if (typeof job.seq === "number") lastSeq = job.seq;
+        if (typeof job.seq === "number" && job.seq > lastSeq) {
+          lastSeq = job.seq;
+          lastProgressAt = Date.now();
+        }
 
         if (job.err) {
           setMessage(`Error: ${job.err}`);
@@ -204,7 +251,12 @@
           return true;
         }
         if (job.status) {
-          setMessage(job.status === "uploading" ? "Uploading... (check main tab)" : String(job.status), true);
+          const remainingMs = Number(job.expires_at || 0) - Date.now();
+          const expiryNote =
+            Number.isFinite(remainingMs) && remainingMs > 0 && remainingMs < 60_000
+              ? ` Expires in ${Math.max(1, Math.ceil(remainingMs / 1000))}s.`
+              : "";
+          setMessage(job.status === "uploading" ? `Uploading… (check main tab).${expiryNote}` : `${String(job.status)}${expiryNote}`, true);
         }
         return false;
       };
@@ -224,19 +276,47 @@
             if (!r.ok) {
               if (r.status === 404) {
                 reportWaitIssue("not-found", new Error("wait job not yet created"));
-                setMessage("Waiting for local handoff…", true);
-                await sleep(500);
+                missingSince ||= Date.now();
+                if (Date.now() - missingSince >= missingJobTerminalMs) {
+                  stopWithRecovery("Local handoff never appeared. The server may have restarted before the wait state was published.");
+                  return;
+                }
+                retryMs = Math.min(maxRetryMs, Math.round(retryMs * backoffFactor));
+                setMessage(`Waiting for local handoff… retrying in ${(retryMs / 1000).toFixed(1)}s.`, true);
+                await sleep(retryMs);
                 continue;
               }
               throw new Error(`HTTP ${r.status}`);
             }
             const data = await r.json();
+            applyMeta(data?.meta);
+            if (stopped) return;
+            retryMs = initialRetryMs;
+            if (data?.missing) missingSince ||= Date.now();
+            else missingSince = 0;
             if (applyJob(data?.job)) return;
-            if (data?.timeout) setMessage("Still waiting for the upload job… reconnecting.", true);
+            if (data?.missing && Date.now() - missingSince >= missingJobTerminalMs) {
+              stopWithRecovery("The handoff state disappeared before the upload finished.");
+              return;
+            }
+            if (Date.now() - lastProgressAt >= stalledJobTerminalMs) {
+              stopWithRecovery("The wait tab stopped receiving handoff progress updates.");
+              return;
+            }
+            if (data?.timeout) {
+              retryMs = Math.min(maxRetryMs, Math.round(retryMs * backoffFactor));
+              setMessage(`Still waiting for the upload job… retrying in ${(retryMs / 1000).toFixed(1)}s.`, true);
+              await sleep(retryMs);
+            }
           } catch (error) {
             reportWaitIssue("poll", error);
-            setMessage("Connection lost. Reconnecting…", true);
-            await sleep(1000);
+            retryMs = Math.min(maxRetryMs, Math.round(retryMs * backoffFactor));
+            if (Date.now() - lastProgressAt >= stalledJobTerminalMs) {
+              stopWithRecovery("Connection to the local handoff stayed down too long.");
+              return;
+            }
+            setMessage(`Connection lost. Reconnecting in ${(retryMs / 1000).toFixed(1)}s…`, true);
+            await sleep(retryMs);
           }
         }
       };

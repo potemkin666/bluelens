@@ -7,6 +7,7 @@ const indexHtml = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf
 const appJs = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
 const helpHtml = fs.readFileSync(path.join(__dirname, "..", "help.html"), "utf8");
 const stylesCss = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
+const waitHtml = fs.readFileSync(path.join(__dirname, "..", "wait.html"), "utf8");
 const setupTabsBlock = appJs.match(/function setupTabs\(\) \{[\s\S]*?\n\}/)?.[0] || "";
 
 test("mission preset selector stays reachable in the HTML", () => {
@@ -80,6 +81,36 @@ test("operator theme is calm by default and fun mode is explicit", () => {
   assert.match(stylesCss, /--scanline: 0;/);
   assert.match(stylesCss, /--chromatic: 0;/);
   assert.match(stylesCss, /body\.fun-mode \.bg-overlay/);
+});
+
+test("OCR UI uses manual models and weak script hints", () => {
+  assert.match(indexHtml, />OCR model</);
+  assert.match(indexHtml, /Weak script hint/);
+  assert.match(indexHtml, /<option value="rus">Russian</);
+  assert.match(indexHtml, /<option value="chi_sim">Chinese \(Simplified\)</);
+  assert.match(appJs, /function detectScriptHint\(text\)/);
+  assert.match(appJs, /Weak script hint: \$\{hint\.label\}/);
+  assert.doesNotMatch(appJs, /elements\.ocrLang\.value = hint/);
+});
+
+test("OCR pivots are framed as manual follow-ups", () => {
+  assert.match(indexHtml, />Manual pivots</);
+  assert.match(appJs, /Manual pivots only — these are templated follow-ups from OCR hits/);
+  assert.match(appJs, /Manual pivots \(\$\{targets\.length\}\)/);
+});
+
+test("metadata suspicion copy avoids faux-precise repost scoring", () => {
+  assert.match(indexHtml, />Metadata suspicion</);
+  assert.doesNotMatch(indexHtml, />Repost heuristic</);
+  assert.match(appJs, /function computeMetadataSuspicionScore/);
+  assert.match(appJs, /formatMetadataSuspicionBand/);
+  assert.doesNotMatch(appJs, /elements\.repostScore\.textContent = `\$\{score\}\/100`/);
+});
+
+test("wait tab uses backoff and exposes reopen guidance", () => {
+  assert.match(waitHtml, /retryMs = Math\.min\(maxRetryMs, Math\.round\(retryMs \* backoffFactor\)\)/);
+  assert.match(waitHtml, /Open main tab/);
+  assert.match(waitHtml, /server restarted/i);
 });
 
 test("mutation lab copy is clearly framed as analyst review", () => {

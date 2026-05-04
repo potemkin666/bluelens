@@ -113,6 +113,7 @@ test("local server exposes ping and durable wait-job handoff routes", async (t) 
   assert.equal(firstData.timeout, false);
   assert.equal(firstData.job.id, jobId);
   assert.equal(firstData.job.status, "uploading");
+  assert.ok(Number.isFinite(firstData.meta?.server_started_at));
   const firstSeq = firstData.job.seq;
 
   const update = await fetch(`http://127.0.0.1:${port}/api/wait-jobs/${jobId}`, {
@@ -141,4 +142,6 @@ test("local server exposes ping and durable wait-job handoff routes", async (t) 
   assert.equal(timeoutData.ok, true);
   assert.equal(timeoutData.timeout, true);
   assert.equal(timeoutData.job, null);
+  assert.equal(timeoutData.missing, true);
+  assert.ok(Number.isFinite(timeoutData.meta?.server_started_at));
 });

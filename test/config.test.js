@@ -8,6 +8,10 @@ test("shared config exports key runtime defaults", () => {
   assert.equal(config.server.waitJobs.defaultTimeoutMs, 25_000);
   assert.deepEqual(config.server.upload.hosts, ["uguu", "catbox", "litterbox", "0x0"]);
   assert.equal(config.app.ocr.fastPreprocessMaxDim, 1_200);
+  assert.equal(config.app.ocr.defaultLanguage, "eng");
+  assert.ok(config.app.ocr.languages.some((row) => row.value === "rus"));
+  assert.ok(config.app.ocr.languages.some((row) => row.value === "chi_sim"));
+  assert.equal(config.app.waitPage.initialRetryMs, 350);
   assert.equal(config.app.dhash.batchClusterThreshold, 8);
   assert.equal(config.fx.funModeDefault, false);
   assert.ok(Array.isArray(config.help.defaults));

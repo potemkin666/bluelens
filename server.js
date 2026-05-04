@@ -30,6 +30,7 @@ const UPLOAD_HOSTS = Array.isArray(UPLOAD_CONFIG.hosts) ? UPLOAD_CONFIG.hosts : 
 const PREFERRED_HOSTS_BY_PURPOSE = UPLOAD_CONFIG.preferredHostsByPurpose || {};
 const LITTERBOX_EXPIRY = UPLOAD_CONFIG.litterboxExpiry || "72h";
 const WAIT_JOB_STORE_PATH = path.join(os.tmpdir(), "bluelens-wait-jobs-v1.json");
+const SERVER_STARTED_AT = Date.now();
 
 // Durable wait-job handoff for wait tabs.
 // Key: jobId -> { id, engine, label, status, url, err, seq, created_at, updated_at, expires_at }
@@ -215,6 +216,14 @@ function waitForWaitJobUpdate(jobId, since = -1, timeoutMs = WAIT_JOB_DEFAULT_TI
     const timer = setTimeout(() => finish(null), timeoutMs);
     listeners.add(finish);
   });
+}
+
+function waitJobMeta() {
+  return {
+    server_started_at: SERVER_STARTED_AT,
+    wait_job_max_age_ms: WAIT_JOB_MAX_AGE_MS,
+    wait_job_default_timeout_ms: WAIT_JOB_DEFAULT_TIMEOUT_MS,
+  };
 }
 
 function send(res, status, body, headers = {}) {
@@ -427,11 +436,12 @@ async function handleWaitJobGet(req, res, u, jobId) {
   const job = await waitForWaitJobUpdate(jobId, since, timeoutMs);
 
   if (job) {
-    send(res, 200, JSON.stringify({ ok: true, timeout: false, job }), { "Content-Type": "application/json" });
+    send(res, 200, JSON.stringify({ ok: true, timeout: false, job, meta: waitJobMeta() }), { "Content-Type": "application/json" });
     return;
   }
 
-  send(res, 200, JSON.stringify({ ok: true, timeout: true, job: getWaitJob(jobId) }), { "Content-Type": "application/json" });
+  const latest = getWaitJob(jobId);
+  send(res, 200, JSON.stringify({ ok: true, timeout: true, job: latest, missing: !latest, meta: waitJobMeta() }), { "Content-Type": "application/json" });
 }
 
 async function handleWaitJobPost(req, res, jobId) {

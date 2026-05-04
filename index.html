@@ -113,7 +113,7 @@
                 type="button"
                 disabled
                 data-ico="⚡"
-                title="Runs OCR and refreshes attribution/repost signals."
+                title="Runs OCR and refreshes attribution and metadata-suspicion cues."
               >
                 OSINT Pass
               </button>
@@ -149,9 +149,9 @@
             <div id="metaDim" class="v">—</div>
           </div>
           <div class="kv">
-            <div class="k" title="Local-only estimate, not a provenance verdict">Repost heuristic</div>
+            <div class="k" title="Local-only arithmetic from metadata clues, not a provenance verdict">Metadata suspicion</div>
             <div id="repostScore" class="v">—</div>
-            <div id="repostReasons" class="chips chips-mini" hidden aria-label="Repost heuristic reasons"></div>
+            <div id="repostReasons" class="chips chips-mini" hidden aria-label="Metadata suspicion inputs"></div>
           </div>
           <div class="kv">
             <div class="k">Attribution</div>
@@ -454,18 +454,31 @@
               </div>
 
               <div class="row row-tight">
-                <label class="field" title="OCR language">
-                  <span class="field-label">Lang</span>
+                <label class="field" title="OCR model">
+                  <span class="field-label">OCR model</span>
                   <select id="ocrLang" class="select" disabled>
                     <option value="eng">English</option>
                     <option value="spa">Spanish</option>
                     <option value="fra">French</option>
                     <option value="deu">German</option>
+                    <option value="ita">Italian</option>
+                    <option value="por">Portuguese</option>
+                    <option value="nld">Dutch</option>
+                    <option value="pol">Polish</option>
+                    <option value="tur">Turkish</option>
+                    <option value="rus">Russian</option>
+                    <option value="ukr">Ukrainian</option>
+                    <option value="ara">Arabic</option>
+                    <option value="heb">Hebrew</option>
+                    <option value="jpn">Japanese</option>
+                    <option value="kor">Korean</option>
+                    <option value="chi_sim">Chinese (Simplified)</option>
+                    <option value="chi_tra">Chinese (Traditional)</option>
                   </select>
                 </label>
-                <span id="ocrLangHint" class="pill pill-muted" hidden title="Language hint from detected characters">Hint</span>
+                <span id="ocrLangHint" class="pill pill-muted" hidden title="Weak script hint from observed characters">Weak script hint</span>
                 <button id="btnRunOcr" class="btn btn-secondary" type="button" disabled title="Run OCR">Run</button>
-                <button id="btnPivotSearch" class="btn btn-secondary" type="button" disabled title="Open pivot searches for OCR entities">Pivot</button>
+                <button id="btnPivotSearch" class="btn btn-secondary" type="button" disabled title="Open manual pivot templates for OCR hits">Manual pivots</button>
                 <button id="btnCopyOcr" class="btn btn-ghost" type="button" disabled title="Copy OCR text">Copy</button>
               </div>
 

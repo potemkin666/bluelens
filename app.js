@@ -181,6 +181,15 @@ const BATCH_TOP_LENS_DEFAULT = APP_CONFIG.batch?.topLensDefault || 5;
 const BATCH_TOP_LENS_MAX = APP_CONFIG.batch?.topLensMax || 10;
 const BATCH_OCR_DEFAULT = APP_CONFIG.batch?.ocrDefault || 8;
 const BATCH_OCR_MAX = APP_CONFIG.batch?.ocrMax || 20;
+const OCR_DEFAULT_LANGUAGE = APP_CONFIG.ocr?.defaultLanguage || "eng";
+const OCR_LANGUAGE_OPTIONS = Array.isArray(APP_CONFIG.ocr?.languages) && APP_CONFIG.ocr.languages.length
+  ? APP_CONFIG.ocr.languages
+  : [
+      { value: "eng", label: "English" },
+      { value: "spa", label: "Spanish" },
+      { value: "fra", label: "French" },
+      { value: "deu", label: "German" },
+    ];
 const OCR_FAST_PREPROCESS_MAX_DIM = APP_CONFIG.ocr?.fastPreprocessMaxDim || 1200;
 const OCR_BATCH_PREPROCESS_MAX_DIM = APP_CONFIG.ocr?.batchPreprocessMaxDim || 1400;
 const DHASH_BATCH_CLUSTER_THRESHOLD = APP_CONFIG.dhash?.batchClusterThreshold || 8;
@@ -295,7 +304,6 @@ const state = {
   gps: null,
   ocrText: "",
   ocrRunning: false,
-  ocrLangTouched: false,
   batchReports: [],
   batchItems: [],
   batchUi: {
@@ -315,8 +323,9 @@ const state = {
     analyst_confidence: "unverified",
   },
   insights: {
-    repost_score: null,
-    repost_reasons: [],
+    metadata_suspicion_score: null,
+    metadata_suspicion_band: null,
+    metadata_suspicion_inputs: [],
   },
   mutations: [],
   compare: {
@@ -503,7 +512,6 @@ function reset() {
   state.gps = null;
   state.ocrText = "";
   state.ocrRunning = false;
-  state.ocrLangTouched = false;
   state.entityConfidence = {};
   state.batchReports = [];
   state.batchItems = [];
@@ -515,7 +523,7 @@ function reset() {
     original_filename: "",
     analyst_confidence: "unverified",
   };
-  state.insights = { repost_score: null, repost_reasons: [] };
+  state.insights = { metadata_suspicion_score: null, metadata_suspicion_band: null, metadata_suspicion_inputs: [] };
   state.mutations = [];
   if (state.compare?.objectUrl) URL.revokeObjectURL(state.compare.objectUrl);
   state.compare = { file: null, objectUrl: null, dhash: "" };
@@ -558,8 +566,9 @@ function reset() {
   }
   if (elements.ocrLangHint) {
     elements.ocrLangHint.hidden = true;
-    elements.ocrLangHint.textContent = "Hint";
+    elements.ocrLangHint.textContent = "Weak script hint";
   }
+  if (elements.ocrLang && !elements.ocrLang.value) elements.ocrLang.value = OCR_DEFAULT_LANGUAGE;
   elements.ocrLang.disabled = true;
   elements.btnRunOcr.disabled = true;
   elements.btnCopyOcr.disabled = true;
@@ -841,8 +850,8 @@ function fmtMs(ms) {
 
 function triageSignalsForReport(report) {
   const gps = report?.gps && Number.isFinite(report.gps.lat) && Number.isFinite(report.gps.lon);
-  // Keep reading the old field from saved cases/reports until they have all been re-exported with repost_heuristic.
-  const repost = Number(report?.insights?.repost_heuristic ?? report?.insights?.repost_likelihood);
+  // Keep reading the old field from saved cases/reports until they have all been re-exported with metadata_suspicion_score.
+  const repost = Number(report?.insights?.metadata_suspicion_score ?? report?.insights?.repost_heuristic ?? report?.insights?.repost_likelihood);
   const hasExif = Boolean(report?.exif && Object.keys(report.exif).length > 0);
   const software = String(report?.key_fields?.software || report?.exif?.Software || "").trim();
 
@@ -869,7 +878,7 @@ function triageSignalsForReport(report) {
   }
   const entCount = (ent.urls?.length || 0) + (ent.emails?.length || 0) + (ent.handles?.length || 0) + (ent.phones?.length || 0);
 
-  // Lead score: prioritize local pivotability + quick-review heuristics.
+  // Lead score: prioritize local pivotability + quick-review suspicion cues.
   let lead = 0;
   lead += gps ? 30 : 0;
   lead += Math.min(24, entCount * 6);
@@ -884,7 +893,7 @@ function triageSignalsForReport(report) {
   if (!hasExif) tags.push({ t: "NOEXIF", tone: "warn" });
   if (software) tags.push({ t: "EDITED", tone: repost >= 70 ? "hot" : "warn" });
   if (lowRes) tags.push({ t: "LOWRES", tone: "warn" });
-  if (Number.isFinite(repost) && repost >= 80) tags.push({ t: "REPOST↑", tone: "hot" });
+  if (Number.isFinite(repost) && repost >= 80) tags.push({ t: "SUSP↑", tone: "hot" });
   if (report?.ocr_error) tags.push({ t: "OCRERR", tone: "warn" });
 
   return { lead, gps, repost: Number.isFinite(repost) ? repost : null, software, lowRes, hasExif, ent, entCount, tags, w, h, mp };
@@ -1035,7 +1044,7 @@ function renderBatchDashboard() {
       const t = it.triage;
       const name = it.report?.file?.name || "image";
       const dims = it.report?.dimensions || "—";
-      const rep = t.repost != null ? `${t.repost}/100` : "—";
+      const rep = t.repost != null ? formatMetadataSuspicionBand(t.repost) : "—";
       const gps = t.gps ? "✓" : "—";
       const ent = t.entCount ? String(t.entCount) : "—";
       const cl = it.clusterId || "—";
@@ -1072,7 +1081,7 @@ function renderBatchDashboard() {
           ${head("dim", "Dim")}
           ${head("gps", "GPS")}
           ${head("ent", "Ent")}
-          ${head("repost", "Repost heuristic")}
+          ${head("repost", "Metadata suspicion")}
           ${head("cluster", "Cluster")}
           <th>Flags</th>
         </tr>
@@ -1223,7 +1232,7 @@ async function openBatchSelectedLens() {
 }
 
 async function ocrForBatchFile(file, lang) {
-  const worker = await getOcrWorker(lang || "eng");
+  const worker = await getOcrWorker(lang || OCR_DEFAULT_LANGUAGE);
   let enhanced = null;
   const url = URL.createObjectURL(file);
   try {
@@ -1254,7 +1263,7 @@ async function runBatchOcrTopCandidates(n = BATCH_OCR_DEFAULT) {
     .slice(0, cap);
 
   await withUiLock(`Batch OCR (${pick.length})…`, async () => {
-    const lang = elements.ocrLang?.value || "eng";
+    const lang = elements.ocrLang?.value || OCR_DEFAULT_LANGUAGE;
     let failures = 0;
     for (let i = 0; i < pick.length; i += 1) {
       const it = pick[i];
@@ -1972,44 +1981,36 @@ function escapeAttr(s) {
 }
 
 function buildPivotSearchUrlsFromEntities(ent) {
+  const google = (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`;
   const urls = new Set();
   const add = (u) => {
     if (!u) return;
     urls.add(u);
   };
-
-  const google = (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`;
-
-  const domains = [];
-  for (const u of (ent?.urls || []).slice(0, 10)) {
-    try {
-      const parsed = new URL(u);
-      const host = (parsed.hostname || "").replace(/^www\./i, "");
-      if (host) domains.push(host);
-    } catch (error) {
-      reportNonFatalError("pivot.domains.parse", error, { harmless: true, detail: { value: u }, dedupeMs: 5000 });
-    }
-  }
-
-  for (const d of Array.from(new Set(domains)).slice(0, 6)) {
-    add(google(`site:${d}`));
-    add(google(`"${d}" repost`));
-  }
-
+  for (const u of (ent?.urls || []).slice(0, 5)) add(u);
   for (const e of (ent?.emails || []).slice(0, 6)) add(google(`"${e}"`));
   for (const p of (ent?.phones || []).slice(0, 4)) add(google(`"${p}"`));
-
   for (const hRaw of (ent?.handles || []).slice(0, 8)) {
     const h = String(hRaw || "").replace(/^@/, "").trim();
     if (!h) continue;
     add(google(`@${h}`));
-    // Lightweight platform-aware pivot (premium can do more; MVP keeps it capped).
-    add(google(`"${h}" (site:instagram.com OR site:tiktok.com OR site:x.com OR site:youtube.com)`));
+    add(`https://www.instagram.com/${encodeURIComponent(h)}/`);
+    add(`https://www.tiktok.com/@${encodeURIComponent(h)}`);
+    add(`https://x.com/${encodeURIComponent(h)}`);
   }
-
-  // Also pivot on the actual URLs found (open the first few directly).
-  for (const u of (ent?.urls || []).slice(0, 5)) add(u);
-
+  for (const u of (ent?.urls || []).slice(0, 10)) {
+    try {
+      const parsed = new URL(u);
+      const host = (parsed.hostname || "").replace(/^www\./i, "");
+      if (!host) continue;
+      add(google(`site:${host}`));
+      add(`https://www.whois.com/whois/${encodeURIComponent(host)}`);
+      add(`https://dns.google/resolve?name=${encodeURIComponent(host)}&type=A`);
+      add(`https://crt.sh/?q=${encodeURIComponent(host)}`);
+    } catch (error) {
+      reportNonFatalError("pivot.domains.parse", error, { harmless: true, detail: { value: u }, dedupeMs: 5000 });
+    }
+  }
   return Array.from(urls);
 }
 
@@ -2049,9 +2050,12 @@ function buildMarkdownReport(report) {
   lines.push(`- GPS: ${gps ? `\`${fmtCoord(gps.lat)}, ${fmtCoord(gps.lon)}\`` : "—"}`);
   lines.push("");
   lines.push(`## Insights`);
-  lines.push(`- Repost heuristic: ${r.insights?.repost_heuristic != null ? `**${r.insights.repost_heuristic}/100**` : "—"}`);
-  if (Array.isArray(r.insights?.repost_reasons) && r.insights.repost_reasons.length) {
-    lines.push(`- Heuristic reasons: ${r.insights.repost_reasons.map((x) => `\`${String(x)}\``).join(" · ")}`);
+  const suspicionScore = r.insights?.metadata_suspicion_score ?? r.insights?.repost_heuristic ?? null;
+  const suspicionBand = r.insights?.metadata_suspicion_band || formatMetadataSuspicionBand(Number(suspicionScore));
+  lines.push(`- Metadata suspicion: ${suspicionBand !== "—" ? `**${suspicionBand}**` : "—"}`);
+  const suspicionInputs = r.insights?.metadata_suspicion_inputs || r.insights?.repost_reasons;
+  if (Array.isArray(suspicionInputs) && suspicionInputs.length) {
+    lines.push(`- Suspicion inputs: ${suspicionInputs.map((x) => `\`${String(x)}\``).join(" · ")}`);
   }
   if (r.insights?.attribution_hints) lines.push(`- Attribution hints: ${String(r.insights.attribution_hints)}`);
   lines.push("");
@@ -2227,70 +2231,72 @@ function extractHandlesAndDomains(text) {
   return { handles: [...handles].slice(0, 8), domains: [...domains].slice(0, 8) };
 }
 
-function computeRepostScore({ exifObj, file, width, height, ocrText }) {
-  const reasons = [];
+function formatMetadataSuspicionBand(score) {
+  if (!Number.isFinite(score)) return "—";
+  if (score >= 75) return "High";
+  if (score >= 60) return "Elevated";
+  if (score >= 40) return "Mixed";
+  return "Low";
+}
+
+function computeMetadataSuspicionScore({ exifObj, file, width, height, ocrText }) {
+  const inputs = [];
   let score = 50;
+  const addInput = (delta, label) => {
+    score += delta;
+    inputs.push(`${delta >= 0 ? "+" : ""}${delta} ${label}`);
+  };
 
   const hasExif = Boolean(exifObj && Object.keys(exifObj).length > 0);
   if (!hasExif) {
-    score += 18;
-    reasons.push("No EXIF/metadata found");
+    addInput(18, "No EXIF/metadata found");
   }
 
   const gps = getGps(exifObj);
   if (gps) {
-    score -= 20;
-    reasons.push("GPS present (often original capture)");
+    addInput(-20, "GPS present (often original capture)");
   }
 
   const make = (exifObj?.Make || "").trim();
   const model = (exifObj?.Model || "").trim();
   if (make || model) {
-    score -= 12;
-    reasons.push("Camera make/model present");
+    addInput(-12, "Camera make/model present");
   }
 
   const captured = exifObj?.DateTimeOriginal || exifObj?.CreateDate || exifObj?.DateTimeDigitized;
   if (captured) {
-    score -= 8;
-    reasons.push("Capture timestamp present");
+    addInput(-8, "Capture timestamp present");
   }
 
   const software = (exifObj?.Software || exifObj?.ProcessingSoftware || exifObj?.CreatorTool || "").trim();
   const platforms = detectPlatformFromSoftware(software);
   if (software) {
-    score += 10;
-    reasons.push(`Software tag: ${software}`);
+    addInput(10, `Software tag: ${software}`);
   }
   if (platforms.length > 0) {
-    score += 22;
-    reasons.push(`Platform/app hint: ${platforms.join(", ")}`);
+    addInput(22, `Platform/app hint: ${platforms.join(", ")}`);
   }
 
   if (file?.type === "image/jpeg" && file?.size && file.size < 450_000) {
-    score += 10;
-    reasons.push("Small JPEG (common repost/compress)");
+    addInput(10, "Small JPEG (common repost/compress)");
   }
 
   if (Number.isFinite(width) && Number.isFinite(height)) {
     const mp = (width * height) / 1_000_000;
     if (mp < 1.0) {
-      score += 12;
-      reasons.push("Low resolution (common repost)");
+      addInput(12, "Low resolution (common repost)");
     } else if (mp > 10) {
-      score -= 6;
-      reasons.push("Very high resolution (more likely original)");
+      addInput(-6, "Very high resolution (more likely original)");
     }
   }
 
   const { handles, domains } = extractHandlesAndDomains(ocrText);
   if (handles.length > 0 || domains.length > 0) {
-    score += 10;
-    reasons.push("OCR contains handles/domains (likely shared graphic)");
+    addInput(10, "OCR contains handles/domains (likely shared graphic)");
   }
 
   score = Math.max(0, Math.min(100, Math.round(score)));
-  return { score, reasons };
+  return { score, band: formatMetadataSuspicionBand(score), inputs };
 }
 
 function computeAttributionHints(exifObj, ocrText) {
@@ -2317,11 +2323,11 @@ function computeAttributionHints(exifObj, ocrText) {
 
 function updateConsoleInsights({ exifObj, file, width, height, ocrText }) {
   elements.attrHints.textContent = computeAttributionHints(exifObj, ocrText);
-  const { score, reasons } = computeRepostScore({ exifObj, file, width, height, ocrText });
-  elements.repostScore.textContent = `${score}/100`;
+  const { score, band, inputs } = computeMetadataSuspicionScore({ exifObj, file, width, height, ocrText });
+  elements.repostScore.textContent = band;
 
   if (elements.repostReasons) {
-    const top = Array.isArray(reasons) ? reasons.slice(0, 3) : [];
+    const top = Array.isArray(inputs) ? inputs.slice(0, 4) : [];
     if (top.length === 0) {
       elements.repostReasons.hidden = true;
       elements.repostReasons.innerHTML = "";
@@ -2332,7 +2338,7 @@ function updateConsoleInsights({ exifObj, file, width, height, ocrText }) {
         .join("");
     }
   }
-  return { score, reasons };
+  return { score, band, inputs };
 }
 
 function stringifyExif(exifObj, pretty = true) {
@@ -2546,8 +2552,11 @@ function buildOsintReport() {
     share_safe: Boolean(state.shareSafe),
     gps: state.gps ? { lat: state.gps.lat, lon: state.gps.lon } : null,
     insights: {
-      repost_heuristic: state.insights.repost_score,
-      repost_reasons: state.insights.repost_reasons || [],
+      metadata_suspicion_score: state.insights.metadata_suspicion_score,
+      metadata_suspicion_band: state.insights.metadata_suspicion_band,
+      metadata_suspicion_inputs: state.insights.metadata_suspicion_inputs || [],
+      repost_heuristic: state.insights.metadata_suspicion_score,
+      repost_reasons: state.insights.metadata_suspicion_inputs || [],
       attribution_hints: elements.attrHints?.textContent || null,
     },
     key_fields: {
@@ -2605,7 +2614,7 @@ async function buildReportForFileHeadless(file) {
 
   const key = extractKeyFieldsObj(exifObj);
   const hints = computeAttributionHints(exifObj, "");
-  const { score, reasons } = computeRepostScore({ exifObj, file, width, height, ocrText: "" });
+  const { score, band, inputs } = computeMetadataSuspicionScore({ exifObj, file, width, height, ocrText: "" });
 
   return {
     generated_at: new Date().toISOString(),
@@ -2614,8 +2623,11 @@ async function buildReportForFileHeadless(file) {
     hashes: { sha256: hashes.sha, md5: hashes.md5, dhash: dh },
     gps: key.gps,
     insights: {
+      metadata_suspicion_score: score,
+      metadata_suspicion_band: band,
+      metadata_suspicion_inputs: inputs,
       repost_heuristic: score,
-      repost_reasons: reasons,
+      repost_reasons: inputs,
       attribution_hints: hints,
     },
     key_fields: { captured: key.captured, camera: key.camera, software: key.software },
@@ -2653,7 +2665,8 @@ async function runBatchFiles(files) {
         thumb = null;
       }
       state.batchItems.push({ id, file: f, report: r, triage: null, clusterId: 0, thumb });
-      lines.push(`  OK · heuristic ${r.insights.repost_heuristic}/100`);
+      const suspicion = r.insights?.metadata_suspicion_band || formatMetadataSuspicionBand(Number(r.insights?.metadata_suspicion_score ?? r.insights?.repost_heuristic));
+      lines.push(`  OK · suspicion ${suspicion}`);
     } catch (e) {
       lines.push(`  FAIL · ${e?.message || "unknown error"}`);
     }
@@ -2700,6 +2713,18 @@ function setOcrStatus(label) {
   elements.ocrPill.classList.toggle("pill-muted", label === "Idle" || label === "Ready");
 }
 
+function getOcrLanguageLabel(code) {
+  return OCR_LANGUAGE_OPTIONS.find((opt) => opt.value === code)?.label || code;
+}
+
+function populateOcrLanguageOptions() {
+  if (!elements.ocrLang) return;
+  const current = elements.ocrLang.value || OCR_DEFAULT_LANGUAGE;
+  elements.ocrLang.innerHTML = OCR_LANGUAGE_OPTIONS.map((opt) => `<option value="${escapeAttr(opt.value)}">${escapeHtml(opt.label)}</option>`).join("");
+  const fallback = OCR_LANGUAGE_OPTIONS.some((opt) => opt.value === current) ? current : OCR_DEFAULT_LANGUAGE;
+  elements.ocrLang.value = fallback;
+}
+
 const ocrWorkerState = {
   worker: null,
   lang: null,
@@ -2707,7 +2732,8 @@ const ocrWorkerState = {
 };
 
 async function getOcrWorker(lang) {
-  if (ocrWorkerState.worker && ocrWorkerState.lang === lang) return ocrWorkerState.worker;
+  const normalizedLang = lang || OCR_DEFAULT_LANGUAGE;
+  if (ocrWorkerState.worker && ocrWorkerState.lang === normalizedLang) return ocrWorkerState.worker;
   if (ocrWorkerState.creating) return await ocrWorkerState.creating;
 
   ocrWorkerState.creating = (async () => {
@@ -2723,7 +2749,7 @@ async function getOcrWorker(lang) {
       ocrWorkerState.lang = null;
     }
 
-    const worker = await Tesseract.createWorker(lang, 1, {
+    const worker = await Tesseract.createWorker(normalizedLang, 1, {
       logger: (m) => {
         if (!m || !m.status) return;
         const pct = typeof m.progress === "number" ? ` ${(m.progress * 100).toFixed(0)}%` : "";
@@ -2743,7 +2769,7 @@ async function getOcrWorker(lang) {
     }
 
     ocrWorkerState.worker = worker;
-    ocrWorkerState.lang = lang;
+    ocrWorkerState.lang = normalizedLang;
     return worker;
   })().finally(() => {
     ocrWorkerState.creating = null;
@@ -2771,12 +2797,12 @@ function renderOcrEntities(text) {
   wrap.innerHTML = "";
   if (elements.btnPivotSearch) elements.btnPivotSearch.disabled = false;
 
-  const group = (title) => {
+  const group = (title, source) => {
     const g = document.createElement("div");
     g.className = "pivot-group";
     const head = document.createElement("div");
     head.className = "pivot-head";
-    head.textContent = title;
+    head.textContent = source ? `${title} — ${source}` : title;
     g.appendChild(head);
     wrap.appendChild(g);
     return g;
@@ -2803,6 +2829,13 @@ function renderOcrEntities(text) {
     parent.appendChild(b);
   };
 
+  const addInfoChip = (parent, label) => {
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.textContent = label;
+    parent.appendChild(chip);
+  };
+
   const addConfidence = (parent, key) => {
     const sel = document.createElement("select");
     sel.className = "select chip-select";
@@ -2820,15 +2853,20 @@ function renderOcrEntities(text) {
   };
 
   const google = (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+  const note = document.createElement("div");
+  note.className = "pivot-head";
+  note.textContent = "Manual pivots only — these are templated follow-ups from OCR hits, not investigative scoring.";
+  wrap.appendChild(note);
 
   if (ent.handles.length) {
-    const g = group("Handles");
+    const g = group("Handles", "Source: direct OCR hit · Confidence: direct text");
     for (const raw of ent.handles.slice(0, 6)) {
       const h = OCR_PIPELINE?.normalizeHandle?.(raw) || raw.replace(/^@/, "");
       if (!h) continue;
       const row = document.createElement("div");
       row.className = "pivot-row";
       addCopyChip(row, `@${h}`, `@${h}`);
+      addInfoChip(row, "Manual follow-up");
       addLinkChip(row, "IG", `https://www.instagram.com/${encodeURIComponent(h)}/`, { title: "Open Instagram profile" });
       addLinkChip(row, "TikTok", `https://www.tiktok.com/@${encodeURIComponent(h)}`, { title: "Open TikTok profile" });
       addLinkChip(row, "X", `https://x.com/${encodeURIComponent(h)}`, { title: "Open X profile" });
@@ -2839,7 +2877,7 @@ function renderOcrEntities(text) {
   }
 
   if (ent.urls.length) {
-    const g = group("URLs / Domains");
+    const g = group("URLs / Domains", "Source: direct OCR hit · Confidence: direct text");
     for (const u of ent.urls.slice(0, 6)) {
       const d = OCR_PIPELINE?.normalizeDomain?.(u);
       const row = document.createElement("div");
@@ -2847,6 +2885,7 @@ function renderOcrEntities(text) {
       const short = String(u).replace(/^https?:\/\//i, "").slice(0, 44);
       addLinkChip(row, short, u, { title: "Open URL" });
       if (d) {
+        addInfoChip(row, "Derived domain follow-up");
         addLinkChip(row, "WHOIS", `https://www.whois.com/whois/${encodeURIComponent(d)}`, { title: "WHOIS lookup" });
         addLinkChip(row, "DNS", `https://dns.google/resolve?name=${encodeURIComponent(d)}&type=A`, { title: "DNS over HTTPS (Google)" });
         addLinkChip(row, "CRT", `https://crt.sh/?q=${encodeURIComponent(d)}`, { title: "Certificate transparency" });
@@ -2860,11 +2899,12 @@ function renderOcrEntities(text) {
   }
 
   if (ent.emails.length) {
-    const g = group("Emails");
+    const g = group("Emails", "Source: direct OCR hit · Confidence: direct text");
     for (const e of ent.emails.slice(0, 6)) {
       const row = document.createElement("div");
       row.className = "pivot-row";
       addCopyChip(row, e, e);
+      addInfoChip(row, "Manual search");
       addLinkChip(row, "Search", google(`"${e}"`), { title: "Search email" });
       addLinkChip(row, "Breach?", google(`"${e}" breach`), { title: "Search breach mentions" });
       addConfidence(row, `email:${e.toLowerCase()}`);
@@ -2873,13 +2913,14 @@ function renderOcrEntities(text) {
   }
 
   if (ent.phones.length) {
-    const g = group("Phones");
+    const g = group("Phones", "Source: direct OCR hit · Confidence: direct text");
     for (const p of ent.phones.slice(0, 6)) {
       const n = OCR_PIPELINE?.normalizePhone?.(p);
       const row = document.createElement("div");
       row.className = "pivot-row";
       const label = n?.e164 ? `${n.e164}${n.country_hint ? ` (${n.country_hint})` : ""}` : p;
       addCopyChip(row, label, n?.e164 || p);
+      addInfoChip(row, "Manual search");
       const q = n?.e164 || n?.digits || p;
       addLinkChip(row, "Search", google(`"${q}"`), { title: "Search phone" });
       addConfidence(row, `phone:${String(q).replace(/\s+/g, "")}`);
@@ -2888,59 +2929,40 @@ function renderOcrEntities(text) {
   }
 }
 
-function detectLangHint(text) {
+function detectScriptHint(text) {
   const t = String(text || "");
   if (!t) return null;
-
-  const counts = { eng: 0, spa: 0, fra: 0, deu: 0 };
-
-  const add = (lang, n) => {
-    counts[lang] += n;
-  };
-
-  // Spanish
-  add("spa", (t.match(/[ñÑ]/g) || []).length * 6);
-  add("spa", (t.match(/[¡¿]/g) || []).length * 8);
-  add("spa", (t.match(/[áéíóúÁÉÍÓÚ]/g) || []).length * 2);
-
-  // French
-  add("fra", (t.match(/[àâæçéèêëîïôœùûüÿÀÂÆÇÉÈÊËÎÏÔŒÙÛÜŸ]/g) || []).length * 3);
-  add("fra", (t.match(/\b(c'est|l'|d'|qu')/gi) || []).length * 3);
-
-  // German
-  add("deu", (t.match(/[äöüÄÖÜ]/g) || []).length * 4);
-  add("deu", (t.match(/[ß]/g) || []).length * 10);
-
-  // English baseline: reward plain ASCII letters.
-  add("eng", (t.match(/[A-Za-z]/g) || []).length / 30);
-
-  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  const top = entries[0];
-  if (!top || top[1] < 6) return null;
-
-  return top[0];
+  const scripts = [
+    { label: "Arabic", test: /[\u0600-\u06FF]/g, models: ["ara"] },
+    { label: "Hebrew", test: /[\u0590-\u05FF]/g, models: ["heb"] },
+    { label: "Cyrillic", test: /[\u0400-\u04FF]/g, models: ["rus", "ukr"] },
+    { label: "Hangul", test: /[\uAC00-\uD7AF]/g, models: ["kor"] },
+    { label: "Japanese", test: /[\u3040-\u30FF]/g, models: ["jpn"] },
+    { label: "Han", test: /[\u4E00-\u9FFF]/g, models: ["chi_sim", "chi_tra", "jpn"] },
+    { label: "Latin", test: /[A-Za-zÀ-ÿ]/g, models: ["eng", "spa", "fra", "deu", "ita", "por", "nld", "pol", "tur"] },
+  ];
+  const ranked = scripts
+    .map((script) => ({ ...script, score: (t.match(script.test) || []).length }))
+    .filter((script) => script.score > 0)
+    .sort((a, b) => b.score - a.score);
+  const top = ranked[0];
+  if (!top) return null;
+  if (top.label !== "Latin" && top.score < 2) return null;
+  if (top.label === "Latin" && top.score < 8) return null;
+  return top;
 }
 
 function renderOcrLangHint(text) {
   const el = elements.ocrLangHint;
   if (!el) return;
-  const hint = detectLangHint(text);
+  const hint = detectScriptHint(text);
   if (!hint) {
     el.hidden = true;
     return;
   }
-  const label = hint === "spa" ? "Spanish" : hint === "fra" ? "French" : hint === "deu" ? "German" : "English";
+  const labels = hint.models.slice(0, 3).map((code) => getOcrLanguageLabel(code)).join(" / ");
   el.hidden = false;
-  el.textContent = `Hint: ${label}`;
-
-  // If user hasn't explicitly changed the selector, gently set it.
-  if (!state.ocrLangTouched) {
-    try {
-      elements.ocrLang.value = hint;
-    } catch {
-      // ignore
-    }
-  }
+  el.textContent = `Weak script hint: ${hint.label} → try ${labels}`;
 }
 
 async function runOcrForCurrent({ mode = "deep" } = {}) {
@@ -3105,15 +3127,16 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
         const m = (elements.metaDim.textContent || "").match(/(\d+)\s*×\s*(\d+)/);
         return m ? Number(m[2]) : null;
       })();
-      const { score: s, reasons } = updateConsoleInsights({
+      const { score: s, band, inputs } = updateConsoleInsights({
         exifObj: state.exif,
         file: state.file,
         width: imgW,
         height: imgH,
         ocrText: finalText,
       });
-      state.insights.repost_score = s;
-      state.insights.repost_reasons = reasons;
+      state.insights.metadata_suspicion_score = s;
+      state.insights.metadata_suspicion_band = band;
+      state.insights.metadata_suspicion_inputs = inputs;
     } catch {
       // ignore
     }
@@ -3164,15 +3187,16 @@ async function analyzeFile(file) {
     updateKeyFields(exifObj);
     elements.exifOut.textContent = stringifyExif(exifObj, state.prettyExif);
 
-    const { score, reasons } = updateConsoleInsights({
+    const { score, band, inputs } = updateConsoleInsights({
       exifObj,
       file,
       width: img.naturalWidth || img.width,
       height: img.naturalHeight || img.height,
       ocrText: state.ocrText,
     });
-    state.insights.repost_score = score;
-    state.insights.repost_reasons = reasons;
+    state.insights.metadata_suspicion_score = score;
+    state.insights.metadata_suspicion_band = band;
+    state.insights.metadata_suspicion_inputs = inputs;
 
     state.cleanBlob = await encodeCleanCopy(img, file.type);
     if (state.cleanBlob) {
@@ -3432,10 +3456,6 @@ function setupActions() {
   elements.srcOrig.addEventListener("input", syncCase);
   elements.confLevel?.addEventListener("change", syncCase);
 
-  elements.ocrLang?.addEventListener("change", () => {
-    state.ocrLangTouched = true;
-  });
-
   elements.chkEnableShare.addEventListener("change", () => {
     state.shareEnabled = Boolean(elements.chkEnableShare.checked);
     if (!state.shareEnabled) {
@@ -3477,7 +3497,7 @@ function setupActions() {
 
     // Popup blockers: open synchronously, no awaits here.
     for (const u of targets) window.open(u, "_blank", "noopener,noreferrer");
-    setStatus(`Pivoted (${targets.length})`);
+    setStatus(`Manual pivots (${targets.length})`);
   });
 
   elements.btnRunPass.addEventListener("click", async () => {
@@ -3499,15 +3519,16 @@ function setupActions() {
         return m ? Number(m[2]) : null;
       })();
 
-      const { score, reasons } = updateConsoleInsights({
+      const { score, band, inputs } = updateConsoleInsights({
         exifObj: state.exif,
         file: state.file,
         width: imgW,
         height: imgH,
         ocrText: state.ocrText,
       });
-      state.insights.repost_score = score;
-      state.insights.repost_reasons = reasons;
+      state.insights.metadata_suspicion_score = score;
+      state.insights.metadata_suspicion_band = band;
+      state.insights.metadata_suspicion_inputs = inputs;
 
       setStatus("Ready");
     });
@@ -4233,6 +4254,7 @@ function triggerGlitterStorm(intensity = 52) {
 
 wireReverseSearchButtons();
 setupDnD();
+populateOcrLanguageOptions();
 setupActions();
 reset();
 validateLibs();
