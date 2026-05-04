@@ -4137,8 +4137,7 @@ function setupCommandPalette() {
         render();
       });
       row.addEventListener("click", () => {
-        const list = filtered();
-        const chosen = list[idx];
+        const chosen = a;
         if (!chosen) return;
         activeIndex = idx;
         setOpen(false);
