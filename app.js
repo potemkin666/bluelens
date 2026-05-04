@@ -3516,11 +3516,11 @@ function renderOcrEntities(text) {
       `<option value="unverified">?</option>` +
       `<option value="likely">~</option>` +
       `<option value="confirmed">✓</option>`;
+    parent.appendChild(sel);
+    sel.value = state.entityConfidence?.[entityKey] || "unverified";
     sel.addEventListener("change", () => {
       recordEntityConfidenceReview({ entityType, entityKey, entityValue, confidence: sel.value || "unverified" });
     });
-    parent.appendChild(sel);
-    sel.value = state.entityConfidence?.[entityKey] || "unverified";
   };
 
   const addDerivedEntry = ({ entityType, entityKey, entityValue, note }) => {
@@ -3901,7 +3901,7 @@ async function analyzeFile(file) {
 
     if (!elements.srcOrig.value) {
       elements.srcOrig.value = file.name || "";
-      updateSourceInfoField("original_filename", elements.srcOrig.value, { source: "derived", note: "Loaded from current local file name" });
+      updateSourceInfoField("original_filename", elements.srcOrig.value, { source: "derived", note: "Derived from loaded file name" });
     }
 
     setStatus("Ready");
