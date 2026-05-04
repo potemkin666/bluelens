@@ -107,16 +107,6 @@ const elements = {
   cmdkInput: document.getElementById("cmdkInput"),
   cmdkList: document.getElementById("cmdkList"),
 
-  // Caseboard
-  caseName: document.getElementById("caseName"),
-  btnNewCase: document.getElementById("btnNewCase"),
-  btnSaveCase: document.getElementById("btnSaveCase"),
-  caseSelect: document.getElementById("caseSelect"),
-  btnLoadCase: document.getElementById("btnLoadCase"),
-  btnExportCase: document.getElementById("btnExportCase"),
-  btnDeleteCase: document.getElementById("btnDeleteCase"),
-  caseOut: document.getElementById("caseOut"),
-  caseNote: document.getElementById("caseNote"),
 };
 
 const osintBroadcast = (() => {
@@ -301,14 +291,6 @@ function setUiBusy(busy, label = "") {
     elements.srcWho,
     elements.srcOrig,
     elements.confLevel,
-    elements.caseName,
-    elements.btnNewCase,
-    elements.btnSaveCase,
-    elements.caseSelect,
-    elements.btnLoadCase,
-    elements.btnExportCase,
-    elements.btnDeleteCase,
-    elements.caseNote,
   ].filter(Boolean);
 
   for (const el of controls) {
@@ -383,7 +365,6 @@ function setButtonsEnabled(enabled) {
     elements.btnCopyReport,
     elements.missionPreset,
     elements.btnRunMission,
-    elements.btnSaveCase,
     elements.btnMutateSearch,
     elements.btnOpenLens,
     elements.btnOpenBing,
@@ -1603,22 +1584,25 @@ async function handleQuickJump(engine) {
   });
 }
 
-async function handleSearchAll() {
+async function handleSearchAll({ autoEnableShare = false, openLens = true } = {}) {
   if (!state.file) return;
   if (state.uiBusy) return;
 
-  // Less chaos: open ONE tab (Lens) + render launchpad for the rest.
   const engines = ["lens", "bing", "tineye", "yandex", "google_images"];
-  const token = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const waitUrl = `/wait.html?token=${encodeURIComponent(token)}&engine=lens&label=${encodeURIComponent("Lens")}`;
-  window.open(waitUrl, "_blank");
-  publishWaitState(token, "lens", { status: "uploading" });
+  const token = openLens ? `${Date.now()}-${Math.random().toString(16).slice(2)}` : "";
+  if (token) {
+    const waitUrl = `/wait.html?token=${encodeURIComponent(token)}&engine=lens&label=${encodeURIComponent("Lens")}`;
+    window.open(waitUrl, "_blank");
+    publishWaitState(token, "lens", { status: "uploading" });
+  }
 
   if (!state.shareEnabled) {
-    const ok = window.confirm(
-      "To prepare provider links from one upload, this will upload your image to a temporary file host to generate a public URL. Enable one-click mode?",
-    );
-    if (!ok) return;
+    if (!autoEnableShare) {
+      const ok = window.confirm(
+        "To prepare provider links from one upload, this will upload your image to a temporary file host to generate a public URL. Enable one-click mode?",
+      );
+      if (!ok) return;
+    }
     state.shareEnabled = true;
     elements.chkEnableShare.checked = true;
     setShareControlsEnabled(true);
@@ -1626,7 +1610,7 @@ async function handleSearchAll() {
 
   await withUiLock("Preparing engine links…", async () => {
     const url = await ensurePublicUrl({ purpose: "lens" });
-    publishWaitState(token, "lens", { url });
+    if (token) publishWaitState(token, "lens", { url });
 
     const targets = engines.map((e) => reverseSearchUrl(e, url));
     const run = {
@@ -1642,7 +1626,7 @@ async function handleSearchAll() {
         google_images: targets[4],
       },
       chosen: { lens: true, bing: true, tineye: true, yandex: true, google_images: true },
-      opened: { lens: true },
+      opened: openLens ? { lens: true } : {},
       blocked: {},
     };
     state.lastEngineRun = run;
@@ -1650,7 +1634,7 @@ async function handleSearchAll() {
     renderEngineLaunchpad(run);
 
     state.session = loadSession();
-    state.session.engines_opened += 1;
+    if (openLens) state.session.engines_opened += 1;
     saveSession();
     void refreshHostStats();
 
@@ -1660,7 +1644,7 @@ async function handleSearchAll() {
     setShareStatus("Upload failed");
     const msg = e?.message || "unknown error";
     elements.publicUrlOut.textContent = `Upload failed: ${msg}`;
-    publishWaitState(token, "lens", { err: msg });
+    if (token) publishWaitState(token, "lens", { err: msg });
   });
 }
 
@@ -2447,82 +2431,12 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 2_000);
 }
 
-const CASEBOARD_STORAGE_KEY = "caseboard:v1";
-const CASEBOARD_ACTIVE_KEY = "caseboard:activeCaseId";
-const CASEBOARD_MAX_EVENTS = 80;
-
 function safeJsonParse(txt, fallback) {
   try {
     return JSON.parse(txt);
   } catch {
     return fallback;
   }
-}
-
-function loadCaseboard() {
-  const fallback = { version: 1, cases: [] };
-  let obj = fallback;
-  try {
-    obj = safeJsonParse(localStorage.getItem(CASEBOARD_STORAGE_KEY) || "", fallback);
-  } catch {
-    obj = fallback;
-  }
-  if (!obj || typeof obj !== "object") return fallback;
-  if (!Array.isArray(obj.cases)) obj.cases = [];
-  obj.version = 1;
-  return obj;
-}
-
-function saveCaseboard(obj) {
-  try {
-    localStorage.setItem(CASEBOARD_STORAGE_KEY, JSON.stringify(obj));
-  } catch {
-    // ignore (storage full / blocked)
-  }
-}
-
-function getActiveCaseId() {
-  try {
-    return localStorage.getItem(CASEBOARD_ACTIVE_KEY) || "";
-  } catch {
-    return "";
-  }
-}
-
-function setActiveCaseId(id) {
-  try {
-    localStorage.setItem(CASEBOARD_ACTIVE_KEY, id || "");
-  } catch {
-    // ignore
-  }
-}
-
-function newCaseId() {
-  try {
-    return crypto?.randomUUID ? crypto.randomUUID() : `case_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-  } catch {
-    return `case_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-  }
-}
-
-function fmtTs(ts) {
-  try {
-    const d = new Date(ts);
-    if (Number.isNaN(d.getTime())) return "—";
-    return d.toLocaleString(undefined, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return "—";
-  }
-}
-
-async function sha256HexUtf8(str) {
-  const enc = new TextEncoder();
-  const buf = enc.encode(String(str || ""));
-  const dig = await crypto.subtle.digest("SHA-256", buf);
-  const bytes = new Uint8Array(dig);
-  let out = "";
-  for (const b of bytes) out += b.toString(16).padStart(2, "0");
-  return out;
 }
 
 async function makeThumbnailDataUrl(file, maxEdge = 240) {
@@ -2572,192 +2486,6 @@ function extractPivotsFromReport(report) {
   const sw = report?.key_fields?.software;
   if (sw) pivots.push(`sw:${String(sw).slice(0, 42)}`);
   return Array.from(new Set(pivots)).slice(0, 8);
-}
-
-function renderCaseSelect(caseboard, activeId) {
-  if (!elements.caseSelect) return;
-  const cases = [...(caseboard?.cases || [])].sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
-  elements.caseSelect.innerHTML = "";
-  for (const c of cases) {
-    const opt = document.createElement("option");
-    opt.value = c.id;
-    opt.textContent = `${c.name || c.id} · ${c.events?.length || 0}`;
-    elements.caseSelect.appendChild(opt);
-  }
-  elements.caseSelect.disabled = state.uiBusy ? true : cases.length === 0;
-  if (activeId && cases.some((c) => c.id === activeId)) elements.caseSelect.value = activeId;
-  else if (cases[0]) elements.caseSelect.value = cases[0].id;
-}
-
-function renderActiveCase(caseboard, activeId) {
-  if (!elements.caseOut) return;
-  const c = (caseboard?.cases || []).find((x) => x.id === activeId) || null;
-  const hasCase = Boolean(c);
-  if (!hasCase) {
-    elements.caseOut.textContent = "—";
-    if (elements.btnExportCase) elements.btnExportCase.disabled = true;
-    if (elements.btnDeleteCase) elements.btnDeleteCase.disabled = true;
-    if (elements.btnLoadCase) elements.btnLoadCase.disabled = true;
-    return;
-  }
-
-  const events = Array.isArray(c.events) ? c.events : [];
-  const last = events[events.length - 1] || null;
-  const pivots = last?.pivots || [];
-  const lines = [
-    `Active: ${c.name || c.id}`,
-    `Events: ${events.length} · Updated: ${fmtTs(c.updated_at)}`,
-    last ? `Last: ${fmtTs(last.ts)} · ${last.file_name || "image"}` : "Last: —",
-    pivots.length ? `Pivots: ${pivots.join(" · ")}` : "Pivots: —",
-    last?.hash ? `Chain: ${String(last.hash).slice(0, 16)}…` : "Chain: —",
-  ];
-
-  elements.caseOut.textContent = lines.join("\n");
-  if (elements.btnExportCase) elements.btnExportCase.disabled = state.uiBusy ? true : false;
-  if (elements.btnDeleteCase) elements.btnDeleteCase.disabled = state.uiBusy ? true : false;
-  if (elements.btnLoadCase) elements.btnLoadCase.disabled = state.uiBusy ? true : false;
-}
-
-async function saveCurrentToCaseboard({ createIfMissing = true } = {}) {
-  if (!state.file) throw new Error("No file loaded");
-  const caseboard = loadCaseboard();
-  let activeId = getActiveCaseId();
-
-  if (!activeId && createIfMissing) {
-    const nameRaw = (elements.caseName?.value || "").trim();
-    const name = nameRaw || `Case-${new Date().toISOString().slice(0, 10)}`;
-    activeId = newCaseId();
-    caseboard.cases.push({ id: activeId, name, created_at: Date.now(), updated_at: Date.now(), events: [] });
-    setActiveCaseId(activeId);
-  }
-
-  const c = caseboard.cases.find((x) => x.id === activeId) || null;
-  if (!c) throw new Error("No active case selected");
-  if (!Array.isArray(c.events)) c.events = [];
-
-  const report = buildOsintReport();
-  const pivots = extractPivotsFromReport(report);
-  const note = (elements.caseNote?.value || "").trim();
-  const thumb = await makeThumbnailDataUrl(state.file);
-
-  const prevHash = c.events.length ? c.events[c.events.length - 1]?.hash || "" : "";
-  const core = {
-    ts: Date.now(),
-    type: "image_report",
-    file_name: state.file?.name || null,
-    note: note || null,
-    pivots,
-    report,
-    thumb,
-    prev_hash: prevHash || null,
-  };
-  const hash = await sha256HexUtf8(`${prevHash}\n${JSON.stringify(core)}`);
-  const ev = { id: newCaseId(), ...core, hash };
-
-  c.events.push(ev);
-  if (c.events.length > CASEBOARD_MAX_EVENTS) c.events.splice(0, c.events.length - CASEBOARD_MAX_EVENTS);
-  c.updated_at = Date.now();
-
-  saveCaseboard(caseboard);
-  setActiveCaseId(activeId);
-  renderCaseSelect(caseboard, activeId);
-  renderActiveCase(caseboard, activeId);
-  if (elements.btnSaveCase) elements.btnSaveCase.disabled = state.uiBusy ? true : false;
-}
-
-function exportActiveCase() {
-  const caseboard = loadCaseboard();
-  const activeId = getActiveCaseId();
-  const c = caseboard.cases.find((x) => x.id === activeId) || null;
-  if (!c) return;
-  const payload = {
-    version: 1,
-    exported_at: new Date().toISOString(),
-    case: c,
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const name = (c.name || "case").replace(/[^\w.-]+/g, "_").slice(0, 80);
-  downloadBlob(blob, `${name}_caseboard.json`);
-}
-
-function deleteActiveCase() {
-  const caseboard = loadCaseboard();
-  const activeId = getActiveCaseId();
-  const idx = caseboard.cases.findIndex((x) => x.id === activeId);
-  if (idx === -1) return;
-  caseboard.cases.splice(idx, 1);
-  saveCaseboard(caseboard);
-  setActiveCaseId(caseboard.cases[0]?.id || "");
-  renderCaseSelect(caseboard, getActiveCaseId());
-  renderActiveCase(caseboard, getActiveCaseId());
-}
-
-function setupCaseboard() {
-  if (!elements.caseOut || !elements.btnSaveCase || !elements.btnNewCase || !elements.caseSelect) return;
-
-  const refresh = () => {
-    const cb = loadCaseboard();
-    const activeId = getActiveCaseId();
-    renderCaseSelect(cb, activeId);
-    const selectedId = elements.caseSelect.value || activeId;
-    renderActiveCase(cb, selectedId || activeId);
-
-    if (elements.btnNewCase) elements.btnNewCase.disabled = state.uiBusy ? true : false;
-    if (elements.btnSaveCase) elements.btnSaveCase.disabled = state.uiBusy ? true : !Boolean(state.file);
-    if (elements.btnLoadCase) elements.btnLoadCase.disabled = state.uiBusy ? true : elements.caseSelect.disabled;
-    if (elements.btnExportCase) elements.btnExportCase.disabled = state.uiBusy ? true : elements.caseSelect.disabled;
-    if (elements.btnDeleteCase) elements.btnDeleteCase.disabled = state.uiBusy ? true : elements.caseSelect.disabled;
-  };
-
-  refresh();
-
-  elements.btnNewCase.addEventListener("click", () => {
-    if (state.uiBusy) return;
-    const cb = loadCaseboard();
-    const nameRaw = (elements.caseName?.value || "").trim();
-    const name = nameRaw || `Case-${new Date().toISOString().slice(0, 10)}`;
-    const id = newCaseId();
-    cb.cases.push({ id, name, created_at: Date.now(), updated_at: Date.now(), events: [] });
-    saveCaseboard(cb);
-    setActiveCaseId(id);
-    refresh();
-  });
-
-  elements.btnSaveCase.addEventListener("click", () => {
-    void withUiLock("Saving…", async () => {
-      await saveCurrentToCaseboard({ createIfMissing: true });
-      setStatus("Saved");
-    }).catch((e) => {
-      const msg = e?.message || "Save failed";
-      if (elements.caseOut) elements.caseOut.textContent = `Save failed: ${msg}`;
-    });
-  });
-
-  if (elements.btnLoadCase) {
-    elements.btnLoadCase.addEventListener("click", () => {
-      if (state.uiBusy) return;
-      const id = elements.caseSelect.value || "";
-      if (!id) return;
-      setActiveCaseId(id);
-      refresh();
-    });
-  }
-
-  if (elements.btnExportCase) elements.btnExportCase.addEventListener("click", () => exportActiveCase());
-  if (elements.btnDeleteCase) {
-    elements.btnDeleteCase.addEventListener("click", () => {
-      if (state.uiBusy) return;
-      const ok = window.confirm("Delete this case from local Caseboard? This cannot be undone.");
-      if (!ok) return;
-      deleteActiveCase();
-      refresh();
-    });
-  }
-
-  elements.caseSelect.addEventListener("change", () => refresh());
-
-  // Keep UI in sync when a new file loads / resets.
-  document.addEventListener("osint:file-changed", () => refresh());
 }
 
 function buildOsintReport() {
@@ -3436,6 +3164,9 @@ async function analyzeFile(file) {
   } catch {
     // ignore
   }
+
+  window.__osintActivateTab?.("search");
+  void handleSearchAll({ autoEnableShare: true, openLens: false });
 }
 
 function clearCompare() {
@@ -4285,8 +4016,6 @@ function setupCommandPalette() {
     { name: "OSINT Pass", meta: "OCR + signals", keys: ["pass", "ocr", "signals", "attribution"], run: () => elements.btnRunPass?.click() },
     { name: "Copy Report", meta: "JSON to clipboard", keys: ["copy", "report", "json"], run: () => elements.btnCopyReport?.click() },
     { name: "Copy Public URL", meta: "If shared", keys: ["copy", "url", "public"], run: () => elements.btnCopyPublicUrl?.click() },
-    { name: "Save to Caseboard", meta: "Append event", keys: ["save", "case", "caseboard"], run: () => elements.btnSaveCase?.click() },
-    { name: "Export Case", meta: "JSON bundle", keys: ["export", "case"], run: () => elements.btnExportCase?.click() },
     { name: "Tab: Search", meta: "Console", keys: ["tab", "search"], run: () => window.__osintActivateTab?.("search") },
     { name: "Tab: Signals", meta: "Hashes + EXIF", keys: ["tab", "signals", "exif", "hash"], run: () => window.__osintActivateTab?.("signals") },
     { name: "Tab: Text", meta: "OCR", keys: ["tab", "text", "ocr"], run: () => window.__osintActivateTab?.("text") },
@@ -4448,7 +4177,6 @@ function triggerGlitterStorm(intensity = 52) {
 wireReverseSearchButtons();
 setupDnD();
 setupActions();
-setupCaseboard();
 reset();
 validateLibs();
 void checkLocalServerHint();

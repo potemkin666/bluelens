@@ -240,33 +240,6 @@
               <div id="hostStatsOut" class="mono mono-box" hidden></div>
             </div>
 
-            <div class="subcard hud" data-hud-key="caseboard">
-              <div class="subcard-head">
-                <div class="subcard-title">Caseboard</div>
-                <span class="pill pill-muted" title="Persist investigations locally">local</span>
-              </div>
-              <div class="row row-tight">
-                <input id="caseName" class="input" placeholder="Case name (e.g., Incident-042)" />
-                <button id="btnNewCase" class="btn btn-secondary" type="button" disabled title="Create a new case">New</button>
-                <button id="btnSaveCase" class="btn" type="button" disabled title="Save this image + report into the caseboard">Save</button>
-              </div>
-              <div class="row row-tight">
-                <select id="caseSelect" class="select" disabled title="Load a case"></select>
-                <button id="btnLoadCase" class="btn btn-secondary" type="button" disabled title="Select the active case">Select</button>
-                <button id="btnExportCase" class="btn btn-ghost" type="button" disabled title="Download case JSON bundle">Export</button>
-                <button id="btnDeleteCase" class="btn btn-ghost" type="button" disabled title="Delete selected case">Delete</button>
-              </div>
-              <div id="caseOut" class="mono mono-box">—</div>
-              <div class="row row-tight">
-                <textarea
-                  id="caseNote"
-                  class="input textarea"
-                  rows="2"
-                  placeholder="Quick note (what you saw / why it matters)"
-                ></textarea>
-              </div>
-            </div>
-
             <details class="drawer hud" data-hud-key="advanced">
               <summary title="More controls and nerdy details">Advanced</summary>
               <div class="drawer-body">

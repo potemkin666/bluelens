@@ -28,9 +28,20 @@ test("landing UI stays focused on image search", () => {
   assert.doesNotMatch(indexHtml, /Local file signals/);
 });
 
+test("caseboard UI is removed from the landing workflow", () => {
+  assert.doesNotMatch(indexHtml, /Caseboard/);
+  assert.doesNotMatch(appJs, /caseboard:v1/);
+  assert.doesNotMatch(appJs, /Save to Caseboard/);
+});
+
 test("search tab is always the first panel shown on load", () => {
   assert.match(setupTabsBlock, /activate\("search"\);/);
   assert.doesNotMatch(setupTabsBlock, /localStorage\.getItem\("ui:tab"\)/);
+});
+
+test("uploading an image auto-prepares search links", () => {
+  assert.match(appJs, /handleSearchAll\(\{ autoEnableShare: true, openLens: false \}\)/);
+  assert.match(appJs, /window\.__osintActivateTab\?\.\("search"\);/);
 });
 
 test("mutation lab copy is clearly framed as analyst review", () => {
