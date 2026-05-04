@@ -70,6 +70,7 @@ const elements = {
   btnSearchAll: document.getElementById("btnSearchAll"),
   btnRunPass: document.getElementById("btnRunPass"),
   btnCopyReport: document.getElementById("btnCopyReport"),
+  btnEvidencePack: document.getElementById("btnEvidencePack"),
   missionPreset: document.getElementById("missionPreset"),
   btnRunMission: document.getElementById("btnRunMission"),
   manualRow: document.getElementById("manualRow"),
@@ -82,6 +83,7 @@ const elements = {
   srcWhen: document.getElementById("srcWhen"),
   srcWho: document.getElementById("srcWho"),
   srcOrig: document.getElementById("srcOrig"),
+  manualNotes: document.getElementById("manualNotes"),
   confLevel: document.getElementById("confLevel"),
   btnMutateSearch: document.getElementById("btnMutateSearch"),
   btnCopyMutations: document.getElementById("btnCopyMutations"),
@@ -94,6 +96,7 @@ const elements = {
   chromaticSlider: document.getElementById("chromaticSlider"),
   btnOverclock: document.getElementById("btnOverclock"),
   chkFunMode: document.getElementById("chkFunMode"),
+  chkOperatorMode: document.getElementById("chkOperatorMode"),
   chkChrome: document.getElementById("chkChrome"),
   chkHud: document.getElementById("chkHud"),
   btnOpenLens: document.getElementById("btnOpenLens"),
@@ -103,6 +106,8 @@ const elements = {
   btnOpenGoogleImages: document.getElementById("btnOpenGoogleImages"),
   btnRetryUpload: document.getElementById("btnRetryUpload"),
   ocrLangHint: document.getElementById("ocrLangHint"),
+  onboardingStrip: document.getElementById("onboardingStrip"),
+  actionLogOut: document.getElementById("actionLogOut"),
 
   // Command palette
   cmdk: document.getElementById("cmdk"),
@@ -210,6 +215,7 @@ const STORAGE_FX_CHROMATIC_KEY = STORAGE_KEYS.fxChromatic || "fx:chromatic";
 const STORAGE_FX_FUN_MODE_KEY = STORAGE_KEYS.fxFunMode || "fx:funMode";
 const STORAGE_FX_HUD_KEY = STORAGE_KEYS.fxHud || "fx:hud";
 const STORAGE_SKIN_CHROME_KEY = STORAGE_KEYS.skinChrome || "ui:skinChrome";
+const STORAGE_OPERATOR_MODE_KEY = STORAGE_KEYS.operatorMode || "ui:operatorMode";
 const FX_SCANLINE_DEFAULT = Number.isFinite(FX_CONFIG.scanlineDefault) ? FX_CONFIG.scanlineDefault : 0;
 const FX_CHROMATIC_DEFAULT = Number.isFinite(FX_CONFIG.chromaticDefault) ? FX_CONFIG.chromaticDefault : 0;
 const FX_SCANLINE_FUN_DEFAULT = Number.isFinite(FX_CONFIG.scanlineFunDefault) ? FX_CONFIG.scanlineFunDefault : 0.18;
@@ -320,6 +326,7 @@ const state = {
     when_obtained: "",
     who_provided: "",
     original_filename: "",
+    manual_notes: "",
     analyst_confidence: "unverified",
   },
   insights: {
@@ -341,6 +348,12 @@ const state = {
   exif: null,
   entityConfidence: {},
   lastEngineRun: null,
+  manualNotes: "",
+  actionLog: [],
+  operatorMode: true,
+  localServerOnline: null,
+  popupLikely: true,
+  lastOcrMode: "not_run",
 };
 
 function setStatus(label, tone = "muted") {
@@ -352,6 +365,107 @@ function setStatus(label, tone = "muted") {
 function setStatusLine(text) {
   if (!elements.statusLine) return;
   elements.statusLine.textContent = text || "";
+}
+
+function renderActionLog() {
+  const el = elements.actionLogOut;
+  if (!el) return;
+  const rows = Array.isArray(state.actionLog) ? state.actionLog.slice(-40) : [];
+  if (rows.length === 0) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  el.hidden = false;
+  el.textContent = rows.map((row) => `${row.ts} · ${row.event}${row.detail ? ` · ${row.detail}` : ""}`).join("\n");
+}
+
+function logAction(event, detail = "") {
+  const ts = new Date().toISOString();
+  state.actionLog = Array.isArray(state.actionLog) ? state.actionLog : [];
+  state.actionLog.push({ ts, event: String(event || "event"), detail: detail ? String(detail) : "" });
+  if (state.actionLog.length > 200) state.actionLog = state.actionLog.slice(-200);
+  renderActionLog();
+}
+
+function renderOnboardingStrip() {
+  const el = elements.onboardingStrip;
+  if (!el) return;
+  const chips = [
+    {
+      tone: state.localServerOnline === false ? "warn" : "ok",
+      text:
+        state.localServerOnline === null
+          ? "Checking local server — upload and launch actions need the local proxy."
+          : state.localServerOnline === false
+          ? "Server offline — uploads/search launchpad need `node server.js`."
+          : "Server reachable — launchpad uploads available when you ask for them.",
+    },
+    { tone: "warn", text: "Uploads will be external — launch actions send the image to a temporary third-party host." },
+    { tone: state.popupLikely ? "warn" : "ok", text: state.popupLikely ? "Popup blocker likely — provider tabs may require another click." : "Provider popups opened in-session." },
+    { tone: "warn", text: "OCR model loads from CDN — first run needs network access to fetch Tesseract assets." },
+    { tone: "warn", text: "Batch export omits failures — only successful batch reports are included right now." },
+  ];
+  el.hidden = false;
+  el.innerHTML = chips
+    .map((chip) => `<span class="onboarding-chip ${chip.tone === "warn" ? "warn" : "ok"}">${escapeHtml(chip.text)}</span>`)
+    .join("");
+}
+
+function applyOperatorMode(enabled, { persist = true } = {}) {
+  state.operatorMode = Boolean(enabled);
+  document.body.classList.toggle("operator-mode", state.operatorMode);
+  if (elements.chkOperatorMode) elements.chkOperatorMode.checked = state.operatorMode;
+  if (persist) writeStorage(STORAGE_OPERATOR_MODE_KEY, state.operatorMode ? "1" : "0", "ui.operator-mode.write");
+  renderActionLog();
+}
+
+function toUtf8Bytes(text) {
+  return new TextEncoder().encode(String(text || ""));
+}
+
+function padTarSize(size) {
+  return Math.ceil(size / 512) * 512;
+}
+
+function tarOctal(value, width) {
+  const txt = Math.max(0, Number(value) || 0).toString(8);
+  return txt.padStart(width - 1, "0") + "\0";
+}
+
+function writeTarString(view, offset, value, width) {
+  const bytes = toUtf8Bytes(String(value || "").slice(0, width));
+  for (let i = 0; i < Math.min(bytes.length, width); i += 1) view[offset + i] = bytes[i];
+}
+
+function createTar(entries) {
+  const files = entries.filter((entry) => entry?.name && entry?.data instanceof Uint8Array);
+  const total = files.reduce((sum, entry) => sum + 512 + padTarSize(entry.data.length), 0) + 1024;
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const entry of files) {
+    const header = out.subarray(offset, offset + 512);
+    writeTarString(header, 0, entry.name, 100);
+    writeTarString(header, 100, tarOctal(0o644, 8), 8);
+    writeTarString(header, 108, tarOctal(0, 8), 8);
+    writeTarString(header, 116, tarOctal(0, 8), 8);
+    writeTarString(header, 124, tarOctal(entry.data.length, 12), 12);
+    writeTarString(header, 136, tarOctal(entry.mtime || 0, 12), 12);
+    for (let i = 148; i < 156; i += 1) header[i] = 32;
+    header[156] = "0".charCodeAt(0);
+    writeTarString(header, 257, "ustar", 6);
+    writeTarString(header, 263, "00", 2);
+    const checksum = header.reduce((sum, byte) => sum + byte, 0);
+    writeTarString(header, 148, `${checksum.toString(8).padStart(6, "0")}\0 `, 8);
+    offset += 512;
+    out.set(entry.data, offset);
+    offset += padTarSize(entry.data.length);
+  }
+  return new Blob([out], { type: "application/x-tar" });
+}
+
+async function fileToBytes(file) {
+  return new Uint8Array(await file.arrayBuffer());
 }
 
 function setUiBusy(busy, label = "") {
@@ -387,6 +501,7 @@ function setUiBusy(busy, label = "") {
     elements.btnSearchAll,
     elements.btnRunPass,
     elements.btnCopyReport,
+    elements.btnEvidencePack,
     elements.missionPreset,
     elements.btnRunMission,
     elements.btnMutateSearch,
@@ -512,15 +627,20 @@ function reset() {
   state.gps = null;
   state.ocrText = "";
   state.ocrRunning = false;
+  state.lastOcrMode = "not_run";
   state.entityConfidence = {};
+  state.lastEngineRun = null;
   state.batchReports = [];
   state.batchItems = [];
+  state.manualNotes = "";
+  state.actionLog = [];
   state.batchUi.selected = {};
   state.caseInfo = {
     where_obtained: "",
     when_obtained: "",
     who_provided: "",
     original_filename: "",
+    manual_notes: "",
     analyst_confidence: "unverified",
   };
   state.insights = { metadata_suspicion_score: null, metadata_suspicion_band: null, metadata_suspicion_inputs: [] };
@@ -572,6 +692,7 @@ function reset() {
   elements.ocrLang.disabled = true;
   elements.btnRunOcr.disabled = true;
   elements.btnCopyOcr.disabled = true;
+  if (elements.btnEvidencePack) elements.btnEvidencePack.disabled = true;
   if (elements.btnPivotSearch) elements.btnPivotSearch.disabled = true;
   elements.ocrPill.textContent = "Idle";
   elements.ocrPill.classList.add("pill-muted");
@@ -602,15 +723,21 @@ function reset() {
   elements.srcWhen.value = "";
   elements.srcWho.value = "";
   elements.srcOrig.value = "";
+  if (elements.manualNotes) elements.manualNotes.value = "";
   if (elements.confLevel) elements.confLevel.value = "unverified";
   if (elements.mutationOut) elements.mutationOut.textContent = "—";
   if (elements.mutationOut) elements.mutationOut.classList.remove("mut-box");
   if (elements.btnCopyMutations) elements.btnCopyMutations.disabled = true;
   elements.batchOut.textContent = "—";
   elements.btnDownloadBatch.disabled = true;
+  if (elements.actionLogOut) {
+    elements.actionLogOut.hidden = true;
+    elements.actionLogOut.textContent = "";
+  }
   setStatus("Idle");
   setStatusLine("");
   elements.btnTogglePretty.textContent = "Pretty: On";
+  renderOnboardingStrip();
 
   try {
     document.dispatchEvent(new Event("osint:file-changed"));
@@ -620,7 +747,16 @@ function reset() {
 }
 
 function openUrl(url) {
-  window.open(url, "_blank", "noopener,noreferrer");
+  try {
+    const w = window.open(url, "_blank", "noopener,noreferrer");
+    state.popupLikely = !w;
+    renderOnboardingStrip();
+    return w;
+  } catch {
+    state.popupLikely = true;
+    renderOnboardingStrip();
+    return null;
+  }
 }
 
 function renderEngineLaunchpad(run) {
@@ -707,7 +843,7 @@ function setupEngineLaunchpad() {
     for (const eng of openList) {
       const url = r.targets[eng];
       try {
-        const w = window.open(url, "_blank", "noopener,noreferrer");
+        const w = openUrl(url);
         if (w) r.opened[eng] = true;
         else r.blocked[eng] = true;
       } catch {
@@ -781,8 +917,9 @@ function publishWaitState(jobId, data) {
 function openWaitJob(engine, label) {
   const jobId = newWaitJobId();
   const waitUrl = `/wait.html?job=${encodeURIComponent(jobId)}&engine=${encodeURIComponent(engine)}&label=${encodeURIComponent(label || "")}`;
-  window.open(waitUrl, "_blank");
+  openUrl(waitUrl);
   publishWaitState(jobId, { engine, label: label || "", status: "uploading" });
+  logAction("wait_tab_opened", `${engine}${label ? ` (${label})` : ""}`);
   return jobId;
 }
 
@@ -792,7 +929,7 @@ function isFunModeEnabled() {
 
 function pulseRadar(kind) {
   const el = elements.radar;
-  if (!el || !isFunModeEnabled()) return;
+  if (!el || !isFunModeEnabled() || state.operatorMode) return;
   el.classList.toggle("ocr", kind === "ocr");
   el.classList.remove("pulse");
   void el.offsetWidth;
@@ -1359,6 +1496,7 @@ async function runMissionPreset(preset) {
       state.lastEngineRun = run;
       saveLastRun(run);
       renderEngineLaunchpad(run);
+      logAction("launchpad_prepared", `targets=${Object.keys(run.targets || {}).length} artifact=${run.artifact}`);
 
       state.session = loadSession();
       state.session.engines_opened += 1;
@@ -1569,6 +1707,7 @@ async function ensurePublicUrl({ purpose = "" } = {}) {
     elements.btnCopyPublicUrl.disabled = false;
     if (elements.btnRetryUpload) elements.btnRetryUpload.disabled = false;
     setShareStatus("Shared");
+    logAction("upload_ready", `host=${state.uploadMeta?.host || "unknown"} artifact=${artifactWanted}`);
     return url;
   } catch (e) {
     const msg = e?.message || "Upload failed";
@@ -1614,7 +1753,7 @@ async function handleQuickJump(engine) {
             ? "Yandex"
             : "Google Images";
   const waitUrl = `/wait.html?job=${encodeURIComponent(jobId)}&engine=${encodeURIComponent(engine)}&label=${encodeURIComponent(label)}`;
-  window.open(waitUrl, "_blank");
+  openUrl(waitUrl);
   state.session = loadSession();
   state.session.engines_opened += 1;
   saveSession();
@@ -1679,6 +1818,7 @@ async function handleSearchAll({ autoEnableShare = false, openLens = true } = {}
     state.lastEngineRun = run;
     saveLastRun(run);
     renderEngineLaunchpad(run);
+    logAction("launchpad_prepared", `targets=${Object.keys(run.targets || {}).length} artifact=${run.artifact}`);
 
     state.session = loadSession();
     if (openLens) state.session.engines_opened += 1;
@@ -2063,6 +2203,7 @@ function buildMarkdownReport(report) {
   lines.push(`- URL: ${r.public_url ? `${r.public_url}` : "—"}`);
   lines.push(`- Upload artifact: \`${r.public_upload_artifact || "—"}\``);
   lines.push(`- Share safe: \`${r.share_safe ? "on" : "off"}\``);
+  lines.push(`- Upload host: \`${r.upload?.host || "—"}\``);
   lines.push("");
   lines.push(`## OCR Pivots`);
   const u = Array.isArray(entities.urls) ? entities.urls.slice(0, 8) : [];
@@ -2080,6 +2221,19 @@ function buildMarkdownReport(report) {
   lines.push(`- Who: ${sr.who_provided ? `\`${sr.who_provided}\`` : "—"}`);
   lines.push(`- Original filename: ${sr.original_filename ? `\`${sr.original_filename}\`` : "—"}`);
   lines.push(`- Analyst confidence (manual): \`${sr.analyst_confidence || "unverified"}\``);
+  lines.push(`- Manual notes: ${sr.manual_notes ? `\`${sr.manual_notes}\`` : "—"}`);
+  lines.push("");
+  lines.push(`## Launchpad`);
+  const targets = r.launchpad?.targets || {};
+  const targetList = Object.entries(targets)
+    .filter(([, value]) => value)
+    .map(([key, value]) => `\`${key}\`: ${value}`);
+  lines.push(`- Targets: ${targetList.length ? targetList.join(" · ") : "—"}`);
+  lines.push(`- OCR mode: \`${r.ocr?.mode || "—"}\``);
+  lines.push("");
+  lines.push(`## Action Log`);
+  const actionLog = Array.isArray(r.session_action_log) ? r.session_action_log : [];
+  lines.push(actionLog.length ? actionLog.map((row) => `- ${row.ts || "—"} · ${row.event || "event"}${row.detail ? ` · ${row.detail}` : ""}`).join("\n") : "- —");
   lines.push("");
   lines.push(`---`);
   lines.push("");
@@ -2327,7 +2481,7 @@ function updateConsoleInsights({ exifObj, file, width, height, ocrText }) {
   elements.repostScore.textContent = band;
 
   if (elements.repostReasons) {
-    const top = Array.isArray(inputs) ? inputs.slice(0, 4) : [];
+    const top = Array.isArray(inputs) ? (state.operatorMode ? inputs : inputs.slice(0, 4)) : [];
     if (top.length === 0) {
       elements.repostReasons.hidden = true;
       elements.repostReasons.innerHTML = "";
@@ -2550,6 +2704,7 @@ function buildOsintReport() {
     public_url: state.publicUrl || null,
     public_upload_artifact: state.publicUrl ? state.publicUrlArtifact || "original" : null,
     share_safe: Boolean(state.shareSafe),
+    upload: state.uploadMeta ? { ...state.uploadMeta } : null,
     gps: state.gps ? { lat: state.gps.lat, lon: state.gps.lon } : null,
     insights: {
       metadata_suspicion_score: state.insights.metadata_suspicion_score,
@@ -2568,6 +2723,20 @@ function buildOsintReport() {
     },
     exif: state.exif || null,
     ocr_text: state.ocrText || null,
+    ocr: {
+      mode: state.lastOcrMode || "not_run",
+      selected_model: elements.ocrLang?.value || OCR_DEFAULT_LANGUAGE,
+    },
+    launchpad: state.lastEngineRun
+      ? {
+          ts: state.lastEngineRun.ts || null,
+          artifact: state.lastEngineRun.artifact || null,
+          targets: state.lastEngineRun.targets ? { ...state.lastEngineRun.targets } : null,
+          opened: state.lastEngineRun.opened ? { ...state.lastEngineRun.opened } : null,
+          blocked: state.lastEngineRun.blocked ? { ...state.lastEngineRun.blocked } : null,
+        }
+      : null,
+    session_action_log: Array.isArray(state.actionLog) ? state.actionLog.slice() : [],
     mutation_lab: state.mutations && state.mutations.length > 0 ? state.mutations : null,
     compare: state.compare?.dhash
       ? {
@@ -2684,6 +2853,47 @@ async function runBatchFiles(files) {
 function downloadJson(obj, filename) {
   const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
   downloadBlob(blob, filename);
+}
+
+async function downloadEvidencePack() {
+  if (!state.file) throw new Error("No file loaded");
+  const report = buildOsintReport();
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const baseName = (state.file.name || "image").replace(/\.[^/.]+$/, "") || "image";
+  const manifest = {
+    generated_at: report.generated_at,
+    package: {
+      format: "bluelens-evidence-pack-v1",
+      original_filename: state.file.name || null,
+      clean_filename: state.cleanSignals?.name || null,
+    },
+    file_hashes: report.hashes,
+    clean_copy_hashes: report.clean_copy || null,
+    ocr: report.ocr,
+    upload: report.upload,
+    launchpad: report.launchpad,
+    source_reliability: report.source_reliability,
+    session_action_log: report.session_action_log,
+  };
+  const mtime = Math.floor(new Date(report.generated_at || Date.now()).getTime() / 1000);
+  const notes = [
+    `Manual notes: ${report.source_reliability?.manual_notes || "—"}`,
+    `Analyst confidence: ${report.source_reliability?.analyst_confidence || "unverified"}`,
+    `OCR mode: ${report.ocr?.mode || "not_run"}`,
+    `Upload host: ${report.upload?.host || "—"}`,
+  ].join("\n");
+  const entries = [
+    { name: "manifest.json", data: toUtf8Bytes(JSON.stringify(manifest, null, 2)), mtime },
+    { name: "report.json", data: toUtf8Bytes(JSON.stringify(report, null, 2)), mtime },
+    { name: "report.md", data: toUtf8Bytes(buildMarkdownReport(report)), mtime },
+    { name: "notes.txt", data: toUtf8Bytes(notes), mtime },
+    { name: state.file.name || `${baseName}.bin`, data: await fileToBytes(state.file), mtime },
+  ];
+  if (state.cleanBlob) {
+    const cleanFile = cleanFileFromBlob(state.cleanBlob);
+    if (cleanFile) entries.push({ name: cleanFile.name || `${baseName}_clean.jpg`, data: await fileToBytes(cleanFile), mtime });
+  }
+  downloadBlob(createTar(entries), `${baseName}_evidence_pack_${ts}.tar`);
 }
 
 const scriptCache = new Map();
@@ -2970,6 +3180,7 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
   if (state.ocrRunning) throw new Error("OCR already running");
 
   state.ocrRunning = true;
+  state.lastOcrMode = mode === "fast" ? "fast" : "deep";
   elements.btnRunOcr.disabled = true;
   elements.btnCopyOcr.disabled = true;
   elements.ocrOut.textContent = "Loading OCR…";
@@ -3116,6 +3327,7 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
     elements.btnCopyOcr.disabled = !finalText;
     setOcrStatus("Ready");
     if (finalText) pulseRadar("ocr");
+    logAction("ocr_run", `${state.lastOcrMode} · ${finalText ? "text" : "no_text"}`);
 
     // Refresh hints with OCR-derived entities.
     try {
@@ -3229,7 +3441,10 @@ async function analyzeFile(file) {
   }
 
   window.__osintActivateTab?.("search");
-  void handleSearchAll({ autoEnableShare: true, openLens: false });
+  if (elements.btnEvidencePack) elements.btnEvidencePack.disabled = false;
+  logAction("image_loaded", `${file.name || "image"} · local review ready`);
+  setStatusLine("Local review ready. Uploads start only when you choose a launch action.");
+  renderOnboardingStrip();
 }
 
 function clearCompare() {
@@ -3448,12 +3663,15 @@ function setupActions() {
     state.caseInfo.when_obtained = elements.srcWhen.value || "";
     state.caseInfo.who_provided = elements.srcWho.value || "";
     state.caseInfo.original_filename = elements.srcOrig.value || "";
+    state.caseInfo.manual_notes = elements.manualNotes?.value || "";
+    state.manualNotes = state.caseInfo.manual_notes;
     if (elements.confLevel) state.caseInfo.analyst_confidence = elements.confLevel.value || "unverified";
   };
   elements.srcWhere.addEventListener("input", syncCase);
   elements.srcWhen.addEventListener("input", syncCase);
   elements.srcWho.addEventListener("input", syncCase);
   elements.srcOrig.addEventListener("input", syncCase);
+  elements.manualNotes?.addEventListener("input", syncCase);
   elements.confLevel?.addEventListener("change", syncCase);
 
   elements.chkEnableShare.addEventListener("change", () => {
@@ -3479,13 +3697,22 @@ function setupActions() {
     const report = buildOsintReport();
     if (e?.shiftKey) {
       await copyText(JSON.stringify(report, null, 2));
+      logAction("report_copied", "json");
       setStatus("Copied (JSON)");
       return;
     }
 
     const md = buildMarkdownReport(report);
     await copyText(md);
+    logAction("report_copied", "markdown");
     setStatus("Copied (MD)");
+  });
+
+  elements.btnEvidencePack?.addEventListener("click", async () => {
+    if (!state.file) return;
+    await downloadEvidencePack();
+    logAction("evidence_pack_downloaded", state.file.name || "image");
+    setStatus("Evidence Pack ready");
   });
 
   elements.btnPivotSearch?.addEventListener("click", () => {
@@ -3496,7 +3723,8 @@ function setupActions() {
     if (targets.length === 0) return;
 
     // Popup blockers: open synchronously, no awaits here.
-    for (const u of targets) window.open(u, "_blank", "noopener,noreferrer");
+    for (const u of targets) openUrl(u);
+    logAction("manual_pivots_opened", String(targets.length));
     setStatus(`Manual pivots (${targets.length})`);
   });
 
@@ -3752,6 +3980,7 @@ function setupActions() {
     if (!state.batchReports || state.batchReports.length === 0) return;
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     downloadJson(state.batchReports, `osint_reports_${ts}.json`);
+    logAction("batch_export_downloaded", `${state.batchReports.length} reports`);
   });
 
   elements.btnChooseCompare.addEventListener("click", () => {
@@ -3786,8 +4015,12 @@ async function checkLocalServerHint() {
     const res = await fetch("/api/ping", { cache: "no-store", signal: controller.signal });
     window.clearTimeout(t);
     if (!res.ok) throw new Error("ping");
+    state.localServerOnline = true;
+    renderOnboardingStrip();
   } catch (error) {
     reportNonFatalError("server-hint.ping", error, { harmless: true, dedupeMs: 5000 });
+    state.localServerOnline = false;
+    renderOnboardingStrip();
     setStatusLine(LOCAL_SERVER_HINT_MESSAGE);
   }
 }
@@ -3856,12 +4089,14 @@ function applyFunMode(enabled, { persist = true } = {}) {
 
 function setupFx() {
   const funMode = readStorage(STORAGE_FX_FUN_MODE_KEY, FX_FUN_MODE_DEFAULT ? "1" : "0", "fx.fun-mode.read") === "1";
+  const operatorMode = readStorage(STORAGE_OPERATOR_MODE_KEY, "1", "ui.operator-mode.read") === "1";
   const scanline = Number(readStorage(STORAGE_FX_SCANLINE_KEY, String(FX_SCANLINE_FUN_DEFAULT), "fx.scanline.read"));
   const chromatic = Number(readStorage(STORAGE_FX_CHROMATIC_KEY, String(FX_CHROMATIC_FUN_DEFAULT), "fx.chromatic.read"));
   state.hudWanted = readStorage(STORAGE_FX_HUD_KEY, FX_HUD_DEFAULT ? "1" : "0", "fx.hud.read") === "1";
   state.chromeSkinWanted = readStorage(STORAGE_SKIN_CHROME_KEY, FX_CHROME_DEFAULT ? "1" : "0", "fx.chrome.read") === "1";
 
   if (elements.chkFunMode) elements.chkFunMode.checked = funMode;
+  if (elements.chkOperatorMode) elements.chkOperatorMode.checked = operatorMode;
   if (elements.scanlineSlider)
     elements.scanlineSlider.value = String(Math.max(0, Math.min(FX_SCANLINE_MAX, Number.isFinite(scanline) ? scanline : FX_SCANLINE_FUN_DEFAULT)));
   if (elements.chromaticSlider)
@@ -3870,9 +4105,13 @@ function setupFx() {
   if (elements.chkChrome) elements.chkChrome.checked = state.chromeSkinWanted;
 
   applyFunMode(funMode, { persist: false });
+  applyOperatorMode(operatorMode, { persist: false });
 
   elements.chkFunMode?.addEventListener("change", () => {
     applyFunMode(Boolean(elements.chkFunMode.checked));
+  });
+  elements.chkOperatorMode?.addEventListener("change", () => {
+    applyOperatorMode(Boolean(elements.chkOperatorMode.checked));
   });
   elements.scanlineSlider?.addEventListener("input", () => {
     const v = Number(elements.scanlineSlider.value);
@@ -4222,7 +4461,7 @@ function setupCommandPalette() {
 }
 
 function triggerGlitterStorm(intensity = 52) {
-  if (!isFunModeEnabled()) return;
+  if (!isFunModeEnabled() || state.operatorMode) return;
   if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const layer = document.createElement("div");
   layer.className = "glitter-storm";
@@ -4257,6 +4496,7 @@ setupDnD();
 populateOcrLanguageOptions();
 setupActions();
 reset();
+renderOnboardingStrip();
 validateLibs();
 void checkLocalServerHint();
 setupFx();

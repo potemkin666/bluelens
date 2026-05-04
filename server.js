@@ -267,6 +267,65 @@ function contentType(filePath) {
   }
 }
 
+const ALLOWED_UPLOAD_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/heic",
+  "image/heif",
+  "image/avif",
+]);
+
+function normalizeMime(mime) {
+  return String(mime || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+}
+
+function detectImageMime(buf) {
+  if (!buf || buf.length < 12) return null;
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47 && buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a) return "image/png";
+  if (buf.length >= 12 && buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP") return "image/webp";
+  if (buf.length >= 6) {
+    const gif = buf.toString("ascii", 0, 6);
+    if (gif === "GIF87a" || gif === "GIF89a") return "image/gif";
+  }
+  if (buf.length >= 12 && buf.toString("ascii", 4, 8) === "ftyp") {
+    const brand = buf.toString("ascii", 8, 12);
+    if (["heic", "heix", "hevc", "hevx"].includes(brand)) return "image/heic";
+    if (["mif1", "msf1"].includes(brand)) return "image/heif";
+    if (["avif", "avis"].includes(brand)) return "image/avif";
+  }
+  return null;
+}
+
+function validateImageUploadPayload(buf, mime) {
+  const normalizedMime = normalizeMime(mime);
+  const detectedMime = detectImageMime(buf);
+  if (!detectedMime) {
+    const error = new Error("Payload is not a supported image");
+    error.statusCode = 415;
+    error.errorCode = "invalid_image_payload";
+    throw error;
+  }
+  if (normalizedMime && !ALLOWED_UPLOAD_MIME_TYPES.has(normalizedMime)) {
+    const error = new Error(`Unsupported upload MIME type: ${normalizedMime}`);
+    error.statusCode = 415;
+    error.errorCode = "invalid_image_payload";
+    throw error;
+  }
+  if (normalizedMime && normalizedMime !== detectedMime) {
+    const error = new Error(`Upload MIME does not match file signature (${normalizedMime} vs ${detectedMime})`);
+    error.statusCode = 415;
+    error.errorCode = "invalid_image_payload";
+    throw error;
+  }
+  return detectedMime;
+}
+
 async function readBody(req, maxBytes = 25 * 1024 * 1024) {
   const chunks = [];
   let total = 0;
@@ -284,9 +343,10 @@ async function handleUpload(req, res) {
     const mime = (req.headers["content-type"] || "application/octet-stream").toString();
     const purpose = (req.headers["x-purpose"] || "").toString().toLowerCase();
     const buf = await readBody(req);
+    const detectedMime = validateImageUploadPayload(buf, mime);
 
     // Node 18+ has global Blob/FormData/fetch.
-    const blob = new Blob([buf], { type: mime });
+    const blob = new Blob([buf], { type: detectedMime });
 
     const fetchWithTimeout = async (url, init, ms) => {
       const controller = new AbortController();
@@ -413,11 +473,13 @@ async function handleUpload(req, res) {
       { "Content-Type": "application/json; charset=utf-8" },
     );
   } catch (e) {
-    reportServerIssue("upload.handle", e, { path: req.url });
+    const statusCode = Number(e?.statusCode) || 500;
+    const errorCode = e?.errorCode || "upload_error";
+    reportServerIssue("upload.handle", e, { path: req.url, statusCode, errorCode });
     send(
       res,
-      500,
-      JSON.stringify({ ok: false, error: "upload_error", message: e?.message || "unknown" }),
+      statusCode,
+      JSON.stringify({ ok: false, error: errorCode, message: e?.message || "unknown" }),
       { "Content-Type": "application/json; charset=utf-8" },
     );
   }

@@ -33,16 +33,20 @@
       </div>
     </header>
 
+    <section class="onboarding-shell" aria-label="Operator onboarding">
+      <div id="onboardingStrip" class="onboarding-strip" hidden></div>
+    </section>
+
     <section class="focus-shell" aria-labelledby="focusTitle">
       <div class="focus-panel">
         <div class="focus-copy">
           <span class="focus-kicker">Search-first workflow</span>
-          <h2 id="focusTitle">Drop an image and get to reverse search fast.</h2>
+          <h2 id="focusTitle">Drop an image, inspect locally, then choose when to upload.</h2>
           <p class="focus-lede">
-            BlueLens works best as a fast launchpad: choose one image, let it prepare the temporary search URL automatically, and jump straight into provider review.
+            BlueLens works best as a fast launchpad with explicit operator consent: inspect locally first, then choose if you want a temporary public URL for provider review.
           </p>
           <ul class="focus-points">
-            <li>Choose once and BlueLens prepares the search launchpad automatically.</li>
+            <li>Choose once to inspect locally; uploads happen only after you ask for launchpad links.</li>
             <li>Keep hashes, EXIF, OCR, and compare tools one click away.</li>
             <li>Launch Lens first, then use the prepared manual links for the rest.</li>
           </ul>
@@ -127,6 +131,16 @@
               >
                 Copy Report
               </button>
+              <button
+                id="btnEvidencePack"
+                class="btn btn-ghost"
+                type="button"
+                disabled
+                data-ico="🧾"
+                title="Download a reproducible evidence package with manifest, hashes, notes, and artifacts."
+              >
+                Evidence Pack
+              </button>
             </div>
           </div>
         </div>
@@ -208,9 +222,18 @@
                 </label>
               </div>
 
-              <div class="mono mono-box" title="Uploading starts automatically after you choose an image">
+              <div class="mono mono-box" title="Uploading only happens after you choose a launch action">
                 <input id="chkEnableShare" type="checkbox" checked hidden />
-                Automatic launch uploads the image to generate a temporary public URL as soon as you choose a file.
+                Launch actions upload to a temporary public host only after you explicitly choose them.
+              </div>
+
+              <div class="kv">
+                <div class="k">Manual notes</div>
+                <textarea id="manualNotes" class="input textarea" rows="3" placeholder="Why this image matters, caveats, hypotheses, or handling notes"></textarea>
+              </div>
+
+              <div class="mono mono-box workflow-box" title="Canonical operator workflow">
+                Operator workflow: 1) load image locally → 2) review signals + suspicion inputs → 3) choose OCR / launchpad → 4) export report or evidence pack.
               </div>
 
               <label class="toggle toggle-mini" title="Uploads the clean copy (re-encoded) instead of the original file">
@@ -241,6 +264,7 @@
               <div id="publicUrlOut" class="mono mono-box">—</div>
               <div id="engineLinks" class="mono mono-box links" hidden></div>
               <div id="hostStatsOut" class="mono mono-box" hidden></div>
+              <div id="actionLogOut" class="mono mono-box" hidden></div>
             </div>
 
             <details class="drawer hud" data-hud-key="advanced">
@@ -282,6 +306,11 @@
                     <input id="chkFunMode" type="checkbox" />
                     <span class="toggle-ui" aria-hidden="true"></span>
                     <span class="toggle-text">Fun mode (ambient FX, chrome skin, HUD drag)</span>
+                  </label>
+                  <label class="toggle toggle-mini" title="Strip ambient FX, foreground the canonical workflow, and keep a traceable session log">
+                    <input id="chkOperatorMode" type="checkbox" checked />
+                    <span class="toggle-ui" aria-hidden="true"></span>
+                    <span class="toggle-text">Operator mode (focused workflow + trace log)</span>
                   </label>
                   <div class="row row-tight">
                     <label class="field" title="Scanlines intensity">

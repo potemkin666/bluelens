@@ -2,7 +2,7 @@
 
 Ocean-themed UI for image upload + reverse-image-search workflows, with an OSINT slant:
 
-- Local preview plus automatic launchpad upload to a temporary public URL after you choose an image
+- Local preview first, with explicit launchpad upload only when you choose a provider action
 - Hashes: `SHA-256`, `MD5`, perceptual `dHash`
 - Metadata extraction (EXIF/IPTC/XMP when present)
 - OCR (watermarks/usernames/signage) + extracted key fields (URLs, emails, @handles, phones)
@@ -14,7 +14,7 @@ Ocean-themed UI for image upload + reverse-image-search workflows, with an OSINT
 
 ## Run it
 
-This is a static site, but the built-in server is recommended so the automatic upload + launchpad flow works reliably.
+This is a static site, but the built-in server is recommended so explicit upload + launchpad actions work reliably.
 
 ```bash
 node server.js
@@ -26,9 +26,11 @@ Open:
 
 ## Notes
 
-- Choosing an image now uploads it to a third-party host to generate a temporary public URL for the search launchpad.
+- Choosing an image stays local; uploads happen only when you explicitly run a launch action that needs a temporary public URL.
 - Upload proxy uses multi-host failover (Uguu -> Catbox -> Litterbox -> 0x0).
 - "Prepare Engine Links" opens Lens first, then shows clickable provider links in-console for manual follow-up.
+- OCR model files load from a CDN on first use.
+- Batch export currently omits failed files from the downloadable JSON bundle.
 - Run tests with `npm test`.
 - Open the in-app Help page for startup, privacy, troubleshooting, and defaults.
 

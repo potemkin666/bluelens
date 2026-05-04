@@ -144,4 +144,14 @@ test("local server exposes ping and durable wait-job handoff routes", async (t) 
   assert.equal(timeoutData.job, null);
   assert.equal(timeoutData.missing, true);
   assert.ok(Number.isFinite(timeoutData.meta?.server_started_at));
+
+  const badUpload = await fetch(`http://127.0.0.1:${port}/api/upload`, {
+    method: "POST",
+    headers: { "content-type": "image/png", "x-filename": "not-image.png" },
+    body: Buffer.from("definitely not a png"),
+  });
+  assert.equal(badUpload.status, 415);
+  const badUploadData = await badUpload.json();
+  assert.equal(badUploadData.ok, false);
+  assert.equal(badUploadData.error, "invalid_image_payload");
 });

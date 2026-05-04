@@ -32,9 +32,9 @@ test("search-all UI is framed as link preparation, not automatic querying", () =
 });
 
 
-test("sharing copy matches the automatic upload flow", () => {
-  assert.match(indexHtml, /Automatic launch uploads the image to generate a temporary public URL as soon as you choose a file\./);
-  assert.doesNotMatch(indexHtml, /Enable one-click provider launcher/);
+test("sharing copy matches explicit upload consent", () => {
+  assert.match(indexHtml, /Launch actions upload to a temporary public host only after you explicitly choose them\./);
+  assert.match(indexHtml, /uploads happen only after you ask for launchpad links/i);
 });
 
 
@@ -45,7 +45,7 @@ test("primary and secondary actions stay in a static order", () => {
 });
 
 test("landing UI stays focused on image search", () => {
-  assert.match(indexHtml, /Drop an image and get to reverse search fast\./);
+  assert.match(indexHtml, /Drop an image, inspect locally, then choose when to upload\./);
   assert.match(indexHtml, /alt="BlueLens image search workflow demo"/);
   assert.match(indexHtml, /<div class="focus-demo">[\s\S]*?<img/);
   assert.doesNotMatch(indexHtml, /Local file signals/);
@@ -62,9 +62,10 @@ test("search tab is always the first panel shown on load", () => {
   assert.doesNotMatch(setupTabsBlock, /localStorage\.getItem\("ui:tab"\)/);
 });
 
-test("uploading an image auto-prepares search links", () => {
-  assert.match(appJs, /handleSearchAll\(\{ autoEnableShare: true, openLens: false \}\)/);
+test("loading an image stays local until a launch action is chosen", () => {
+  assert.doesNotMatch(appJs, /handleSearchAll\(\{ autoEnableShare: true, openLens: false \}\)/);
   assert.match(appJs, /window\.__osintActivateTab\?\.\("search"\);/);
+  assert.match(appJs, /Local review ready\. Uploads start only when you choose a launch action\./);
 });
 
 
@@ -77,10 +78,13 @@ test("command palette copy uses fixed UTF-8 text and row clicks run the clicked 
 
 test("operator theme is calm by default and fun mode is explicit", () => {
   assert.match(indexHtml, /id="chkFunMode"/);
+  assert.match(indexHtml, /id="chkOperatorMode"/);
   assert.match(appJs, /applyFunMode\(funMode, \{ persist: false \}\)/);
+  assert.match(appJs, /applyOperatorMode\(operatorMode, \{ persist: false \}\)/);
   assert.match(stylesCss, /--scanline: 0;/);
   assert.match(stylesCss, /--chromatic: 0;/);
   assert.match(stylesCss, /body\.fun-mode \.bg-overlay/);
+  assert.match(stylesCss, /body\.operator-mode \.bg-overlay/);
 });
 
 test("OCR UI uses manual models and weak script hints", () => {
@@ -111,6 +115,8 @@ test("wait tab uses backoff and exposes reopen guidance", () => {
   assert.match(waitHtml, /retryMs = Math\.min\(maxRetryMs, Math\.round\(retryMs \* backoffFactor\)\)/);
   assert.match(waitHtml, /Open main tab/);
   assert.match(waitHtml, /server restarted/i);
+  assert.doesNotMatch(waitHtml, /title\.innerHTML/);
+  assert.match(waitHtml, /strong\.textContent = nextLabel/);
 });
 
 test("mutation lab copy is clearly framed as analyst review", () => {
@@ -122,4 +128,14 @@ test("mutation lab copy is clearly framed as analyst review", () => {
 test("batch OCR failures are surfaced instead of silently ignored", () => {
   assert.match(appJs, /ocr_error\s*=\s*e\?\.message\s*\|\|\s*"OCR failed"/);
   assert.match(appJs, /Batch OCR: \$\{pick\.length - failures\}\/\$\{pick\.length\} ok · \$\{failures\} failed/);
+});
+
+test("onboarding and evidence-pack UI expose operator caveats and export path", () => {
+  assert.match(indexHtml, /id="onboardingStrip"/);
+  assert.match(indexHtml, /id="btnEvidencePack"/);
+  assert.match(indexHtml, /id="manualNotes"/);
+  assert.match(indexHtml, /id="actionLogOut"/);
+  assert.match(appJs, /function downloadEvidencePack\(\)/);
+  assert.match(indexHtml, /Operator workflow: 1\) load image locally/);
+  assert.match(appJs, /Batch export omits failures/);
 });

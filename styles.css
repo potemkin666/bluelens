@@ -222,6 +222,46 @@ body {
   margin: 0 auto;
 }
 
+.onboarding-shell {
+  position: relative;
+  z-index: 1;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 22px 10px;
+}
+
+.onboarding-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(230, 251, 255, 0.24);
+  background: rgba(7, 28, 58, 0.46);
+  box-shadow: 0 16px 44px rgba(1, 15, 37, 0.18);
+}
+
+.onboarding-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(198, 244, 255, 0.22);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 12px;
+  color: rgba(240, 252, 255, 0.9);
+}
+
+.onboarding-chip.warn {
+  border-color: rgba(255, 225, 138, 0.45);
+  background: rgba(255, 225, 138, 0.1);
+}
+
+.onboarding-chip.ok {
+  border-color: rgba(143, 232, 255, 0.42);
+}
+
 .focus-shell {
   position: relative;
   z-index: 1;
@@ -1659,6 +1699,18 @@ body.hud-mode .hud .card-title-row {
   line-height: 1.35;
 }
 
+.textarea {
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+  font: inherit;
+}
+
+.workflow-box,
+#actionLogOut {
+  font-size: 12px;
+}
+
 .select {
   min-width: 220px;
   padding: 10px 12px;
@@ -1696,6 +1748,11 @@ body.hud-mode .hud .card-title-row {
 #hostStatsOut {
   font-size: 12px;
   opacity: 0.92;
+}
+
+#actionLogOut {
+  max-height: 220px;
+  overflow: auto;
 }
 
 /* Engine launchpad */
@@ -2192,6 +2249,40 @@ body:not(.fun-mode) .console-card::after {
 
 body:not(.fun-mode) .btn {
   box-shadow: 0 10px 24px rgba(16, 40, 76, 0.14);
+}
+
+body.operator-mode .bg-overlay,
+body.operator-mode .holo-grid,
+body.operator-mode .bubbles,
+body.operator-mode .orbs,
+body.operator-mode .sparkles,
+body.operator-mode .caustics,
+body.operator-mode .radar,
+body.operator-mode .focus-panel::before,
+body.operator-mode .brand-mark::after,
+body.operator-mode .console-card::after {
+  display: none !important;
+}
+
+body.operator-mode {
+  background: linear-gradient(180deg, #091a31, #0b1f39 65%, #0a1730);
+}
+
+body.operator-mode .focus-panel,
+body.operator-mode .card,
+body.operator-mode .subcard {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: 0 12px 28px rgba(0, 10, 25, 0.18);
+}
+
+body.operator-mode .hint,
+body.operator-mode .focus-lede,
+body.operator-mode .focus-points,
+body.operator-mode .brand-text p,
+body.operator-mode .toggle-text {
+  text-shadow: none;
+  color: rgba(232, 241, 248, 0.86);
 }
 
 @media (max-width: 980px) {
