@@ -116,7 +116,8 @@ test("compare UI frames dHash as a heuristic with thumbnail diffing", () => {
   assert.match(indexHtml, /Perceptual thumbnail difference preview/);
   assert.match(indexHtml, />No thumbnail diff yet\./);
   assert.match(indexHtml, />Hamming \(0–64\)</);
-  assert.match(appJs, /function renderCompareDiff\(baseImg, compareImg, size = 96\)/);
+  assert.match(appJs, /const COMPARE_DIFF_SIZE = 96;/);
+  assert.match(appJs, /function renderCompareDiff\(baseImg, compareImg, size = COMPARE_DIFF_SIZE\)/);
   assert.match(appJs, /Possible near-duplicate/);
   assert.match(appJs, /No near-duplicate signal from dHash alone/);
   assert.doesNotMatch(appJs, /Likely same image/);

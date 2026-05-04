@@ -252,6 +252,9 @@ const FX_OVERCLOCK_CHROMATIC = Number.isFinite(FX_CONFIG.overclockChromatic) ? F
 const FX_FUN_MODE_DEFAULT = Boolean(FX_CONFIG.funModeDefault);
 const FX_HUD_DEFAULT = Boolean(FX_CONFIG.hudDefault);
 const FX_CHROME_DEFAULT = Boolean(FX_CONFIG.chromeDefault);
+const COMPARE_DIFF_SIZE = 96;
+const compareDiffScratchA = document.createElement("canvas");
+const compareDiffScratchB = document.createElement("canvas");
 const EXPORT_RUNTIME_CONFIG_SOURCE = JSON.stringify({
   meta: CONFIG_META,
   upload: {
@@ -2392,7 +2395,7 @@ function fmtCoord(n) {
 }
 
 function parseExifDateValue(rawValue) {
-  if (rawValue == null) return null;
+  if (rawValue === null || rawValue === undefined) return null;
   const sourceType = rawValue instanceof Date ? "date" : typeof rawValue;
   const raw = rawValue instanceof Date ? rawValue.toISOString() : String(rawValue).trim();
   if (!raw) return null;
@@ -3744,7 +3747,7 @@ function clearCompare() {
   elements.btnClearCompare.disabled = true;
 }
 
-function renderCompareDiff(baseImg, compareImg, size = 96) {
+function renderCompareDiff(baseImg, compareImg, size = COMPARE_DIFF_SIZE) {
   if (!elements.compareDiffCanvas) return null;
   const canvas = elements.compareDiffCanvas;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -3753,14 +3756,12 @@ function renderCompareDiff(baseImg, compareImg, size = 96) {
   canvas.height = size;
   ctx.clearRect(0, 0, size, size);
 
-  const scratchA = document.createElement("canvas");
-  scratchA.width = size;
-  scratchA.height = size;
-  const scratchB = document.createElement("canvas");
-  scratchB.width = size;
-  scratchB.height = size;
-  const ctxA = scratchA.getContext("2d", { willReadFrequently: true });
-  const ctxB = scratchB.getContext("2d", { willReadFrequently: true });
+  compareDiffScratchA.width = size;
+  compareDiffScratchA.height = size;
+  compareDiffScratchB.width = size;
+  compareDiffScratchB.height = size;
+  const ctxA = compareDiffScratchA.getContext("2d", { willReadFrequently: true });
+  const ctxB = compareDiffScratchB.getContext("2d", { willReadFrequently: true });
   if (!ctxA || !ctxB) return null;
 
   ctxA.drawImage(baseImg, 0, 0, size, size);
