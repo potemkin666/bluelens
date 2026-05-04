@@ -53,6 +53,10 @@ test("landing UI stays focused on image search", () => {
   assert.doesNotMatch(indexHtml, /Local file signals/);
 });
 
+test("upload control appears before the landing promo block", () => {
+  assert.ok(indexHtml.indexOf('id="dropzone"') < indexHtml.indexOf('class="focus-shell"'));
+});
+
 test("caseboard UI is removed from the landing workflow", () => {
   assert.doesNotMatch(indexHtml, /Caseboard/);
   assert.doesNotMatch(appJs, /caseboard:v1/);
