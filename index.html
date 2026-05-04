@@ -68,6 +68,10 @@
                 <option value="fast">Quick OCR</option>
                 <option value="deep">Deep OCR</option>
                 <option value="share_search">Upload + Launchpad</option>
+                <option value="handle_recon">Handle Recon</option>
+                <option value="domain_recon">Domain Recon</option>
+                <option value="metadata_pass">Metadata Pass</option>
+                <option value="cross_engine_swarm">Cross-Engine Swarm</option>
               </select>
               <button id="btnRunMission" class="btn" type="button" disabled title="Runs the selected mission preset">Run</button>
             </div>
@@ -241,6 +245,44 @@
               <div id="engineLinks" class="mono mono-box links" hidden></div>
               <div id="hostStatsOut" class="mono mono-box" hidden></div>
               <div id="actionLogOut" class="mono mono-box" hidden></div>
+            </div>
+
+            <div class="subcard hud" data-hud-key="mission-output">
+              <div class="subcard-head">
+                <div class="subcard-title">Mission Output</div>
+                <span class="pill pill-muted">structured</span>
+              </div>
+              <div id="missionOutputOut" class="mono mono-box mission-output-box">
+                Run a recon mission to structure handles, domains, metadata, or engine swarm prep.
+              </div>
+            </div>
+
+            <div class="subcard hud" data-hud-key="result-intake">
+              <div class="subcard-head">
+                <div class="subcard-title">Result Intake</div>
+                <span class="pill pill-muted">dedupe queue</span>
+              </div>
+              <div class="hint">Paste one result per line as <span class="mono">URL | title | snippet | engine</span> or <span class="mono">engine[TAB]URL[TAB]title[TAB]snippet</span>.</div>
+              <textarea
+                id="resultIntakeInput"
+                class="input textarea"
+                rows="4"
+                placeholder="https://example.com/post | Account mirror found | Same crop and caption fragment | yandex"
+              ></textarea>
+              <div class="row row-tight">
+                <button id="btnIngestResults" class="btn btn-secondary" type="button" disabled title="Normalize and merge pasted findings">
+                  Ingest Results
+                </button>
+                <button id="btnClearResults" class="btn btn-ghost" type="button" disabled title="Clear the intake queue">
+                  Clear Queue
+                </button>
+                <button id="btnCopyResultsJson" class="btn btn-ghost" type="button" disabled title="Copy the normalized queue as JSON">
+                  Copy JSON
+                </button>
+              </div>
+              <div id="resultIntakeSummary" class="mono mono-box mission-output-box">
+                No external findings ingested yet.
+              </div>
             </div>
 
             <details class="drawer hud" data-hud-key="advanced">

@@ -113,6 +113,12 @@ const elements = {
   actionLogOut: document.getElementById("actionLogOut"),
   btnRunDoctor: document.getElementById("btnRunDoctor"),
   doctorOut: document.getElementById("doctorOut"),
+  missionOutputOut: document.getElementById("missionOutputOut"),
+  resultIntakeInput: document.getElementById("resultIntakeInput"),
+  btnIngestResults: document.getElementById("btnIngestResults"),
+  btnClearResults: document.getElementById("btnClearResults"),
+  btnCopyResultsJson: document.getElementById("btnCopyResultsJson"),
+  resultIntakeSummary: document.getElementById("resultIntakeSummary"),
 
   // Command palette
   cmdk: document.getElementById("cmdk"),
@@ -253,6 +259,7 @@ const FX_FUN_MODE_DEFAULT = Boolean(FX_CONFIG.funModeDefault);
 const FX_HUD_DEFAULT = Boolean(FX_CONFIG.hudDefault);
 const FX_CHROME_DEFAULT = Boolean(FX_CONFIG.chromeDefault);
 const COMPARE_DIFF_SIZE = 96;
+const ENGINE_SWARM_DELAY_MS = 260;
 const UNKNOWN_EXPIRY_WINDOW = "unknown";
 const TEMP_EXTERNAL_ARTIFACT_WARNING = "Temporary external artifact — third-party upload URLs may expire or disappear before a reader opens the report.";
 const TEMP_EXTERNAL_ARTIFACT_NOTE = "Host retention is controlled by the third-party service and is not guaranteed by BlueLens.";
@@ -384,6 +391,12 @@ const state = {
     metadata_suspicion_score: null,
     metadata_suspicion_band: null,
     metadata_suspicion_inputs: [],
+  },
+  missionOutput: null,
+  resultIntake: {
+    raw: "",
+    entries: [],
+    last_ingested_at: null,
   },
   mutations: [],
   compare: {
@@ -522,6 +535,418 @@ function buildUploadLifecycleMeta(uploadMeta = state.uploadMeta, purpose = state
     temporary_external_artifact: Boolean(host || state.publicUrl),
     temporary_external_artifact_warning: uploadMeta?.temporary_external_artifact_warning || TEMP_EXTERNAL_ARTIFACT_WARNING,
   };
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+function normalizeEngineName(value, fallback = "") {
+  const raw = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+  if (!raw) return fallback;
+  if (raw === "google" || raw === "googleimages" || raw === "google_image") return "google_images";
+  if (raw === "tin_eye") return "tineye";
+  return ENGINE_ORDER.includes(raw) ? raw : fallback;
+}
+
+function canonicalizeExternalUrl(raw) {
+  try {
+    const input = String(raw || "").trim();
+    if (!input) return null;
+    const normalizedInput = /^https?:\/\//i.test(input) ? input : `https://${input.replace(/^\/+/, "")}`;
+    const parsed = new URL(normalizedInput);
+    parsed.hash = "";
+    parsed.hostname = (parsed.hostname || "").toLowerCase().replace(/^www\./i, "");
+    const pathname = (parsed.pathname || "/").replace(/\/{2,}/g, "/");
+    parsed.pathname = pathname !== "/" ? pathname.replace(/\/+$/g, "") || "/" : "/";
+    const kept = [];
+    parsed.searchParams.forEach((value, key) => {
+      if (/^utm_/i.test(key) || /^(fbclid|gclid|igshid|mc_cid|mc_eid|ref_src)$/i.test(key)) return;
+      kept.push([key, value]);
+    });
+    kept.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
+    parsed.search = "";
+    for (const [key, value] of kept) parsed.searchParams.append(key, value);
+    const canonicalUrl = parsed.toString();
+    return {
+      raw: input,
+      canonical_url: canonicalUrl,
+      domain: parsed.hostname || "",
+      path: parsed.pathname || "/",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function extractMediaHashFromText(text) {
+  const raw = String(text || "");
+  const labeledSha = raw.match(/\bsha(?:-?256)?[:=\s]+([a-f0-9]{64})\b/i);
+  if (labeledSha) return { algo: "sha256", value: labeledSha[1].toLowerCase() };
+  const labeledMd5 = raw.match(/\bmd5[:=\s]+([a-f0-9]{32})\b/i);
+  if (labeledMd5) return { algo: "md5", value: labeledMd5[1].toLowerCase() };
+  const labeledDhash = raw.match(/\bdhash[:=\s]+([a-f0-9]{16})\b/i);
+  if (labeledDhash) return { algo: "dhash", value: labeledDhash[1].toLowerCase() };
+  const sha = raw.match(/\b[a-f0-9]{64}\b/i);
+  if (sha) return { algo: "sha256", value: sha[0].toLowerCase() };
+  const md5 = raw.match(/\b[a-f0-9]{32}\b/i);
+  if (md5) return { algo: "md5", value: md5[0].toLowerCase() };
+  const dhash = raw.match(/\b[a-f0-9]{16}\b/i);
+  if (dhash) return { algo: "dhash", value: dhash[0].toLowerCase() };
+  return null;
+}
+
+function buildResultIntakeKey(entry) {
+  if (entry?.canonical_url) return `url:${entry.canonical_url}`;
+  if (entry?.domain && entry?.media_hash?.value) return `domain+hash:${entry.domain}:${entry.media_hash.value}`;
+  if (entry?.domain) return `domain:${entry.domain}`;
+  return `line:${entry?.source_line || ""}`;
+}
+
+function summarizeResultIntake(entries = []) {
+  const engines = new Set();
+  const domains = new Map();
+  let duplicatesMerged = 0;
+  for (const entry of entries) {
+    for (const engine of entry?.engines || []) engines.add(engine);
+    if (entry?.domain) domains.set(entry.domain, (domains.get(entry.domain) || 0) + 1);
+    duplicatesMerged += Math.max(0, Number(entry?.merged_count || 1) - 1);
+  }
+  const topDomains = Array.from(domains.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 4)
+    .map(([domain, count]) => `${domain}×${count}`);
+  return {
+    total: entries.length,
+    duplicatesMerged,
+    engines: Array.from(engines),
+    topDomains,
+  };
+}
+
+function parseResultIntakeRaw(raw, defaultEngine = "") {
+  const lines = String(raw || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const parsedEntries = [];
+  for (const line of lines) {
+    const parts = line.includes("\t") ? line.split("\t").map((part) => part.trim()) : line.split(/\s+\|\s+/).map((part) => part.trim());
+    let engine = defaultEngine;
+    let url = "";
+    let title = "";
+    let snippet = "";
+
+    if (parts.length >= 4 && !/^https?:\/\//i.test(parts[0]) && /^https?:\/\//i.test(parts[1])) {
+      [engine, url, title, snippet] = parts;
+    } else if (parts.length >= 4 && !/^https?:\/\//i.test(parts[0]) && /^[a-z0-9.-]+\.[a-z]{2,}/i.test(parts[1])) {
+      [engine, url, title, snippet] = parts;
+    } else {
+      [url, title, snippet, engine] = parts;
+    }
+
+    if (!url) {
+      const urlMatch = line.match(/\bhttps?:\/\/[^\s<>()]+/i);
+      url = urlMatch ? urlMatch[0] : "";
+    }
+    const canonical = canonicalizeExternalUrl(url);
+    if (!canonical) continue;
+    const mediaHash = extractMediaHashFromText(`${title} ${snippet} ${line}`);
+    parsedEntries.push({
+      source_line: line,
+      url: canonical.raw,
+      canonical_url: canonical.canonical_url,
+      domain: canonical.domain,
+      path: canonical.path,
+      title: title || "",
+      snippet: snippet || "",
+      media_hash: mediaHash,
+      engines: normalizeEngineName(engine) ? [normalizeEngineName(engine)] : [],
+      first_seen_at: new Date().toISOString(),
+      last_seen_at: new Date().toISOString(),
+      merged_count: 1,
+    });
+  }
+  return parsedEntries;
+}
+
+function mergeResultIntakeEntries(existingEntries, incomingEntries) {
+  const byKey = new Map();
+  for (const entry of existingEntries || []) byKey.set(buildResultIntakeKey(entry), { ...entry });
+  for (const incoming of incomingEntries || []) {
+    const key = buildResultIntakeKey(incoming);
+    const current = byKey.get(key);
+    if (!current) {
+      byKey.set(key, { ...incoming });
+      continue;
+    }
+    const engines = new Set([...(current.engines || []), ...(incoming.engines || [])]);
+    current.engines = Array.from(engines);
+    current.title = current.title || incoming.title;
+    current.snippet = current.snippet || incoming.snippet;
+    current.last_seen_at = incoming.last_seen_at || new Date().toISOString();
+    current.merged_count = Math.max(1, Number(current.merged_count || 1) + 1);
+    if (!current.media_hash && incoming.media_hash) current.media_hash = incoming.media_hash;
+    byKey.set(key, current);
+  }
+  return Array.from(byKey.values()).sort((a, b) => String(b.last_seen_at || "").localeCompare(String(a.last_seen_at || "")));
+}
+
+function renderMissionOutput() {
+  const el = elements.missionOutputOut;
+  if (!el) return;
+  const mission = state.missionOutput;
+  if (!mission || !Array.isArray(mission.items) || mission.items.length === 0) {
+    el.classList.remove("mission-grid");
+    el.textContent = mission?.summary || "Run a recon mission to structure handles, domains, metadata, or engine swarm prep.";
+    return;
+  }
+  el.classList.add("mission-grid");
+  const cards = mission.items
+    .map((item) => {
+      const lines = Array.isArray(item.lines) ? item.lines : [];
+      const links = Array.isArray(item.links) ? item.links : [];
+      return `
+        <div class="mission-card">
+          <div class="mission-card-head">
+            <div>${escapeHtml(item.label || item.type || "Finding")}</div>
+            ${item.meta ? `<div class="mission-card-meta">${escapeHtml(item.meta)}</div>` : ""}
+          </div>
+          ${lines.length ? `<div class="mission-card-lines">${lines.map((line) => `<div>${escapeHtml(line)}</div>`).join("")}</div>` : ""}
+          ${links.length ? `<div class="mission-card-links">${links.map((link) => `<a class="chip chip-link" href="${escapeAttr(link.url)}" target="_blank" rel="noreferrer">${escapeHtml(link.label || link.url)}</a>`).join("")}</div>` : ""}
+        </div>
+      `;
+    })
+    .join("");
+  el.innerHTML = `
+    <div class="mission-summary">${escapeHtml(mission.summary || "")}</div>
+    ${cards}
+  `;
+}
+
+function renderResultIntake() {
+  const el = elements.resultIntakeSummary;
+  if (!el) return;
+  const entries = Array.isArray(state.resultIntake?.entries) ? state.resultIntake.entries : [];
+  if (!entries.length) {
+    el.classList.remove("mission-grid");
+    el.textContent = "No external findings ingested yet.";
+    if (elements.btnClearResults) elements.btnClearResults.disabled = true;
+    if (elements.btnCopyResultsJson) elements.btnCopyResultsJson.disabled = true;
+    return;
+  }
+  const summary = summarizeResultIntake(entries);
+  el.classList.add("mission-grid");
+  el.innerHTML = `
+    <div class="mission-summary">
+      Intake queue: ${summary.total} deduped entries · merged ${summary.duplicatesMerged} duplicates · engines ${summary.engines.join(", ") || "—"} · top domains ${summary.topDomains.join(", ") || "—"}
+    </div>
+    ${entries
+      .slice(0, 12)
+      .map(
+        (entry) => `
+          <div class="mission-card">
+            <div class="mission-card-head">
+              <div>${escapeHtml(entry.title || entry.canonical_url || entry.url)}</div>
+              <div class="mission-card-meta">${escapeHtml(entry.domain || "unknown domain")}</div>
+            </div>
+            <div class="mission-card-lines">
+              <div>${escapeHtml(entry.canonical_url || entry.url || "—")}</div>
+              ${entry.snippet ? `<div>${escapeHtml(entry.snippet)}</div>` : ""}
+              <div>Engines: ${escapeHtml((entry.engines || []).join(", ") || "manual")}${entry.media_hash?.value ? ` · hash ${escapeHtml(`${entry.media_hash.algo}:${entry.media_hash.value}`)}` : ""}${entry.merged_count > 1 ? ` · merged ${entry.merged_count}` : ""}</div>
+            </div>
+          </div>
+        `,
+      )
+      .join("")}
+  `;
+  if (elements.btnClearResults) elements.btnClearResults.disabled = false;
+  if (elements.btnCopyResultsJson) elements.btnCopyResultsJson.disabled = false;
+}
+
+function setMissionOutput(output) {
+  state.missionOutput = output || null;
+  renderMissionOutput();
+}
+
+function ingestResults(raw) {
+  const incoming = parseResultIntakeRaw(raw, state.lastEngineRun?.mode === "swarm" ? "swarm" : "");
+  if (incoming.length === 0) return 0;
+  state.resultIntake = state.resultIntake || { raw: "", entries: [], last_ingested_at: null };
+  state.resultIntake.entries = mergeResultIntakeEntries(state.resultIntake.entries || [], incoming);
+  state.resultIntake.raw = raw || "";
+  state.resultIntake.last_ingested_at = new Date().toISOString();
+  renderResultIntake();
+  return incoming.length;
+}
+
+function normalizeReconEntities(text) {
+  const ent = OCR_PIPELINE?.extractEntities?.(text) || { urls: [], emails: [], handles: [], phones: [] };
+  const extra = extractHandlesAndDomains(text);
+  const handles = Array.from(
+    new Set(
+      [...(ent.handles || []), ...(extra.handles || [])]
+        .map((value) => OCR_PIPELINE?.normalizeHandle?.(value) || String(value || "").replace(/^@/, "").trim())
+        .filter(Boolean)
+        .map((value) => `@${value}`),
+    ),
+  );
+  const domains = Array.from(
+    new Set(
+      [
+        ...(ent.urls || []).map((value) => OCR_PIPELINE?.normalizeDomain?.(value)),
+        ...(extra.domains || []).map((value) => OCR_PIPELINE?.normalizeDomain?.(value)),
+      ].filter(Boolean),
+    ),
+  );
+  const phones = Array.from(
+    new Set(
+      (ent.phones || [])
+        .map((value) => OCR_PIPELINE?.normalizePhone?.(value))
+        .filter(Boolean)
+        .map((value) => value.e164 || value.digits || value.raw),
+    ),
+  );
+  return { ent, handles, domains, phones };
+}
+
+function buildHandleReconOutput({ handles }) {
+  const items = handles.slice(0, 8).map((handle) => {
+    const clean = handle.replace(/^@/, "");
+    return {
+      type: "handle",
+      label: handle,
+      meta: "OCR-derived handle pivot",
+      lines: ["Direct profile sweep prepared", "Use intake queue to merge pasted hits from engines or socials"],
+      links: [
+        { label: "Instagram", url: `https://www.instagram.com/${encodeURIComponent(clean)}/` },
+        { label: "TikTok", url: `https://www.tiktok.com/@${encodeURIComponent(clean)}` },
+        { label: "X", url: `https://x.com/${encodeURIComponent(clean)}` },
+        { label: "Search", url: `https://www.google.com/search?q=${encodeURIComponent(handle)}` },
+      ],
+    };
+  });
+  return {
+    mission: "handle_recon",
+    summary: handles.length ? `Handle recon prepared ${handles.length} normalized handles.` : "Handle recon found no stable OCR handles.",
+    items,
+  };
+}
+
+function buildDomainReconOutput({ ent, domains }) {
+  const items = domains.slice(0, 8).map((domain) => {
+    const relatedUrls = (ent.urls || []).filter((url) => (OCR_PIPELINE?.normalizeDomain?.(url) || "") === domain).slice(0, 2);
+    return {
+      type: "domain",
+      label: domain,
+      meta: `${relatedUrls.length} OCR-linked URL${relatedUrls.length === 1 ? "" : "s"}`,
+      lines: [...relatedUrls, "Normalized for site, WHOIS, DNS, CRT, and archive follow-up"],
+      links: [
+        { label: "Site search", url: `https://www.google.com/search?q=${encodeURIComponent(`site:${domain}`)}` },
+        { label: "WHOIS", url: `https://www.whois.com/whois/${encodeURIComponent(domain)}` },
+        { label: "DNS", url: `https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=A` },
+        { label: "CRT", url: `https://crt.sh/?q=${encodeURIComponent(domain)}` },
+        { label: "Archive", url: `https://web.archive.org/web/*/${encodeURIComponent(`https://${domain}/*`)}` },
+      ],
+    };
+  });
+  return {
+    mission: "domain_recon",
+    summary: domains.length ? `Domain recon normalized ${domains.length} domains from OCR and URL pivots.` : "Domain recon found no domains to normalize.",
+    items,
+  };
+}
+
+function buildMetadataPassOutput() {
+  const captured = state.captureTimeInfo?.display || elements.kfCaptured?.textContent || "—";
+  const camera = elements.kfCamera?.textContent || "—";
+  const software = elements.kfSoftware?.textContent || "—";
+  const gps = elements.kfGps?.textContent || "—";
+  const suspicion = state.insights?.metadata_suspicion_band || "—";
+  const lines = [
+    `Captured: ${captured}`,
+    `Camera: ${camera}`,
+    `Software: ${software}`,
+    `GPS: ${gps}`,
+    `Metadata suspicion: ${suspicion}`,
+  ];
+  if (Array.isArray(state.insights?.metadata_suspicion_inputs)) {
+    lines.push(...state.insights.metadata_suspicion_inputs.slice(0, 4).map((line) => `Cue: ${line}`));
+  }
+  return {
+    mission: "metadata_pass",
+    summary: "Metadata pass structured the local capture, editor, GPS, and suspicion cues into one review block.",
+    items: [
+      {
+        type: "metadata",
+        label: state.file?.name || "Loaded image",
+        meta: elements.metaDim?.textContent || "metadata review",
+        lines,
+        links: state.gps ? [{ label: "Open map", url: `https://www.openstreetmap.org/?mlat=${encodeURIComponent(state.gps.lat)}&mlon=${encodeURIComponent(state.gps.lon)}#map=16/${encodeURIComponent(state.gps.lat)}/${encodeURIComponent(state.gps.lon)}` }] : [],
+      },
+    ],
+  };
+}
+
+function getBatchEntityClusters(items = state.batchItems) {
+  const clusters = new Map();
+  const addCluster = (type, value, fileName) => {
+    const cleanValue = String(value || "").trim();
+    if (!cleanValue) return;
+    const key = `${type}:${cleanValue.toLowerCase()}`;
+    const current = clusters.get(key) || { key, type, value: cleanValue, files: new Set(), count: 0 };
+    current.files.add(fileName || "image");
+    current.count += 1;
+    clusters.set(key, current);
+  };
+  for (const item of items || []) {
+    const report = item?.report;
+    const fileName = report?.file?.name || item?.file?.name || "image";
+    const ent = report?.key_fields?.ocr_entities || (report?.ocr_text ? OCR_PIPELINE?.extractEntities?.(report.ocr_text) : null) || { urls: [], emails: [], handles: [], phones: [] };
+    for (const handle of ent.handles || []) {
+      const normalized = OCR_PIPELINE?.normalizeHandle?.(handle);
+      if (normalized) addCluster("handle", `@${normalized}`, fileName);
+    }
+    for (const email of ent.emails || []) addCluster("email", String(email).toLowerCase(), fileName);
+    for (const phone of ent.phones || []) {
+      const normalized = OCR_PIPELINE?.normalizePhone?.(phone);
+      if (normalized) addCluster("phone", normalized.e164 || normalized.digits || normalized.raw, fileName);
+    }
+    for (const url of ent.urls || []) {
+      const domain = OCR_PIPELINE?.normalizeDomain?.(url);
+      if (domain) addCluster("domain", domain, fileName);
+    }
+  }
+  return Array.from(clusters.values())
+    .map((cluster) => ({ ...cluster, file_count: cluster.files.size, files: Array.from(cluster.files).slice(0, 4) }))
+    .sort((a, b) => b.file_count - a.file_count || b.count - a.count || a.value.localeCompare(b.value));
+}
+
+function buildBatchEntityFollowUps(cluster) {
+  const value = String(cluster?.value || "");
+  if (!value) return [];
+  if (cluster.type === "handle") {
+    const clean = value.replace(/^@/, "");
+    return [
+      `https://www.instagram.com/${encodeURIComponent(clean)}/`,
+      `https://www.tiktok.com/@${encodeURIComponent(clean)}`,
+      `https://x.com/${encodeURIComponent(clean)}`,
+      `https://www.google.com/search?q=${encodeURIComponent(value)}`,
+    ];
+  }
+  if (cluster.type === "domain") {
+    return [
+      `https://www.google.com/search?q=${encodeURIComponent(`site:${value}`)}`,
+      `https://www.whois.com/whois/${encodeURIComponent(value)}`,
+      `https://dns.google/resolve?name=${encodeURIComponent(value)}&type=A`,
+      `https://crt.sh/?q=${encodeURIComponent(value)}`,
+      `https://web.archive.org/web/*/${encodeURIComponent(`https://${value}/*`)}`,
+    ];
+  }
+  return [`https://www.google.com/search?q=${encodeURIComponent(`"${value}"`)}`];
 }
 
 function recordEntityConfidenceReview({ entityType, entityKey, entityValue, confidence }) {
@@ -686,6 +1111,9 @@ function setUiBusy(busy, label = "") {
     elements.btnEvidencePack,
     elements.missionPreset,
     elements.btnRunMission,
+    elements.btnIngestResults,
+    elements.btnClearResults,
+    elements.btnCopyResultsJson,
     elements.btnMutateSearch,
     elements.btnCopyMutations,
     elements.batchInput,
@@ -722,6 +1150,9 @@ async function withUiLock(label, fn) {
     setUiBusy(false);
     setButtonsEnabled(Boolean(state.file));
     setShareControlsEnabled(Boolean(state.file));
+    renderMissionOutput();
+    renderResultIntake();
+    if (elements.btnIngestResults) elements.btnIngestResults.disabled = !(state.file && (elements.resultIntakeInput?.value || "").trim());
     setStatusLine("");
   }
 }
@@ -831,6 +1262,8 @@ function reset() {
   };
   state.sourceReviewLog = [];
   state.insights = { metadata_suspicion_score: null, metadata_suspicion_band: null, metadata_suspicion_inputs: [] };
+  state.missionOutput = null;
+  state.resultIntake = { raw: "", entries: [], last_ingested_at: null };
   state.mutations = [];
   if (state.compare?.objectUrl) URL.revokeObjectURL(state.compare.objectUrl);
   state.compare = { file: null, objectUrl: null, dhash: "", diffScore: null };
@@ -925,6 +1358,18 @@ function reset() {
   if (elements.mutationOut) elements.mutationOut.textContent = "—";
   if (elements.mutationOut) elements.mutationOut.classList.remove("mut-box");
   if (elements.btnCopyMutations) elements.btnCopyMutations.disabled = true;
+  if (elements.missionOutputOut) {
+    elements.missionOutputOut.classList.remove("mission-grid");
+    elements.missionOutputOut.textContent = "Run a recon mission to structure handles, domains, metadata, or engine swarm prep.";
+  }
+  if (elements.resultIntakeInput) elements.resultIntakeInput.value = "";
+  if (elements.resultIntakeSummary) {
+    elements.resultIntakeSummary.classList.remove("mission-grid");
+    elements.resultIntakeSummary.textContent = "No external findings ingested yet.";
+  }
+  if (elements.btnIngestResults) elements.btnIngestResults.disabled = true;
+  if (elements.btnClearResults) elements.btnClearResults.disabled = true;
+  if (elements.btnCopyResultsJson) elements.btnCopyResultsJson.disabled = true;
   elements.batchOut.textContent = "—";
   elements.btnDownloadBatch.disabled = true;
   if (elements.actionLogOut) {
@@ -956,6 +1401,58 @@ function openUrl(url) {
   }
 }
 
+function getRunEngines(run) {
+  const fromTargets = Object.keys(run?.targets || {});
+  const fromQueue = Object.keys(run?.queue || {});
+  return Array.from(new Set([...ENGINE_ORDER.filter((engine) => fromTargets.includes(engine) || fromQueue.includes(engine)), ...fromTargets, ...fromQueue])).filter(Boolean);
+}
+
+function updateRunQueueStatus(run, engine, patch = {}) {
+  if (!run || !engine) return run;
+  run.queue = run.queue && typeof run.queue === "object" ? run.queue : {};
+  const current = run.queue[engine] && typeof run.queue[engine] === "object" ? run.queue[engine] : {};
+  run.queue[engine] = {
+    status: current.status || "queued",
+    attempts: Number(current.attempts || 0),
+    updated_at: new Date().toISOString(),
+    ...current,
+    ...patch,
+    updated_at: patch.updated_at || new Date().toISOString(),
+  };
+  return run;
+}
+
+function persistLaunchpadRun(run) {
+  state.lastEngineRun = run || null;
+  saveLastRun(run || null);
+  renderEngineLaunchpad(run || null);
+}
+
+function openTargetsForRun(run, engines) {
+  if (!run || !run.targets) return { openedCount: 0, blockedCount: 0 };
+  const openList = Array.from(new Set((engines || []).filter((engine) => run.targets?.[engine])));
+  let openedCount = 0;
+  let blockedCount = 0;
+  run.opened = run.opened && typeof run.opened === "object" ? run.opened : {};
+  run.blocked = run.blocked && typeof run.blocked === "object" ? run.blocked : {};
+  for (const engine of openList) {
+    const target = run.targets[engine];
+    const opened = openUrl(target);
+    if (opened) {
+      run.opened[engine] = true;
+      delete run.blocked[engine];
+      openedCount += 1;
+      updateRunQueueStatus(run, engine, { status: "opened" });
+    } else {
+      run.blocked[engine] = true;
+      blockedCount += 1;
+      updateRunQueueStatus(run, engine, { status: "blocked" });
+    }
+  }
+  run.ts = Date.now();
+  return { openedCount, blockedCount };
+}
+
 function renderEngineLaunchpad(run) {
   const el = elements.engineLinks;
   if (!el) return;
@@ -971,12 +1468,15 @@ function renderEngineLaunchpad(run) {
   const opened = r.opened && typeof r.opened === "object" ? r.opened : {};
   const blocked = r.blocked && typeof r.blocked === "object" ? r.blocked : {};
   const chosen = r.chosen && typeof r.chosen === "object" ? r.chosen : {};
+  const queue = r.queue && typeof r.queue === "object" ? r.queue : {};
+  const engines = getRunEngines(r);
 
-  const chips = ENGINE_ORDER.map((eng) => {
+  const chips = engines.map((eng) => {
     const url = r.targets?.[eng] || "";
     const on = chosen?.[eng] !== false;
-    const st = blocked?.[eng] ? "blocked" : opened?.[eng] ? "opened" : "";
-    const title = blocked?.[eng] ? "Popup blocked" : opened?.[eng] ? "Opened" : "Not opened";
+    const queueState = queue?.[eng] || {};
+    const st = blocked?.[eng] ? "blocked" : opened?.[eng] ? "opened" : queueState.status || "";
+    const title = blocked?.[eng] ? "Popup blocked" : opened?.[eng] ? "Opened" : queueState.status ? `State: ${queueState.status}` : "Prepared";
     const disabled = url ? "" : "disabled";
     return `
       <label class="engine-chip ${st} ${disabled}" title="${escapeAttr(title)}">
@@ -987,17 +1487,42 @@ function renderEngineLaunchpad(run) {
     `;
   }).join("");
 
+  const queueCards = engines
+    .map((eng) => {
+      const q = queue?.[eng] || {};
+      const status = blocked?.[eng] ? "blocked" : opened?.[eng] ? "opened" : q.status || (r.targets?.[eng] ? "prepared" : "idle");
+      const detail = [
+        q.job_id ? `job ${q.job_id.slice(0, 12)}…` : "",
+        Number.isFinite(q.attempts) && q.attempts > 0 ? `attempts ${q.attempts}` : "",
+        q.detail || "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      return `
+        <div class="lp-queue-card ${escapeAttr(status)}">
+          <div class="lp-queue-head">
+            <div>${escapeHtml(ENGINE_LABEL[eng] || eng)}</div>
+            <div class="lp-queue-status">${escapeHtml(status)}</div>
+          </div>
+          <div class="lp-queue-meta">${escapeHtml(detail || "No queue detail recorded.")}</div>
+        </div>
+      `;
+    })
+    .join("");
+
   el.classList.add("launchpad");
   el.hidden = false;
   el.innerHTML = `
     <div class="lp-top">
-      <div class="lp-title">Launchpad</div>
-      <div class="lp-meta">${escapeHtml(ts ? `Last: ${ts}` : "")}</div>
+      <div class="lp-title">${escapeHtml(r.mode === "swarm" ? "Swarm Cockpit" : "Launchpad")}</div>
+      <div class="lp-meta">${escapeHtml(ts ? `Last: ${ts}` : "")}${r.url ? ` · URL ready` : ""}</div>
     </div>
     <div class="lp-chips">${chips}</div>
+    ${queueCards ? `<div class="lp-queue">${queueCards}</div>` : ""}
     <div class="lp-actions">
       <button class="btn btn-secondary btn-small" type="button" data-lp-open="chosen" title="Open checked engines">Open chosen</button>
       <button class="btn btn-ghost btn-small" type="button" data-lp-open="all" title="Open all engines">Open all</button>
+      <button class="btn btn-ghost btn-small" type="button" data-lp-open="pending" title="Retry blocked or queued engines">Retry pending</button>
     </div>
   `;
 }
@@ -1029,30 +1554,16 @@ function setupEngineLaunchpad() {
     if (!r || !r.targets) return;
 
     const chosen = r.chosen && typeof r.chosen === "object" ? r.chosen : {};
+    const queue = r.queue && typeof r.queue === "object" ? r.queue : {};
     const openList =
       mode === "chosen"
         ? ENGINE_ORDER.filter((eng) => chosen?.[eng] !== false && r.targets?.[eng])
-        : ENGINE_ORDER.filter((eng) => r.targets?.[eng]);
-
-    // Synchronous opens: must stay inside click handler.
-    r.opened = {};
-    r.blocked = {};
-    for (const eng of openList) {
-      const url = r.targets[eng];
-      try {
-        const w = openUrl(url);
-        if (w) r.opened[eng] = true;
-        else r.blocked[eng] = true;
-      } catch {
-        r.blocked[eng] = true;
-      }
-    }
-
-    r.ts = Date.now();
-    state.lastEngineRun = r;
-    saveLastRun(r);
-    renderEngineLaunchpad(r);
-    setStatusLine(`Launchpad: opened ${openList.length}${Object.keys(r.blocked).length ? " (some blocked)" : ""}`);
+        : mode === "pending"
+          ? ENGINE_ORDER.filter((eng) => r.targets?.[eng] && ["queued", "blocked", "error"].includes(String(queue?.[eng]?.status || "")))
+          : ENGINE_ORDER.filter((eng) => r.targets?.[eng]);
+    const { openedCount, blockedCount } = openTargetsForRun(r, openList);
+    persistLaunchpadRun(r);
+    setStatusLine(`Launchpad: opened ${openedCount}${blockedCount ? ` · blocked ${blockedCount}` : ""}`);
   });
 }
 
@@ -1068,7 +1579,20 @@ function setupSimpleUi() {
   const syncRunLabel = () => {
     if (!elements.btnRunMission || !elements.missionPreset) return;
     const p = elements.missionPreset.value || "fast";
-    elements.btnRunMission.textContent = p === "share_search" ? "Upload + Launchpad" : p === "deep" ? "Deep OCR" : "Quick OCR";
+    elements.btnRunMission.textContent =
+      p === "share_search"
+        ? "Upload + Launchpad"
+        : p === "deep"
+          ? "Deep OCR"
+          : p === "handle_recon"
+            ? "Handle Recon"
+            : p === "domain_recon"
+              ? "Domain Recon"
+              : p === "metadata_pass"
+                ? "Metadata Pass"
+                : p === "cross_engine_swarm"
+                  ? "Swarm"
+                  : "Quick OCR";
   };
   elements.missionPreset.addEventListener("change", syncRunLabel);
   syncRunLabel();
@@ -1111,13 +1635,13 @@ function publishWaitState(jobId, data) {
   }
 }
 
-function openWaitJob(engine, label) {
+function openWaitJob(engine, label, { initialStatus = "uploading" } = {}) {
   const jobId = newWaitJobId();
   const waitUrl = `/wait.html?job=${encodeURIComponent(jobId)}&engine=${encodeURIComponent(engine)}&label=${encodeURIComponent(label || "")}`;
-  openUrl(waitUrl);
-  publishWaitState(jobId, { engine, label: label || "", status: "uploading" });
+  const opened = Boolean(openUrl(waitUrl));
+  publishWaitState(jobId, { engine, label: label || "", status: initialStatus });
   logAction("wait_tab_opened", `${engine}${label ? ` (${label})` : ""}`);
-  return jobId;
+  return { jobId, opened };
 }
 
 function isFunModeEnabled() {
@@ -1297,6 +1821,7 @@ function renderBatchDashboard() {
   }
 
   const clusters = clusterBatchItems(items, DHASH_BATCH_CLUSTER_THRESHOLD);
+  const entityClusters = getBatchEntityClusters(items).slice(0, 10);
 
   const applyFilters = () => {
     const q = String(state.batchUi.query || "").toLowerCase().trim();
@@ -1345,6 +1870,25 @@ function renderBatchDashboard() {
     })
     .join("");
 
+  const entitySummary = entityClusters
+    .map((cluster) => {
+      const files = Array.isArray(cluster.files) ? cluster.files.join(", ") : "—";
+      return `
+        <div class="entity-cluster-card">
+          <div class="entity-cluster-head">
+            <div>${escapeHtml(cluster.value)}</div>
+            <div class="meta">${escapeHtml(`${cluster.type} · files ${cluster.file_count}`)}</div>
+          </div>
+          <div class="entity-cluster-files">${escapeHtml(files)}</div>
+          <div class="dash-tags">
+            <button class="btn btn-secondary btn-small" type="button" data-batch-entity-open="${escapeAttr(cluster.key)}">Open follow-up</button>
+            <button class="btn btn-ghost btn-small" type="button" data-batch-entity-mission="${escapeAttr(cluster.key)}">Seed mission</button>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
   const selected = state.batchUi.selected && typeof state.batchUi.selected === "object" ? state.batchUi.selected : {};
   const selectedCount = Object.values(selected).filter(Boolean).length;
 
@@ -1370,6 +1914,7 @@ function renderBatchDashboard() {
       ${clusterChips || ""}
     </div>
     ${clusterSummary ? `<div class="cluster-summary">${clusterSummary}</div>` : ""}
+    ${entitySummary ? `<div class="entity-cluster-summary">${entitySummary}</div>` : ""}
   `;
 
   const rows = sorted
@@ -1455,6 +2000,34 @@ function renderBatchDashboard() {
       const nEl = el.querySelector?.("[data-batch-ocr-n]");
       const n = nEl ? Number(nEl.value) : 8;
       void runBatchOcrTopCandidates(n);
+      return;
+    }
+    const entityOpen = e.target?.getAttribute?.("data-batch-entity-open");
+    if (entityOpen) {
+      const cluster = entityClusters.find((row) => row.key === entityOpen);
+      if (!cluster) return;
+      for (const url of buildBatchEntityFollowUps(cluster)) openUrl(url);
+      setStatus(`Batch ${cluster.type} recon`);
+      setStatusLine(`${cluster.value} · files ${cluster.file_count}`);
+      return;
+    }
+    const entityMission = e.target?.getAttribute?.("data-batch-entity-mission");
+    if (entityMission) {
+      const cluster = entityClusters.find((row) => row.key === entityMission);
+      if (!cluster) return;
+      setMissionOutput({
+        mission: "batch_entity_recon",
+        summary: `Batch ${cluster.type} recon for ${cluster.value} across ${cluster.file_count} files.`,
+        items: [
+          {
+            label: cluster.value,
+            meta: `${cluster.type} · seen in ${cluster.file_count} files`,
+            lines: [`Files: ${(cluster.files || []).join(", ")}`, "Scoped follow-up targets prepared from the aggregated batch pivot."],
+            links: buildBatchEntityFollowUps(cluster).map((url, index) => ({ label: `Follow-up ${index + 1}`, url })),
+          },
+        ],
+      });
+      setStatus("Mission output updated");
     }
   };
 
@@ -1516,7 +2089,7 @@ async function openBatchTopLens(n = BATCH_TOP_LENS_DEFAULT) {
   const jobIds = [];
   for (let i = 0; i < pick.length; i += 1) {
     const label = `Batch · Lens · ${pick[i].report?.file?.name || `#${i + 1}`}`;
-    jobIds.push(openWaitJob("lens", label));
+    jobIds.push(openWaitJob("lens", label).jobId);
   }
 
   await withUiLock("Top lens…", async () => {
@@ -1548,7 +2121,7 @@ async function openBatchSelectedLens() {
   const jobIds = [];
   for (let i = 0; i < pick.length; i += 1) {
     const label = `Batch · Selected · Lens · ${pick[i].report?.file?.name || `#${i + 1}`}`;
-    jobIds.push(openWaitJob("lens", label));
+    jobIds.push(openWaitJob("lens", label).jobId);
   }
 
   await withUiLock(`Selected lens (${pick.length})…`, async () => {
@@ -1621,12 +2194,134 @@ async function runBatchOcrTopCandidates(n = BATCH_OCR_DEFAULT) {
   });
 }
 
+function ensureMissionShareEnabled(promptText) {
+  if (state.shareEnabled) return true;
+  const ok = window.confirm(promptText);
+  if (!ok) return false;
+  state.shareEnabled = true;
+  elements.chkEnableShare.checked = true;
+  setShareControlsEnabled(true);
+  return true;
+}
+
+async function ensureReconContext({ mode = "deep" } = {}) {
+  if (!state.ocrText) {
+    try {
+      await runOcrForCurrent({ mode });
+    } catch (error) {
+      reportNonFatalError("mission.ocr", error, { harmless: true, dedupeMs: 5000 });
+    }
+  }
+  return normalizeReconEntities(state.ocrText || "");
+}
+
+function createEngineRunRecord({ engines = ENGINE_ORDER, mode = "launchpad", url = "", artifact = state.publicUrlArtifact || "original" } = {}) {
+  const queue = {};
+  const targets = {};
+  const chosen = {};
+  for (const engine of engines) {
+    queue[engine] = { status: url ? "prepared" : "queued", attempts: 0, updated_at: new Date().toISOString(), detail: url ? "Target prepared" : "Awaiting upload handoff" };
+    chosen[engine] = true;
+    targets[engine] = url ? reverseSearchUrl(engine, url) : "";
+  }
+  return {
+    ts: Date.now(),
+    mode,
+    url,
+    artifact,
+    targets,
+    chosen,
+    opened: {},
+    blocked: {},
+    queue,
+  };
+}
+
+function buildMissionSummaryOutput(title, lines = []) {
+  return {
+    mission: title.toLowerCase().replace(/\s+/g, "_"),
+    summary: title,
+    items: [{ label: title, meta: "mission summary", lines }],
+  };
+}
+
+async function prepareLaunchpadRun({ engines = ENGINE_ORDER, openLens = true, mode = "launchpad", labelPrefix = "Launchpad" } = {}) {
+  const run = createEngineRunRecord({ engines, mode });
+  let waitJob = null;
+  if (openLens && engines.includes("lens")) {
+    waitJob = openWaitJob("lens", `${labelPrefix} · Lens`);
+    updateRunQueueStatus(run, "lens", {
+      job_id: waitJob.jobId,
+      attempts: 1,
+      status: waitJob.opened ? "uploading" : "blocked",
+      detail: waitJob.opened ? "Lens wait tab is awaiting upload handoff" : "Lens wait tab was blocked before handoff",
+    });
+    if (!waitJob.opened) run.blocked.lens = true;
+  }
+  persistLaunchpadRun(run);
+  const url = await ensurePublicUrl({ purpose: "lens" });
+  run.url = url;
+  run.artifact = state.publicUrlArtifact || "original";
+  run.targets = Object.fromEntries(engines.map((engine) => [engine, reverseSearchUrl(engine, url)]));
+  for (const engine of engines) {
+    updateRunQueueStatus(run, engine, {
+      status: engine === "lens" && openLens ? "ready" : "prepared",
+      detail: engine === "lens" && openLens ? "Wait tab can now open the provider target" : "Engine target prepared for manual intake",
+    });
+  }
+  if (waitJob?.jobId) publishWaitState(waitJob.jobId, { url });
+  persistLaunchpadRun(run);
+  return run;
+}
+
+async function prepareEngineSwarm({ engines = ENGINE_ORDER, labelPrefix = "Swarm" } = {}) {
+  const run = createEngineRunRecord({ engines, mode: "swarm" });
+  for (const engine of engines) {
+    const wait = openWaitJob(engine, `${labelPrefix} · ${ENGINE_LABEL[engine] || engine}`, { initialStatus: "queued" });
+    updateRunQueueStatus(run, engine, {
+      job_id: wait.jobId,
+      attempts: 1,
+      status: wait.opened ? "queued" : "blocked",
+      detail: wait.opened ? "Wait tab queued for upload handoff" : "Wait tab blocked before upload handoff",
+    });
+    if (!wait.opened) run.blocked[engine] = true;
+  }
+  persistLaunchpadRun(run);
+  const url = await ensurePublicUrl({ purpose: "lens" });
+  run.url = url;
+  run.artifact = state.publicUrlArtifact || "original";
+  run.targets = Object.fromEntries(engines.map((engine) => [engine, reverseSearchUrl(engine, url)]));
+  for (let index = 0; index < engines.length; index += 1) {
+    const engine = engines[index];
+    const jobId = run.queue?.[engine]?.job_id || "";
+    updateRunQueueStatus(run, engine, { status: "ready", detail: `Provider target staged (${index + 1}/${engines.length})` });
+    if (jobId) publishWaitState(jobId, { url });
+    persistLaunchpadRun(run);
+    if (index < engines.length - 1) await sleep(ENGINE_SWARM_DELAY_MS);
+  }
+  return run;
+}
+
 async function runMissionPreset(preset) {
   if (!state.file) return;
   if (state.uiBusy) return;
   const p = String(preset || "fast");
 
-  await withUiLock(p === "share_search" ? "Upload + launchpad…" : p === "deep" ? "Deep OCR…" : "Quick OCR…", async () => {
+  const missionBusyLabel =
+    p === "share_search"
+      ? "Upload + launchpad…"
+      : p === "deep"
+        ? "Deep OCR…"
+        : p === "handle_recon"
+          ? "Handle recon…"
+          : p === "domain_recon"
+            ? "Domain recon…"
+            : p === "metadata_pass"
+              ? "Metadata pass…"
+              : p === "cross_engine_swarm"
+                ? "Swarm…"
+                : "Quick OCR…";
+  await withUiLock(missionBusyLabel, async () => {
     const base = `Hashes: ✓ · EXIF: ✓`;
     if (p === "fast") {
       setStatusLine(`${base} · OCR: …`);
@@ -1659,48 +2354,59 @@ async function runMissionPreset(preset) {
     }
 
     if (p === "share_search") {
-      // Reduce popup chaos: open ONE tab (Lens) + render launchpad for the rest.
-      const engines = ["lens", "bing", "tineye", "yandex", "google_images"];
-      const jobId = openWaitJob("lens", "Mission · Lens");
-
-      if (!state.shareEnabled) {
-        state.shareEnabled = true;
-        elements.chkEnableShare.checked = true;
-        setShareControlsEnabled(true);
-      }
-
+      if (!ensureMissionShareEnabled("Launchpad mission needs one temporary public upload to prepare reverse-search targets. Allow the upload?")) return;
       setStatusLine("Upload: … · Lens: …");
-      const url = await ensurePublicUrl({ purpose: "lens" });
-      publishWaitState(jobId, { url });
-
-      const targets = engines.map((e) => reverseSearchUrl(e, url));
-      const run = {
-        ts: Date.now(),
-        url,
-        token: jobId,
-        artifact: state.publicUrlArtifact || "original",
-        targets: {
-          lens: targets[0],
-          bing: targets[1],
-          tineye: targets[2],
-          yandex: targets[3],
-          google_images: targets[4],
-        },
-        chosen: { lens: true, bing: true, tineye: true, yandex: true, google_images: true },
-        opened: { lens: true },
-        blocked: {},
-      };
-      state.lastEngineRun = run;
-      saveLastRun(run);
-      renderEngineLaunchpad(run);
+      const run = await prepareLaunchpadRun({ engines: ENGINE_ORDER, openLens: true, mode: "launchpad", labelPrefix: "Mission" });
       logAction("launchpad_prepared", `targets=${Object.keys(run.targets || {}).length} artifact=${run.artifact}`);
-
       state.session = loadSession();
       state.session.engines_opened += 1;
       saveSession();
       void refreshHostStats();
-
+      setMissionOutput(buildMissionSummaryOutput("Upload + Launchpad", [
+        `Prepared ${Object.keys(run.targets || {}).length} engine targets from one upload`,
+        `Result intake queue remains live for pasted findings and deduped analyst merge`,
+      ]));
       setStatusLine("Upload: ✓ · Lens: ✓ · Launchpad ready");
+      setStatus("Ready");
+      return;
+    }
+
+    if (p === "handle_recon") {
+      const context = await ensureReconContext({ mode: "deep" });
+      setMissionOutput(buildHandleReconOutput(context));
+      setStatusLine(context.handles.length ? `Handle recon: ${context.handles.length} handles normalized` : "Handle recon: no stable handles found");
+      setStatus("Ready");
+      return;
+    }
+
+    if (p === "domain_recon") {
+      const context = await ensureReconContext({ mode: "deep" });
+      setMissionOutput(buildDomainReconOutput(context));
+      setStatusLine(context.domains.length ? `Domain recon: ${context.domains.length} domains normalized` : "Domain recon: no domains found");
+      setStatus("Ready");
+      return;
+    }
+
+    if (p === "metadata_pass") {
+      setMissionOutput(buildMetadataPassOutput());
+      setStatusLine("Metadata pass: structured local capture and provenance cues");
+      setStatus("Ready");
+      return;
+    }
+
+    if (p === "cross_engine_swarm") {
+      if (!ensureMissionShareEnabled("Cross-engine swarm opens queued wait tabs for every configured engine and uses one temporary upload for the shared handoff. Allow it?")) return;
+      setStatusLine("Swarm: staging wait tabs…");
+      const run = await prepareEngineSwarm({ engines: ENGINE_ORDER, labelPrefix: "Swarm" });
+      state.session = loadSession();
+      state.session.engines_opened += ENGINE_ORDER.length;
+      saveSession();
+      void refreshHostStats();
+      setMissionOutput(buildMissionSummaryOutput("Cross-Engine Swarm", [
+        `Queued ${ENGINE_ORDER.length} engine waits with throttled handoff`,
+        `Swarm cockpit now tracks per-engine state, retries, and reopen status`,
+      ]));
+      setStatusLine("Swarm: queued and ready");
       setStatus("Ready");
     }
   });
@@ -1939,21 +2645,11 @@ async function handleQuickJump(engine) {
   if (!state.file) return;
   if (state.uiBusy) return;
 
-  if (!state.shareEnabled) {
-    const ok = window.confirm(
-      "To open reverse-search provider pages from one click, this will upload your image to a temporary file host to generate a public URL. Allow the upload?",
-    );
-    if (!ok) {
-      openUrl(reverseSearchUploadPage(engine));
-      return;
-    }
-    state.shareEnabled = true;
-    elements.chkEnableShare.checked = true;
-    setShareControlsEnabled(true);
+  if (!ensureMissionShareEnabled("To open a provider in one step, BlueLens needs one temporary public upload for the handoff URL. Allow the upload?")) {
+    openUrl(reverseSearchUploadPage(engine));
+    return;
   }
 
-  // Popup blockers: open a wait tab immediately, then upload.
-  const jobId = newWaitJobId();
   const label =
     engine === "lens"
       ? "Lens"
@@ -1962,26 +2658,39 @@ async function handleQuickJump(engine) {
         : engine === "tineye"
           ? "TinEye"
           : engine === "yandex"
-            ? "Yandex"
-            : "Google Images";
-  const waitUrl = `/wait.html?job=${encodeURIComponent(jobId)}&engine=${encodeURIComponent(engine)}&label=${encodeURIComponent(label)}`;
-  openUrl(waitUrl);
+          ? "Yandex"
+          : "Google Images";
+  const waitJob = openWaitJob(engine, label);
+  const run = createEngineRunRecord({ engines: [engine], mode: "quick_jump" });
+  updateRunQueueStatus(run, engine, {
+    job_id: waitJob.jobId,
+    attempts: 1,
+    status: waitJob.opened ? "uploading" : "blocked",
+    detail: waitJob.opened ? "Quick jump wait tab is awaiting upload handoff" : "Quick jump wait tab was blocked",
+  });
+  if (!waitJob.opened) run.blocked[engine] = true;
+  persistLaunchpadRun(run);
   state.session = loadSession();
   state.session.engines_opened += 1;
   saveSession();
   void refreshHostStats();
-  publishWaitState(jobId, { engine, label, status: "uploading" });
 
   await withUiLock("Uploading…", async () => {
     try {
       const url = await ensurePublicUrl({ purpose: engine === "lens" ? "lens" : "" });
-      publishWaitState(jobId, { url });
+      run.url = url;
+      run.targets[engine] = reverseSearchUrl(engine, url);
+      updateRunQueueStatus(run, engine, { status: "ready", detail: "Provider target prepared from upload handoff" });
+      publishWaitState(waitJob.jobId, { url });
+      persistLaunchpadRun(run);
       setStatus("Ready");
     } catch (e) {
       const msg = e?.message || "unknown error";
       setShareStatus("Upload failed");
       elements.publicUrlOut.textContent = `Upload failed: ${msg}`;
-      publishWaitState(jobId, { err: msg });
+      updateRunQueueStatus(run, engine, { status: "error", detail: msg });
+      publishWaitState(waitJob.jobId, { err: msg });
+      persistLaunchpadRun(run);
       openUrl(reverseSearchUploadPage(engine));
     }
   });
@@ -1991,45 +2700,21 @@ async function handleSearchAll({ autoEnableShare = false, openLens = true } = {}
   if (!state.file) return;
   if (state.uiBusy) return;
 
-  const engines = ["lens", "bing", "tineye", "yandex", "google_images"];
-  const jobId = openLens ? openWaitJob("lens", "Lens") : "";
-
   if (!state.shareEnabled) {
     if (!autoEnableShare) {
-      const ok = window.confirm(
-        "To prepare provider links from one upload, this will upload your image to a temporary file host to generate a public URL. Allow the upload?",
+      const ok = ensureMissionShareEnabled(
+        "To prepare provider links from one upload, BlueLens needs one temporary public handoff URL. Allow the upload?",
       );
       if (!ok) return;
+    } else {
+      state.shareEnabled = true;
+      elements.chkEnableShare.checked = true;
+      setShareControlsEnabled(true);
     }
-    state.shareEnabled = true;
-    elements.chkEnableShare.checked = true;
-    setShareControlsEnabled(true);
   }
 
   await withUiLock("Preparing engine links…", async () => {
-    const url = await ensurePublicUrl({ purpose: "lens" });
-    if (jobId) publishWaitState(jobId, { url });
-
-    const targets = engines.map((e) => reverseSearchUrl(e, url));
-    const run = {
-      ts: Date.now(),
-      url,
-      token: jobId,
-      artifact: state.publicUrlArtifact || "original",
-      targets: {
-        lens: targets[0],
-        bing: targets[1],
-        tineye: targets[2],
-        yandex: targets[3],
-        google_images: targets[4],
-      },
-      chosen: { lens: true, bing: true, tineye: true, yandex: true, google_images: true },
-      opened: openLens ? { lens: true } : {},
-      blocked: {},
-    };
-    state.lastEngineRun = run;
-    saveLastRun(run);
-    renderEngineLaunchpad(run);
+    const run = await prepareLaunchpadRun({ engines: ENGINE_ORDER, openLens, mode: "launchpad", labelPrefix: "Launchpad" });
     logAction("launchpad_prepared", `targets=${Object.keys(run.targets || {}).length} artifact=${run.artifact}`);
 
     state.session = loadSession();
@@ -2038,12 +2723,15 @@ async function handleSearchAll({ autoEnableShare = false, openLens = true } = {}
     void refreshHostStats();
 
     triggerGlitterStorm(68);
+    setMissionOutput(buildMissionSummaryOutput("Prepare Engine Links", [
+      `Prepared ${Object.keys(run.targets || {}).length} engine targets from one upload`,
+      "Paste titles, snippets, and URLs back into Result Intake so BlueLens can normalize and dedupe the findings",
+    ]));
     setStatus("Ready");
   }).catch((e) => {
     setShareStatus("Upload failed");
     const msg = e?.message || "unknown error";
     elements.publicUrlOut.textContent = `Upload failed: ${msg}`;
-    if (jobId) publishWaitState(jobId, { err: msg });
   });
 }
 
@@ -2464,6 +3152,14 @@ function buildMarkdownReport(report) {
   lines.push(`- Targets: ${targetList.length ? targetList.join(" · ") : "—"}`);
   lines.push(`- OCR mode: \`${r.ocr?.mode || "—"}\``);
   lines.push(`- OCR language: \`${r.ocr?.selected_model || "—"}\``);
+  lines.push("");
+  lines.push(`## Mission Output`);
+  lines.push(`- Summary: ${r.mission_output?.summary ? `\`${r.mission_output.summary}\`` : "—"}`);
+  lines.push(`- Item count: \`${Array.isArray(r.mission_output?.items) ? r.mission_output.items.length : 0}\``);
+  lines.push("");
+  lines.push(`## Result Intake`);
+  lines.push(`- Deduped entries: \`${Array.isArray(r.result_intake?.entries) ? r.result_intake.entries.length : 0}\``);
+  lines.push(`- Last ingested: ${r.result_intake?.last_ingested_at ? `\`${r.result_intake.last_ingested_at}\`` : "—"}`);
   lines.push("");
   lines.push(`## Action Log`);
   const actionLog = Array.isArray(r.session_action_log) ? r.session_action_log : [];
@@ -3165,10 +3861,25 @@ function buildOsintReport() {
     launchpad: state.lastEngineRun
       ? {
           ts: state.lastEngineRun.ts || null,
+          mode: state.lastEngineRun.mode || null,
           artifact: state.lastEngineRun.artifact || null,
           targets: state.lastEngineRun.targets ? { ...state.lastEngineRun.targets } : null,
           opened: state.lastEngineRun.opened ? { ...state.lastEngineRun.opened } : null,
           blocked: state.lastEngineRun.blocked ? { ...state.lastEngineRun.blocked } : null,
+          queue: state.lastEngineRun.queue ? { ...state.lastEngineRun.queue } : null,
+        }
+      : null,
+    mission_output: state.missionOutput
+      ? {
+          mission: state.missionOutput.mission || null,
+          summary: state.missionOutput.summary || null,
+          items: Array.isArray(state.missionOutput.items) ? state.missionOutput.items.slice() : null,
+        }
+      : null,
+    result_intake: state.resultIntake
+      ? {
+          last_ingested_at: state.resultIntake.last_ingested_at || null,
+          entries: Array.isArray(state.resultIntake.entries) ? state.resultIntake.entries.slice() : [],
         }
       : null,
     session_action_log: Array.isArray(state.actionLog) ? state.actionLog.slice() : [],
@@ -3915,6 +4626,7 @@ async function analyzeFile(file) {
 
   window.__osintActivateTab?.("search");
   if (elements.btnEvidencePack) elements.btnEvidencePack.disabled = false;
+  if (elements.btnIngestResults) elements.btnIngestResults.disabled = !Boolean((elements.resultIntakeInput?.value || "").trim());
   logAction("image_loaded", `${file.name || "image"} · local review ready`);
   setStatusLine("Local review ready. Uploads start only when you choose a launch action.");
   renderOnboardingStrip();
@@ -4260,6 +4972,47 @@ function setupActions() {
     setStatus("Doctor updated");
   });
 
+  const syncResultIngestButton = () => {
+    if (!elements.btnIngestResults) return;
+    const hasText = Boolean((elements.resultIntakeInput?.value || "").trim());
+    elements.btnIngestResults.disabled = state.uiBusy ? true : !(state.file && hasText);
+  };
+  elements.resultIntakeInput?.addEventListener("input", syncResultIngestButton);
+  elements.btnIngestResults?.addEventListener("click", () => {
+    const raw = elements.resultIntakeInput?.value || "";
+    const count = ingestResults(raw);
+    if (count > 0) {
+      logAction("result_intake_ingested", `${count} lines`);
+      setStatus("Results ingested");
+      setStatusLine(`Intake queue updated with ${count} parsed findings`);
+      if (elements.resultIntakeInput) elements.resultIntakeInput.value = "";
+    } else {
+      setStatus("No results parsed");
+    }
+    syncResultIngestButton();
+  });
+  elements.btnClearResults?.addEventListener("click", () => {
+    state.resultIntake = { raw: "", entries: [], last_ingested_at: null };
+    renderResultIntake();
+    setStatus("Queue cleared");
+    syncResultIngestButton();
+  });
+  elements.btnCopyResultsJson?.addEventListener("click", async () => {
+    await copyText(
+      JSON.stringify(
+        {
+          schema_version: EXPORT_SCHEMA_VERSION,
+          app_version: APP_VERSION,
+          generated_at: new Date().toISOString(),
+          intake: state.resultIntake?.entries || [],
+        },
+        null,
+        2,
+      ),
+    );
+    setStatus("Copied intake JSON");
+  });
+
   elements.btnPivotSearch?.addEventListener("click", () => {
     if (!state.ocrText) return;
     if (state.uiBusy) return;
@@ -4363,7 +5116,7 @@ function setupActions() {
       const jobIds = [];
       for (let i = 0; i < muts.length; i += 1) {
         const label = `Lens · ${muts[i].label}`;
-        jobIds.push(openWaitJob("lens", label));
+        jobIds.push(openWaitJob("lens", label).jobId);
       }
       state.session = loadSession();
       state.session.engines_opened += muts.length;
@@ -4539,6 +5292,7 @@ function setupActions() {
   });
 
   elements.btnClearCompare.addEventListener("click", clearCompare);
+  syncResultIngestButton();
 }
 
 function validateLibs() {

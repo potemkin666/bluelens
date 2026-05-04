@@ -19,6 +19,10 @@ test("mission preset selector stays reachable in the HTML", () => {
   assert.match(indexHtml, />Quick OCR</);
   assert.match(indexHtml, />Deep OCR</);
   assert.match(indexHtml, />Upload \+ Launchpad</);
+  assert.match(indexHtml, />Handle Recon</);
+  assert.match(indexHtml, />Domain Recon</);
+  assert.match(indexHtml, />Metadata Pass</);
+  assert.match(indexHtml, />Cross-Engine Swarm</);
 });
 
 test("help button points to the rendered help page", () => {
@@ -32,6 +36,7 @@ test("search-all UI is framed as link preparation, not automatic querying", () =
   assert.match(indexHtml, />\s*Prepare Engine Links\s*</);
   assert.match(appJs, /Preparing engine links…/);
   assert.match(appJs, /Prepare Engine Links/);
+  assert.match(appJs, /Paste titles, snippets, and URLs back into Result Intake/);
 });
 
 
@@ -191,13 +196,34 @@ test("onboarding and evidence-pack UI expose operator caveats and export path", 
   assert.match(indexHtml, /id="btnEvidencePack"/);
   assert.match(indexHtml, /id="btnRunDoctor"/);
   assert.match(indexHtml, /id="doctorOut"/);
+  assert.match(indexHtml, /id="missionOutputOut"/);
+  assert.match(indexHtml, /id="resultIntakeInput"/);
+  assert.match(indexHtml, /id="btnIngestResults"/);
+  assert.match(indexHtml, /id="resultIntakeSummary"/);
   assert.match(indexHtml, /id="manualNotes"/);
   assert.match(indexHtml, /id="actionLogOut"/);
   assert.match(appJs, /function downloadEvidencePack\(\)/);
   assert.match(appJs, /function runDoctorChecks\(\)/);
+  assert.match(appJs, /function ingestResults\(raw\)/);
+  assert.match(appJs, /function renderMissionOutput\(\)/);
   assert.match(indexHtml, /Operator workflow: 1\) load image locally/);
   assert.match(appJs, /Batch export omits failures/);
   assert.match(helpHtml, />Doctor</);
+});
+
+test("launchpad now renders queue-aware swarm cockpit state", () => {
+  assert.match(appJs, /Swarm Cockpit/);
+  assert.match(appJs, /data-lp-open="pending"/);
+  assert.match(appJs, /function prepareEngineSwarm\(/);
+  assert.match(appJs, /ENGINE_SWARM_DELAY_MS/);
+  assert.match(waitHtml, /Uploading… \(check main tab\)\./);
+});
+
+test("batch dashboard exposes aggregated entity follow-up controls", () => {
+  assert.match(appJs, /function getBatchEntityClusters\(/);
+  assert.match(appJs, /data-batch-entity-open/);
+  assert.match(appJs, /data-batch-entity-mission/);
+  assert.match(stylesCss, /\.entity-cluster-summary/);
 });
 
 test("windows start script waits for ping before opening the browser", () => {

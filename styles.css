@@ -1413,6 +1413,13 @@ body.skin-chrome .tab.active {
   margin: 0 0 10px;
 }
 
+.batchdash .entity-cluster-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
 .batchdash .cluster-card {
   display: inline-flex;
   gap: 10px;
@@ -1427,6 +1434,13 @@ body.skin-chrome .tab.active {
 .batchdash .cluster-card .meta {
   font-size: 11px;
   color: rgba(230, 251, 255, 0.70);
+}
+
+.batchdash .entity-cluster-card {
+  padding: 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(198, 244, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .batchdash .thumb {
@@ -1484,6 +1498,54 @@ body.skin-chrome .tab.active {
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+.mission-output-box {
+  white-space: normal;
+}
+
+.mission-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.mission-summary {
+  color: rgba(235, 252, 255, 0.92);
+}
+
+.mission-card {
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(198, 244, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mission-card-head,
+.entity-cluster-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: rgba(235, 252, 255, 0.92);
+}
+
+.mission-card-meta,
+.entity-cluster-head .meta,
+.entity-cluster-files {
+  font-size: 11px;
+  color: rgba(230, 251, 255, 0.70);
+}
+
+.mission-card-lines {
+  display: grid;
+  gap: 4px;
+}
+
+.mission-card-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .chip-select {
@@ -1836,6 +1898,45 @@ body.hud-mode .hud .card-title-row {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
+}
+
+.lp-queue {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.lp-queue-card {
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(198, 244, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.lp-queue-card.ready,
+.lp-queue-card.prepared,
+.lp-queue-card.opened {
+  border-color: rgba(175, 245, 255, 0.34);
+}
+
+.lp-queue-card.blocked,
+.lp-queue-card.error {
+  border-color: rgba(255, 209, 102, 0.32);
+  background: rgba(255, 209, 102, 0.08);
+}
+
+.lp-queue-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.lp-queue-status,
+.lp-queue-meta {
+  font-size: 11px;
+  color: rgba(230, 251, 255, 0.72);
 }
 
 .field {
