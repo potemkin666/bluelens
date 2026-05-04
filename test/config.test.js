@@ -4,6 +4,8 @@ const assert = require("node:assert/strict");
 const config = require("../bluelens-config.js");
 
 test("shared config exports key runtime defaults", () => {
+  assert.equal(config.meta.appVersion, "2026.05.04");
+  assert.equal(config.meta.exportSchemaVersion, "bluelens-report-v3");
   assert.equal(config.server.port, 8787);
   assert.equal(config.server.waitJobs.defaultTimeoutMs, 25_000);
   assert.deepEqual(config.server.upload.hosts, ["uguu", "catbox", "litterbox", "0x0"]);

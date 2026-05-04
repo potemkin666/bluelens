@@ -11,6 +11,8 @@ Ocean-themed UI for image upload + reverse-image-search workflows, with an OSINT
 - "Mutation Lab" local variants (crop/rotate/low-contrast) + manual re-checking
 - Batch mode: drop a folder of images -> one report per file
 - "Clean copy" download that re-encodes the image to strip metadata
+- Evidence Pack export with hashes, OCR mode, upload provenance, launch targets, and a manifest
+- Doctor panel for startup/runtime diagnostics in one screen
 
 ## Run it
 
@@ -31,6 +33,7 @@ Open:
 - "Prepare Engine Links" opens Lens first, then shows clickable provider links in-console for manual follow-up.
 - OCR model files load from a CDN on first use.
 - Batch export currently omits failed files from the downloadable JSON bundle.
+- EXIF capture times are exported with raw value, normalized form, source field, and timezone ambiguity notes.
 - Run tests with `npm test`.
 - Open the in-app Help page for startup, privacy, troubleshooting, and defaults.
 

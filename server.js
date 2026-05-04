@@ -31,6 +31,13 @@ const PREFERRED_HOSTS_BY_PURPOSE = UPLOAD_CONFIG.preferredHostsByPurpose || {};
 const LITTERBOX_EXPIRY = UPLOAD_CONFIG.litterboxExpiry || "72h";
 const WAIT_JOB_STORE_PATH = path.join(os.tmpdir(), "bluelens-wait-jobs-v1.json");
 const SERVER_STARTED_AT = Date.now();
+const DOCTOR_TIMEOUT_MS = 2500;
+const UPLOAD_DOCTOR_URLS = {
+  uguu: "https://uguu.se/",
+  catbox: "https://catbox.moe/",
+  litterbox: "https://litterbox.catbox.moe/",
+  "0x0": "https://0x0.st/",
+};
 
 // Durable wait-job handoff for wait tabs.
 // Key: jobId -> { id, engine, label, status, url, err, seq, created_at, updated_at, expires_at }
@@ -53,6 +60,31 @@ function safeJsonParse(txt, fallback, scope, detail = null) {
     if (scope) reportServerIssue(scope, error, detail);
     return fallback;
   }
+}
+
+async function fetchWithTimeout(url, init, ms) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function collectDoctorUploadReachability() {
+  return await Promise.all(UPLOAD_HOSTS.map(async (host) => {
+    const url = UPLOAD_DOCTOR_URLS[host];
+    if (!url) {
+      return { host, reachable: false, status_code: null, error: "no diagnostic url configured" };
+    }
+    try {
+      const res = await fetchWithTimeout(url, { method: "GET" }, DOCTOR_TIMEOUT_MS);
+      return { host, reachable: res.ok, status_code: res.status, error: res.ok ? "" : `http ${res.status}` };
+    } catch (error) {
+      return { host, reachable: false, status_code: null, error: error?.message || "unreachable" };
+    }
+  }));
 }
 
 function updateUploadStats(host, ok, ms) {
@@ -348,16 +380,6 @@ async function handleUpload(req, res) {
     // Node 18+ has global Blob/FormData/fetch.
     const blob = new Blob([buf], { type: detectedMime });
 
-    const fetchWithTimeout = async (url, init, ms) => {
-      const controller = new AbortController();
-      const t = setTimeout(() => controller.abort(), ms);
-      try {
-        return await fetch(url, { ...init, signal: controller.signal });
-      } finally {
-        clearTimeout(t);
-      }
-    };
-
     const parseUrlFromText = (txt) => {
       const first = (txt || "").trim().split(/\s+/)[0];
       return /^https?:\/\//i.test(first) ? first : null;
@@ -565,6 +587,24 @@ const server = http.createServer(async (req, res) => {
   }
   if (u.pathname === "/api/ping") {
     send(res, 200, JSON.stringify({ ok: true }), { "Content-Type": "application/json" });
+    return;
+  }
+  if (u.pathname === "/api/doctor") {
+    const uploadReachability = await collectDoctorUploadReachability();
+    send(
+      res,
+      200,
+      JSON.stringify({
+        ok: true,
+        ping_ok: true,
+        app_version: BLUELENS_CONFIG.meta?.appVersion || "dev",
+        schema_version: BLUELENS_CONFIG.meta?.exportSchemaVersion || "bluelens-report-v1",
+        node_version: process.version,
+        server_started_at: SERVER_STARTED_AT,
+        upload_reachability: uploadReachability,
+      }),
+      { "Content-Type": "application/json" },
+    );
     return;
   }
   if (u.pathname === "/api/upload-stats") {

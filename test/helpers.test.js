@@ -87,6 +87,15 @@ test("local server exposes ping and durable wait-job handoff routes", async (t) 
   assert.equal(ping.status, 200);
   assert.deepEqual(await ping.json(), { ok: true });
 
+  const doctor = await fetch(`http://127.0.0.1:${port}/api/doctor`);
+  assert.equal(doctor.status, 200);
+  const doctorData = await doctor.json();
+  assert.equal(doctorData.ok, true);
+  assert.equal(doctorData.app_version, "2026.05.04");
+  assert.equal(doctorData.schema_version, "bluelens-report-v3");
+  assert.match(doctorData.node_version, /^v\d+\./);
+  assert.ok(Array.isArray(doctorData.upload_reachability));
+
   const jobId = `job-${Date.now()}`;
 
   const waitRead = fetch(`http://127.0.0.1:${port}/api/wait-jobs/${jobId}?since=-1&timeout=2000`, {

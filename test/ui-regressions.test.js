@@ -111,6 +111,16 @@ test("metadata suspicion copy avoids faux-precise repost scoring", () => {
   assert.doesNotMatch(appJs, /elements\.repostScore\.textContent = `\$\{score\}\/100`/);
 });
 
+test("reports export structured capture provenance and runtime metadata", () => {
+  assert.match(appJs, /function normalizeCapturedAt\(exifObj\)/);
+  assert.match(appJs, /Timezone not present in EXIF field/);
+  assert.match(appJs, /schema_version: EXPORT_SCHEMA_VERSION/);
+  assert.match(appJs, /app_version: APP_VERSION/);
+  assert.match(appJs, /runtime_config_fingerprint/);
+  assert.match(appJs, /ocr_language/);
+  assert.match(appJs, /upload_host_metadata/);
+});
+
 test("wait tab uses backoff and exposes reopen guidance", () => {
   assert.match(waitHtml, /retryMs = Math\.min\(maxRetryMs, Math\.round\(retryMs \* backoffFactor\)\)/);
   assert.match(waitHtml, /Open main tab/);
@@ -133,9 +143,13 @@ test("batch OCR failures are surfaced instead of silently ignored", () => {
 test("onboarding and evidence-pack UI expose operator caveats and export path", () => {
   assert.match(indexHtml, /id="onboardingStrip"/);
   assert.match(indexHtml, /id="btnEvidencePack"/);
+  assert.match(indexHtml, /id="btnRunDoctor"/);
+  assert.match(indexHtml, /id="doctorOut"/);
   assert.match(indexHtml, /id="manualNotes"/);
   assert.match(indexHtml, /id="actionLogOut"/);
   assert.match(appJs, /function downloadEvidencePack\(\)/);
+  assert.match(appJs, /function runDoctorChecks\(\)/);
   assert.match(indexHtml, /Operator workflow: 1\) load image locally/);
   assert.match(appJs, /Batch export omits failures/);
+  assert.match(helpHtml, />Doctor</);
 });

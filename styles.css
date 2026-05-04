@@ -1707,7 +1707,8 @@ body.hud-mode .hud .card-title-row {
 }
 
 .workflow-box,
-#actionLogOut {
+#actionLogOut,
+#doctorOut {
   font-size: 12px;
 }
 
@@ -1750,7 +1751,8 @@ body.hud-mode .hud .card-title-row {
   opacity: 0.92;
 }
 
-#actionLogOut {
+#actionLogOut,
+#doctorOut {
   max-height: 220px;
   overflow: auto;
 }

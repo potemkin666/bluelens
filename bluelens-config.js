@@ -11,6 +11,10 @@
     // ignore
   }
 })(typeof globalThis !== "undefined" ? globalThis : this, () => ({
+  meta: {
+    appVersion: "2026.05.04",
+    exportSchemaVersion: "bluelens-report-v3",
+  },
   server: {
     port: 8787,
     waitJobs: {

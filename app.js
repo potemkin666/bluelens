@@ -108,6 +108,8 @@ const elements = {
   ocrLangHint: document.getElementById("ocrLangHint"),
   onboardingStrip: document.getElementById("onboardingStrip"),
   actionLogOut: document.getElementById("actionLogOut"),
+  btnRunDoctor: document.getElementById("btnRunDoctor"),
+  doctorOut: document.getElementById("doctorOut"),
 
   // Command palette
   cmdk: document.getElementById("cmdk"),
@@ -162,6 +164,7 @@ const sortBatchItems =
   });
 
 const runtimeConfig = BLUELENS_CONFIG || {};
+const CONFIG_META = runtimeConfig.meta || {};
 const APP_CONFIG = runtimeConfig.app || {};
 const SERVER_CONFIG = runtimeConfig.server || {};
 const FX_CONFIG = runtimeConfig.fx || {};
@@ -216,6 +219,13 @@ const STORAGE_FX_FUN_MODE_KEY = STORAGE_KEYS.fxFunMode || "fx:funMode";
 const STORAGE_FX_HUD_KEY = STORAGE_KEYS.fxHud || "fx:hud";
 const STORAGE_SKIN_CHROME_KEY = STORAGE_KEYS.skinChrome || "ui:skinChrome";
 const STORAGE_OPERATOR_MODE_KEY = STORAGE_KEYS.operatorMode || "ui:operatorMode";
+const APP_VERSION = CONFIG_META.appVersion || "dev";
+const EXPORT_SCHEMA_VERSION = CONFIG_META.exportSchemaVersion || "bluelens-report-v1";
+const METADATA_SUSPICION_BANDS = {
+  high: 75,
+  elevated: 60,
+  mixed: 40,
+};
 const UTF8_ENCODER = new TextEncoder();
 const TAR_HEADER_SIZE = 512;
 const TAR_END_PADDING = 1024;
@@ -239,6 +249,25 @@ const FX_OVERCLOCK_CHROMATIC = Number.isFinite(FX_CONFIG.overclockChromatic) ? F
 const FX_FUN_MODE_DEFAULT = Boolean(FX_CONFIG.funModeDefault);
 const FX_HUD_DEFAULT = Boolean(FX_CONFIG.hudDefault);
 const FX_CHROME_DEFAULT = Boolean(FX_CONFIG.chromeDefault);
+const EXPORT_RUNTIME_CONFIG_SOURCE = JSON.stringify({
+  meta: CONFIG_META,
+  upload: {
+    hosts: SERVER_CONFIG.upload?.hosts || [],
+    preferredHostsByPurpose: SERVER_CONFIG.upload?.preferredHostsByPurpose || {},
+    litterboxExpiry: SERVER_CONFIG.upload?.litterboxExpiry || null,
+  },
+  ocr: {
+    defaultLanguage: APP_CONFIG.ocr?.defaultLanguage || null,
+    languages: APP_CONFIG.ocr?.languages || [],
+    fastPreprocessMaxDim: APP_CONFIG.ocr?.fastPreprocessMaxDim || null,
+    batchPreprocessMaxDim: APP_CONFIG.ocr?.batchPreprocessMaxDim || null,
+  },
+  heuristics: {
+    dhash: APP_CONFIG.dhash || {},
+    metadataSuspicionBands: METADATA_SUSPICION_BANDS,
+  },
+});
+const EXPORT_RUNTIME_CONFIG_FINGERPRINT = typeof sha256 === "function" ? sha256(EXPORT_RUNTIME_CONFIG_SOURCE) : EXPORT_RUNTIME_CONFIG_SOURCE;
 
 const nonFatalErrorState = new Map();
 
@@ -366,6 +395,8 @@ const state = {
   localServerOnline: null,
   popupLikely: true,
   lastOcrMode: "not_run",
+  captureTimeInfo: null,
+  doctorReport: null,
 };
 
 function setStatus(label, tone = "muted") {
@@ -630,6 +661,7 @@ function reset() {
   state.cleanSignals = null;
   state.signals = { sha256: "", md5: "", dhash: "" };
   state.exif = null;
+  state.captureTimeInfo = null;
   state.publicUrl = "";
   state.publicUrlPurpose = "";
   state.publicUrlArtifact = "original";
@@ -646,6 +678,7 @@ function reset() {
   state.batchItems = [];
   state.manualNotes = "";
   state.actionLog = [];
+  state.doctorReport = null;
   state.batchUi.selected = {};
   state.caseInfo = {
     where_obtained: "",
@@ -2172,12 +2205,14 @@ function buildMarkdownReport(report) {
   const clean = r.clean_copy || null;
   const gps = r.gps;
   const kf = r.key_fields || {};
+  const capturedAt = kf.captured_at || null;
   const sr = r.source_reliability || {};
   const entities = kf.ocr_entities || {};
 
   const lines = [];
   lines.push(`# OSINT Report`);
   lines.push(`Generated: ${r.generated_at || "—"}`);
+  lines.push(`Schema: ${r.schema_version || EXPORT_SCHEMA_VERSION} · App: ${r.app_version || APP_VERSION}`);
   lines.push("");
   lines.push(`## File`);
   lines.push(`- Name: \`${file.name || "—"}\``);
@@ -2196,7 +2231,10 @@ function buildMarkdownReport(report) {
   }
   lines.push("");
   lines.push(`## Key Fields`);
-  lines.push(`- Captured: ${kf.captured ? `\`${kf.captured}\`` : "—"}`);
+  lines.push(`- Captured: ${capturedAt?.display ? `\`${capturedAt.display}\`` : kf.captured ? `\`${kf.captured}\`` : "—"}`);
+  if (capturedAt?.raw) lines.push(`- Captured raw: \`${capturedAt.raw}\``);
+  if (capturedAt?.source_field) lines.push(`- Capture source: \`${capturedAt.source_field}\``);
+  if (capturedAt?.timezone_note) lines.push(`- Capture timezone note: ${capturedAt.timezone_note}`);
   lines.push(`- Camera: ${kf.camera ? `\`${kf.camera}\`` : "—"}`);
   lines.push(`- Software: ${kf.software ? `\`${kf.software}\`` : "—"}`);
   lines.push(`- GPS: ${gps ? `\`${fmtCoord(gps.lat)}, ${fmtCoord(gps.lon)}\`` : "—"}`);
@@ -2216,6 +2254,7 @@ function buildMarkdownReport(report) {
   lines.push(`- Upload artifact: \`${r.public_upload_artifact || "—"}\``);
   lines.push(`- Share safe: \`${r.share_safe ? "on" : "off"}\``);
   lines.push(`- Upload host: \`${r.upload?.host || "—"}\``);
+  if (r.export_metadata?.runtime_config_fingerprint) lines.push(`- Runtime fingerprint: \`${r.export_metadata.runtime_config_fingerprint}\``);
   lines.push("");
   lines.push(`## OCR Pivots`);
   const u = Array.isArray(entities.urls) ? entities.urls.slice(0, 8) : [];
@@ -2242,6 +2281,7 @@ function buildMarkdownReport(report) {
     .map(([key, value]) => `\`${key}\`: ${value}`);
   lines.push(`- Targets: ${targetList.length ? targetList.join(" · ") : "—"}`);
   lines.push(`- OCR mode: \`${r.ocr?.mode || "—"}\``);
+  lines.push(`- OCR language: \`${r.ocr?.selected_model || "—"}\``);
   lines.push("");
   lines.push(`## Action Log`);
   const actionLog = Array.isArray(r.session_action_log) ? r.session_action_log : [];
@@ -2333,14 +2373,197 @@ function fmtCoord(n) {
   return n.toFixed(6);
 }
 
+function parseExifDateValue(rawValue) {
+  if (rawValue == null) return null;
+  const sourceType = rawValue instanceof Date ? "date" : typeof rawValue;
+  const raw = rawValue instanceof Date ? rawValue.toISOString() : String(rawValue).trim();
+  if (!raw) return null;
+  if (rawValue instanceof Date) {
+    return {
+      raw,
+      normalized: raw.replace(/\.000Z$/, "Z"),
+      normalized_utc: raw,
+      has_timezone: false,
+      timezone_note: "EXIF parser returned a Date object; the original EXIF timezone is still ambiguous unless a source offset is documented elsewhere.",
+      source_type: sourceType,
+    };
+  }
+  const exifLike = raw.match(/^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
+  if (exifLike) {
+    const [, year, month, day, hour, minute, second] = exifLike;
+    const normalized = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
+    return {
+      raw,
+      normalized,
+      normalized_utc: null,
+      has_timezone: false,
+      timezone_note: "Timezone not present in EXIF field; treat this as a local/unknown capture time until corroborated.",
+      source_type: sourceType,
+    };
+  }
+
+  const hasTimezone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(raw);
+  const parsedMs = Date.parse(raw);
+  if (!Number.isFinite(parsedMs)) {
+    return {
+      raw,
+      normalized: raw,
+      normalized_utc: null,
+      has_timezone: false,
+      timezone_note: "Could not normalize this EXIF date value safely.",
+      source_type: sourceType,
+    };
+  }
+
+  const parsed = new Date(parsedMs);
+  return {
+    raw,
+    normalized: hasTimezone ? raw : parsed.toISOString().replace(/\.000Z$/, ""),
+    normalized_utc: hasTimezone ? parsed.toISOString() : null,
+    has_timezone: hasTimezone,
+    timezone_note: hasTimezone
+      ? "Timezone present in the parsed EXIF value."
+      : "Timezone not present in EXIF field; parser normalization may not reflect the original local capture timezone.",
+    source_type: sourceType,
+  };
+}
+
+function normalizeCapturedAt(exifObj) {
+  const candidates = [
+    { field: "DateTimeOriginal", value: exifObj?.DateTimeOriginal },
+    { field: "CreateDate", value: exifObj?.CreateDate },
+    { field: "ModifyDate", value: exifObj?.ModifyDate },
+    { field: "DateTimeDigitized", value: exifObj?.DateTimeDigitized },
+    { field: "datetime", value: exifObj?.datetime },
+  ];
+  const found = candidates.find((entry) => entry.value != null);
+  if (!found) return null;
+  const parsed = parseExifDateValue(found.value);
+  if (!parsed) return null;
+  return {
+    source_field: found.field,
+    raw: parsed.raw,
+    normalized: parsed.normalized,
+    normalized_utc: parsed.normalized_utc,
+    has_timezone: parsed.has_timezone,
+    timezone_note: parsed.timezone_note,
+    source_type: parsed.source_type,
+    display: parsed.normalized
+      ? `${parsed.normalized}${parsed.has_timezone ? "" : " (timezone unknown)"}`
+      : `${parsed.raw}${parsed.has_timezone ? "" : " (timezone unknown)"}`,
+  };
+}
+
+function buildExportMetadata({ ocrMode = state.lastOcrMode || "not_run", ocrLanguage = elements.ocrLang?.value || OCR_DEFAULT_LANGUAGE, uploadMeta = state.uploadMeta ? { ...state.uploadMeta } : null } = {}) {
+  return {
+    schema_version: EXPORT_SCHEMA_VERSION,
+    app_version: APP_VERSION,
+    runtime_config_fingerprint: EXPORT_RUNTIME_CONFIG_FINGERPRINT,
+    runtime_config_source: EXPORT_RUNTIME_CONFIG_SOURCE,
+    ocr_mode: ocrMode,
+    ocr_language: ocrLanguage,
+    heuristic_config: {
+      metadata_suspicion_bands: { ...METADATA_SUSPICION_BANDS },
+      dhash: {
+        batch_cluster_threshold: DHASH_BATCH_CLUSTER_THRESHOLD,
+        mutation_cluster_threshold: DHASH_MUTATION_CLUSTER_THRESHOLD,
+      },
+    },
+    upload_host_metadata: {
+      preferred_host_order: SERVER_CONFIG.upload?.hosts || [],
+      preferred_hosts_by_purpose: SERVER_CONFIG.upload?.preferredHostsByPurpose || {},
+      selected_host: uploadMeta?.host || null,
+      selected_host_latency_ms: uploadMeta?.ms || null,
+      attempt_count: Array.isArray(uploadMeta?.attempts) ? uploadMeta.attempts.length : null,
+    },
+  };
+}
+
+function renderDoctorReport(report) {
+  const el = elements.doctorOut;
+  if (!el) return;
+  if (!report) {
+    el.textContent = "—";
+    return;
+  }
+  const lines = [];
+  lines.push(`App: ${report.app_version || APP_VERSION} · schema ${report.schema_version || EXPORT_SCHEMA_VERSION}`);
+  lines.push(`Ping: ${report.server?.ping_ok ? "OK" : "FAIL"}${report.server?.node_version ? ` · Node ${report.server.node_version}` : ""}`);
+  lines.push(`Popup: ${report.popup?.ok ? "OK" : "BLOCKED"} · Storage: ${report.storage?.ok ? "OK" : "FAIL"}`);
+  lines.push(`Libraries: ${report.libs?.summary || "unknown"}`);
+  if (Array.isArray(report.server?.upload_reachability) && report.server.upload_reachability.length) {
+    lines.push(`Upload reachability:`);
+    for (const row of report.server.upload_reachability) {
+      lines.push(`- ${row.host}: ${row.reachable ? "OK" : "FAIL"}${row.status_code ? ` (${row.status_code})` : ""}${row.error ? ` · ${row.error}` : ""}`);
+    }
+  }
+  el.textContent = lines.join("\n");
+}
+
+async function runDoctorChecks() {
+  const libs = {
+    exifr: Boolean(window.exifr),
+    sha256: Boolean(window.sha256),
+    sparkMd5: Boolean(window.SparkMD5),
+    ocrPipeline: Boolean(window.OCR_PIPELINE),
+  };
+  let storage = { ok: false, error: "" };
+  try {
+    localStorage.setItem("__bluelens_doctor__", "1");
+    localStorage.removeItem("__bluelens_doctor__");
+    storage = { ok: true, error: "" };
+  } catch (error) {
+    storage = { ok: false, error: error?.message || "storage unavailable" };
+  }
+
+  let popup = { ok: false, error: "blocked" };
+  try {
+    const w = window.open("about:blank", "_blank", "noopener,noreferrer");
+    popup = w ? { ok: true, error: "" } : { ok: false, error: "blocked" };
+    w?.close?.();
+  } catch (error) {
+    popup = { ok: false, error: error?.message || "blocked" };
+  }
+
+  let server = { ping_ok: false, node_version: null, upload_reachability: [], error: "" };
+  try {
+    const [pingRes, doctorRes] = await Promise.all([
+      fetch("/api/ping", { cache: "no-store" }),
+      fetch("/api/doctor", { cache: "no-store" }),
+    ]);
+    const parsed = await doctorRes.json();
+    if (!pingRes.ok) throw new Error(`ping ${pingRes.status}`);
+    if (!doctorRes.ok || !parsed?.ok) throw new Error(parsed?.message || `doctor ${doctorRes.status}`);
+    server = {
+      ping_ok: true,
+      node_version: parsed.node_version || null,
+      upload_reachability: Array.isArray(parsed.upload_reachability) ? parsed.upload_reachability : [],
+      error: "",
+    };
+  } catch (error) {
+    server = { ping_ok: false, node_version: null, upload_reachability: [], error: error?.message || "doctor unavailable" };
+  }
+
+  state.doctorReport = {
+    schema_version: EXPORT_SCHEMA_VERSION,
+    app_version: APP_VERSION,
+    libs: {
+      ...libs,
+      summary: Object.entries(libs)
+        .map(([name, ok]) => `${name}:${ok ? "ok" : "fail"}`)
+        .join(" · "),
+    },
+    storage,
+    popup,
+    server,
+  };
+  state.localServerOnline = Boolean(server.ping_ok);
+  renderOnboardingStrip();
+  renderDoctorReport(state.doctorReport);
+}
+
 function updateKeyFields(exifObj) {
-  const captured =
-    exifObj?.DateTimeOriginal ||
-    exifObj?.CreateDate ||
-    exifObj?.ModifyDate ||
-    exifObj?.DateTimeDigitized ||
-    exifObj?.datetime ||
-    null;
+  const captured = normalizeCapturedAt(exifObj);
 
   const make = exifObj?.Make || "";
   const model = exifObj?.Model || "";
@@ -2361,8 +2584,9 @@ function updateKeyFields(exifObj) {
 
   const gps = getGps(exifObj);
   state.gps = gps;
+  state.captureTimeInfo = captured;
 
-  elements.kfCaptured.textContent = captured ? String(captured) : "—";
+  elements.kfCaptured.textContent = captured?.display || "—";
   elements.kfCamera.textContent = camera || "—";
   elements.kfSoftware.textContent = software || "—";
   elements.kfGps.textContent = gps ? `${fmtCoord(gps.lat)}, ${fmtCoord(gps.lon)}` : "—";
@@ -2399,9 +2623,9 @@ function extractHandlesAndDomains(text) {
 
 function formatMetadataSuspicionBand(score) {
   if (!Number.isFinite(score)) return "—";
-  if (score >= 75) return "High";
-  if (score >= 60) return "Elevated";
-  if (score >= 40) return "Mixed";
+  if (score >= METADATA_SUSPICION_BANDS.high) return "High";
+  if (score >= METADATA_SUSPICION_BANDS.elevated) return "Elevated";
+  if (score >= METADATA_SUSPICION_BANDS.mixed) return "Mixed";
   return "Low";
 }
 
@@ -2700,8 +2924,13 @@ function extractPivotsFromReport(report) {
 }
 
 function buildOsintReport() {
+  const keyFields = extractKeyFieldsObj(state.exif);
+  const exportMetadata = buildExportMetadata();
   return {
+    schema_version: EXPORT_SCHEMA_VERSION,
+    app_version: APP_VERSION,
     generated_at: new Date().toISOString(),
+    export_metadata: exportMetadata,
     source_reliability: { ...state.caseInfo },
     file: state.file
       ? {
@@ -2727,9 +2956,10 @@ function buildOsintReport() {
       attribution_hints: elements.attrHints?.textContent || null,
     },
     key_fields: {
-      captured: elements.kfCaptured?.textContent || null,
-      camera: elements.kfCamera?.textContent || null,
-      software: elements.kfSoftware?.textContent || null,
+      captured: keyFields.captured || elements.kfCaptured?.textContent || null,
+      captured_at: keyFields.captured_at || state.captureTimeInfo || null,
+      camera: keyFields.camera || elements.kfCamera?.textContent || null,
+      software: keyFields.software || elements.kfSoftware?.textContent || null,
       ocr_entities: state.ocrText ? OCR_PIPELINE?.extractEntities?.(state.ocrText) || null : null,
       ocr_entity_confidence: state.entityConfidence && Object.keys(state.entityConfidence).length ? { ...state.entityConfidence } : null,
     },
@@ -2761,20 +2991,15 @@ function buildOsintReport() {
 }
 
 function extractKeyFieldsObj(exifObj) {
-  const captured =
-    exifObj?.DateTimeOriginal ||
-    exifObj?.CreateDate ||
-    exifObj?.ModifyDate ||
-    exifObj?.DateTimeDigitized ||
-    exifObj?.datetime ||
-    null;
+  const captured = normalizeCapturedAt(exifObj);
   const make = (exifObj?.Make || "").trim();
   const model = (exifObj?.Model || "").trim();
   const camera = `${make} ${model}`.trim() || null;
   const software = (exifObj?.Software || exifObj?.ProcessingSoftware || exifObj?.CreatorTool || "").trim() || null;
   const gps = getGps(exifObj);
   return {
-    captured: captured ? String(captured) : null,
+    captured: captured?.display || null,
+    captured_at: captured,
     camera,
     software,
     gps: gps ? { lat: gps.lat, lon: gps.lon } : null,
@@ -2798,7 +3023,10 @@ async function buildReportForFileHeadless(file) {
   const { score, band, inputs } = computeMetadataSuspicionScore({ exifObj, file, width, height, ocrText: "" });
 
   return {
+    schema_version: EXPORT_SCHEMA_VERSION,
+    app_version: APP_VERSION,
     generated_at: new Date().toISOString(),
+    export_metadata: buildExportMetadata({ ocrMode: "not_run", ocrLanguage: OCR_DEFAULT_LANGUAGE, uploadMeta: null }),
     file: { name: file.name || null, type: file.type || null, size_bytes: file.size || null },
     dimensions: `${width} × ${height}`,
     hashes: { sha256: hashes.sha, md5: hashes.md5, dhash: dh },
@@ -2811,7 +3039,7 @@ async function buildReportForFileHeadless(file) {
       repost_reasons: inputs,
       attribution_hints: hints,
     },
-    key_fields: { captured: key.captured, camera: key.camera, software: key.software },
+    key_fields: { captured: key.captured, captured_at: key.captured_at, camera: key.camera, software: key.software },
     exif: exifObj || null,
   };
 }
@@ -2863,7 +3091,26 @@ async function runBatchFiles(files) {
 }
 
 function downloadJson(obj, filename) {
-  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  const payload = Array.isArray(obj)
+    ? obj.map((item) =>
+        item && typeof item === "object" && !item.schema_version
+          ? {
+              ...item,
+              schema_version: EXPORT_SCHEMA_VERSION,
+              app_version: APP_VERSION,
+              export_metadata: buildExportMetadata(),
+            }
+          : item,
+      )
+    : obj && typeof obj === "object" && !obj.schema_version
+      ? {
+          ...obj,
+          schema_version: EXPORT_SCHEMA_VERSION,
+          app_version: APP_VERSION,
+          export_metadata: buildExportMetadata(),
+        }
+      : obj;
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   downloadBlob(blob, filename);
 }
 
@@ -2873,7 +3120,10 @@ async function downloadEvidencePack() {
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const baseName = (state.file.name || "image").replace(/\.[^/.]+$/, "") || "image";
   const manifest = {
+    schema_version: report.schema_version || EXPORT_SCHEMA_VERSION,
+    app_version: report.app_version || APP_VERSION,
     generated_at: report.generated_at,
+    export_metadata: report.export_metadata || buildExportMetadata(),
     package: {
       format: "bluelens-evidence-pack-v1",
       original_filename: state.file.name || null,
@@ -2892,7 +3142,9 @@ async function downloadEvidencePack() {
     `Manual notes: ${report.source_reliability?.manual_notes || "—"}`,
     `Analyst confidence: ${report.source_reliability?.analyst_confidence || "unverified"}`,
     `OCR mode: ${report.ocr?.mode || "not_run"}`,
+    `OCR language: ${report.ocr?.selected_model || OCR_DEFAULT_LANGUAGE}`,
     `Upload host: ${report.upload?.host || "—"}`,
+    `Capture time: ${report.key_fields?.captured_at?.display || report.key_fields?.captured || "—"}`,
   ].join("\n");
   const entries = [
     { name: "manifest.json", data: toUtf8Bytes(JSON.stringify(manifest, null, 2)), mtime },
@@ -3718,6 +3970,12 @@ function setupActions() {
     setStatus("Evidence Pack ready");
   });
 
+  elements.btnRunDoctor?.addEventListener("click", async () => {
+    if (elements.doctorOut) elements.doctorOut.textContent = "Running doctor…";
+    await runDoctorChecks();
+    setStatus("Doctor updated");
+  });
+
   elements.btnPivotSearch?.addEventListener("click", () => {
     if (!state.ocrText) return;
     if (state.uiBusy) return;
@@ -4501,6 +4759,7 @@ reset();
 renderOnboardingStrip();
 validateLibs();
 void checkLocalServerHint();
+void runDoctorChecks();
 setupFx();
 setupHudDrag();
 setupTabs();
