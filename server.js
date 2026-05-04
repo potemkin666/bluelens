@@ -53,7 +53,10 @@ function sanitizeWaitJob(entry, idHint = "") {
   const updatedAt = Number(entry.updated_at || createdAt || now);
   const expiresAt = Number(entry.expires_at || updatedAt + WAIT_JOB_MAX_AGE_MS);
   const seq = Number(entry.seq || 0);
-  if (!Number.isFinite(createdAt) || !Number.isFinite(updatedAt) || !Number.isFinite(expiresAt) || !Number.isFinite(seq)) return null;
+  if (!Number.isFinite(createdAt)) return null;
+  if (!Number.isFinite(updatedAt)) return null;
+  if (!Number.isFinite(expiresAt)) return null;
+  if (!Number.isFinite(seq)) return null;
   return {
     id,
     engine: String(entry.engine || ""),
