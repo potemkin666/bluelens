@@ -21,6 +21,12 @@ test("search-all UI is framed as link preparation, not automatic querying", () =
   assert.match(appJs, /Prepare Engine Links/);
 });
 
+
+test("sharing copy matches the automatic upload flow", () => {
+  assert.match(indexHtml, /Automatic launch uploads the image to generate a temporary public URL as soon as you choose a file\./);
+  assert.doesNotMatch(indexHtml, /Enable one-click provider launcher/);
+});
+
 test("landing UI stays focused on image search", () => {
   assert.match(indexHtml, /Drop an image and get to reverse search fast\./);
   assert.match(indexHtml, /alt="BlueLens image search workflow demo"/);
@@ -42,6 +48,13 @@ test("search tab is always the first panel shown on load", () => {
 test("uploading an image auto-prepares search links", () => {
   assert.match(appJs, /handleSearchAll\(\{ autoEnableShare: true, openLens: false \}\)/);
   assert.match(appJs, /window\.__osintActivateTab\?\.\("search"\);/);
+});
+
+
+test("command palette copy uses fixed UTF-8 text and row clicks run the clicked action", () => {
+  assert.match(indexHtml, /placeholder="Type a command…"/);
+  assert.match(indexHtml, />Enter • ↑\/↓ • Esc</);
+  assert.match(appJs, /const chosen = list\[idx\];/);
 });
 
 test("mutation lab copy is clearly framed as analyst review", () => {

@@ -109,14 +109,6 @@ const elements = {
 
 };
 
-const osintBroadcast = (() => {
-  try {
-    return typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("osint-lens") : null;
-  } catch {
-    return null;
-  }
-})();
-
 const appHelpers = BLUELENS_HELPERS || {};
 const hammingHex =
   appHelpers.hammingHex ||
@@ -686,29 +678,35 @@ function setupGlobalErrorSurface() {
   });
 }
 
-function publishWaitState(token, engine, data) {
-  if (!token || !engine || !data) return;
+function newWaitJobId() {
   try {
-    localStorage.setItem(`osint:${token}:${engine}`, JSON.stringify(data));
+    return crypto?.randomUUID ? `wait_${crypto.randomUUID()}` : `wait_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   } catch {
-    // ignore
+    return `wait_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   }
+}
+
+function publishWaitState(jobId, data) {
+  if (!jobId || !data) return;
   try {
-    osintBroadcast?.postMessage({ token, engine, ...data });
-  } catch {
-    // ignore
-  }
-  try {
-    void fetch("/api/status", {
+    void fetch(`/api/wait-jobs/${encodeURIComponent(jobId)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token, engine, ...data }),
+      body: JSON.stringify(data),
     }).catch(() => {
       // ignore
     });
   } catch {
     // ignore
   }
+}
+
+function openWaitJob(engine, label) {
+  const jobId = newWaitJobId();
+  const waitUrl = `/wait.html?job=${encodeURIComponent(jobId)}&engine=${encodeURIComponent(engine)}&label=${encodeURIComponent(label || "")}`;
+  window.open(waitUrl, "_blank");
+  publishWaitState(jobId, { engine, label: label || "", status: "uploading" });
+  return jobId;
 }
 
 function pulseRadar(kind) {
@@ -1120,12 +1118,10 @@ async function openBatchTopLens(n = 5) {
     .sort((a, b) => (b.triage?.lead || 0) - (a.triage?.lead || 0))
     .slice(0, Math.max(1, Math.min(10, n)));
 
-  const tokens = pick.map((_, i) => `${Date.now()}-${Math.random().toString(16).slice(2)}-${i}`);
+  const jobIds = [];
   for (let i = 0; i < pick.length; i += 1) {
     const label = `Batch · Lens · ${pick[i].report?.file?.name || `#${i + 1}`}`;
-    const waitUrl = `/wait.html?token=${encodeURIComponent(tokens[i])}&engine=lens&label=${encodeURIComponent(label)}`;
-    window.open(waitUrl, "_blank");
-    publishWaitState(tokens[i], "lens", { status: "uploading" });
+    jobIds.push(openWaitJob("lens", label));
   }
 
   await withUiLock("Top lens…", async () => {
@@ -1133,9 +1129,9 @@ async function openBatchTopLens(n = 5) {
       try {
         const f = await fileToUploadForBatch(pick[i].file);
         const url = await publicUrlForFile(f, "lens");
-        publishWaitState(tokens[i], "lens", { url });
+        publishWaitState(jobIds[i], { url });
       } catch (e) {
-        publishWaitState(tokens[i], "lens", { err: e?.message || "upload failed" });
+        publishWaitState(jobIds[i], { err: e?.message || "upload failed" });
       }
     }
     setStatus("Ready");
@@ -1154,12 +1150,10 @@ async function openBatchSelectedLens() {
   const cap = Math.min(10, picked.length);
   const pick = picked.slice(0, cap);
 
-  const tokens = pick.map((_, i) => `${Date.now()}-${Math.random().toString(16).slice(2)}-${i}`);
+  const jobIds = [];
   for (let i = 0; i < pick.length; i += 1) {
     const label = `Batch · Selected · Lens · ${pick[i].report?.file?.name || `#${i + 1}`}`;
-    const waitUrl = `/wait.html?token=${encodeURIComponent(tokens[i])}&engine=lens&label=${encodeURIComponent(label)}`;
-    window.open(waitUrl, "_blank");
-    publishWaitState(tokens[i], "lens", { status: "uploading" });
+    jobIds.push(openWaitJob("lens", label));
   }
 
   await withUiLock(`Selected lens (${pick.length})…`, async () => {
@@ -1167,9 +1161,9 @@ async function openBatchSelectedLens() {
       try {
         const f = await fileToUploadForBatch(pick[i].file);
         const url = await publicUrlForFile(f, "lens");
-        publishWaitState(tokens[i], "lens", { url });
+        publishWaitState(jobIds[i], { url });
       } catch (e) {
-        publishWaitState(tokens[i], "lens", { err: e?.message || "upload failed" });
+        publishWaitState(jobIds[i], { err: e?.message || "upload failed" });
       }
     }
     setStatus("Ready");
@@ -1271,10 +1265,7 @@ async function runMissionPreset(preset) {
     if (p === "share_search") {
       // Reduce popup chaos: open ONE tab (Lens) + render launchpad for the rest.
       const engines = ["lens", "bing", "tineye", "yandex", "google_images"];
-      const token = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      const waitUrl = `/wait.html?token=${encodeURIComponent(token)}&engine=lens&label=${encodeURIComponent("Mission · Lens")}`;
-      window.open(waitUrl, "_blank");
-      publishWaitState(token, "lens", { status: "uploading" });
+      const jobId = openWaitJob("lens", "Mission · Lens");
 
       if (!state.shareEnabled) {
         state.shareEnabled = true;
@@ -1284,13 +1275,13 @@ async function runMissionPreset(preset) {
 
       setStatusLine("Upload: … · Lens: …");
       const url = await ensurePublicUrl({ purpose: "lens" });
-      publishWaitState(token, "lens", { url });
+      publishWaitState(jobId, { url });
 
       const targets = engines.map((e) => reverseSearchUrl(e, url));
       const run = {
         ts: Date.now(),
         url,
-        token,
+        token: jobId,
         artifact: state.publicUrlArtifact || "original",
         targets: {
           lens: targets[0],
@@ -1538,7 +1529,7 @@ async function handleQuickJump(engine) {
 
   if (!state.shareEnabled) {
     const ok = window.confirm(
-      "To open reverse-search provider pages from one click, this will upload your image to a temporary file host to generate a public URL. Enable one-click mode?",
+      "To open reverse-search provider pages from one click, this will upload your image to a temporary file host to generate a public URL. Allow the upload?",
     );
     if (!ok) {
       openUrl(reverseSearchUploadPage(engine));
@@ -1550,7 +1541,7 @@ async function handleQuickJump(engine) {
   }
 
   // Popup blockers: open a wait tab immediately, then upload.
-  const token = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const jobId = newWaitJobId();
   const label =
     engine === "lens"
       ? "Lens"
@@ -1561,24 +1552,24 @@ async function handleQuickJump(engine) {
           : engine === "yandex"
             ? "Yandex"
             : "Google Images";
-  const waitUrl = `/wait.html?token=${encodeURIComponent(token)}&engine=${encodeURIComponent(engine)}&label=${encodeURIComponent(label)}`;
+  const waitUrl = `/wait.html?job=${encodeURIComponent(jobId)}&engine=${encodeURIComponent(engine)}&label=${encodeURIComponent(label)}`;
   window.open(waitUrl, "_blank");
   state.session = loadSession();
   state.session.engines_opened += 1;
   saveSession();
   void refreshHostStats();
-  publishWaitState(token, engine, { status: "uploading" });
+  publishWaitState(jobId, { engine, label, status: "uploading" });
 
   await withUiLock("Uploading…", async () => {
     try {
       const url = await ensurePublicUrl({ purpose: engine === "lens" ? "lens" : "" });
-      publishWaitState(token, engine, { url });
+      publishWaitState(jobId, { url });
       setStatus("Ready");
     } catch (e) {
       const msg = e?.message || "unknown error";
       setShareStatus("Upload failed");
       elements.publicUrlOut.textContent = `Upload failed: ${msg}`;
-      publishWaitState(token, engine, { err: msg });
+      publishWaitState(jobId, { err: msg });
       openUrl(reverseSearchUploadPage(engine));
     }
   });
@@ -1589,17 +1580,12 @@ async function handleSearchAll({ autoEnableShare = false, openLens = true } = {}
   if (state.uiBusy) return;
 
   const engines = ["lens", "bing", "tineye", "yandex", "google_images"];
-  const token = openLens ? `${Date.now()}-${Math.random().toString(16).slice(2)}` : "";
-  if (token) {
-    const waitUrl = `/wait.html?token=${encodeURIComponent(token)}&engine=lens&label=${encodeURIComponent("Lens")}`;
-    window.open(waitUrl, "_blank");
-    publishWaitState(token, "lens", { status: "uploading" });
-  }
+  const jobId = openLens ? openWaitJob("lens", "Lens") : "";
 
   if (!state.shareEnabled) {
     if (!autoEnableShare) {
       const ok = window.confirm(
-        "To prepare provider links from one upload, this will upload your image to a temporary file host to generate a public URL. Enable one-click mode?",
+        "To prepare provider links from one upload, this will upload your image to a temporary file host to generate a public URL. Allow the upload?",
       );
       if (!ok) return;
     }
@@ -1610,13 +1596,13 @@ async function handleSearchAll({ autoEnableShare = false, openLens = true } = {}
 
   await withUiLock("Preparing engine links…", async () => {
     const url = await ensurePublicUrl({ purpose: "lens" });
-    if (token) publishWaitState(token, "lens", { url });
+    if (jobId) publishWaitState(jobId, { url });
 
     const targets = engines.map((e) => reverseSearchUrl(e, url));
     const run = {
       ts: Date.now(),
       url,
-      token,
+      token: jobId,
       artifact: state.publicUrlArtifact || "original",
       targets: {
         lens: targets[0],
@@ -1644,7 +1630,7 @@ async function handleSearchAll({ autoEnableShare = false, openLens = true } = {}
     setShareStatus("Upload failed");
     const msg = e?.message || "unknown error";
     elements.publicUrlOut.textContent = `Upload failed: ${msg}`;
-    if (token) publishWaitState(token, "lens", { err: msg });
+    if (jobId) publishWaitState(jobId, { err: msg });
   });
 }
 
@@ -3493,7 +3479,7 @@ function setupActions() {
     await withUiLock("Mutating…", async () => {
       if (!state.shareEnabled) {
         const ok = window.confirm(
-          "Mutation Lab needs one-click mode (uploads variants to generate public URLs). Enable it?",
+          "Mutation Lab needs automatic uploads (uploads variants to generate public URLs). Allow it?",
         );
         if (!ok) return;
         state.shareEnabled = true;
@@ -3534,12 +3520,10 @@ function setupActions() {
         for (const m of clusters[ci].items) m.cluster = ci + 1;
       }
 
-      const tokens = muts.map((_, i) => `${Date.now()}-${Math.random().toString(16).slice(2)}-${i}`);
+      const jobIds = [];
       for (let i = 0; i < muts.length; i += 1) {
         const label = `Lens · ${muts[i].label}`;
-        const waitUrl = `/wait.html?token=${encodeURIComponent(tokens[i])}&engine=lens&label=${encodeURIComponent(label)}`;
-        window.open(waitUrl, "_blank");
-        publishWaitState(tokens[i], "lens", { status: "uploading" });
+        jobIds.push(openWaitJob("lens", label));
       }
       state.session = loadSession();
       state.session.engines_opened += muts.length;
@@ -3566,10 +3550,10 @@ function setupActions() {
           working[i].url = url;
           working[i].status = "ok";
           state.mutations.push({ ...working[i] });
-          publishWaitState(tokens[i], "lens", { url });
+          publishWaitState(jobIds[i], { url });
         } catch (e) {
           const msg = e?.message || "upload failed";
-          publishWaitState(tokens[i], "lens", { err: msg });
+          publishWaitState(jobIds[i], { err: msg });
           working[i].status = "fail";
           working[i].url = "";
         }
@@ -4085,8 +4069,10 @@ function setupCommandPalette() {
         render();
       });
       row.addEventListener("click", () => {
-        const chosen = filtered()[activeIndex];
+        const list = filtered();
+        const chosen = list[idx];
         if (!chosen) return;
+        activeIndex = idx;
         setOpen(false);
         chosen.run();
       });

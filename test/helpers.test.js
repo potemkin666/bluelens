@@ -52,7 +52,7 @@ test("extractPivotsFromReport keeps OCR handles to a single @ prefix", () => {
   assert.ok(!pivots.includes("@@alice"));
 });
 
-test("local server exposes ping and wait-tab handoff routes", async (t) => {
+test("local server exposes ping and durable wait-job handoff routes", async (t) => {
   const port = 8879;
   const cwd = path.resolve(__dirname, "..");
   const server = spawn(process.execPath, ["server.js"], {
@@ -87,19 +87,58 @@ test("local server exposes ping and wait-tab handoff routes", async (t) => {
   assert.equal(ping.status, 200);
   assert.deepEqual(await ping.json(), { ok: true });
 
-  const post = await fetch(`http://127.0.0.1:${port}/api/status`, {
+  const jobId = `job-${Date.now()}`;
+
+  const waitRead = fetch(`http://127.0.0.1:${port}/api/wait-jobs/${jobId}?since=-1&timeout=2000`, {
+    cache: "no-store",
+  });
+
+  const post = await fetch(`http://127.0.0.1:${port}/api/wait-jobs/${jobId}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ token: "tok", engine: "lens", status: "uploading", url: "https://example.com/a.jpg" }),
+    body: JSON.stringify({ engine: "lens", label: "Lens", status: "uploading" }),
   });
   assert.equal(post.status, 200);
-  assert.deepEqual(await post.json(), { ok: true });
+  const created = await post.json();
+  assert.equal(created.ok, true);
+  assert.equal(created.job.id, jobId);
+  assert.equal(created.job.engine, "lens");
+  assert.equal(created.job.label, "Lens");
+  assert.equal(created.job.status, "uploading");
 
-  const get = await fetch(`http://127.0.0.1:${port}/api/status?token=tok&engine=lens`);
+  const first = await waitRead;
+  assert.equal(first.status, 200);
+  const firstData = await first.json();
+  assert.equal(firstData.ok, true);
+  assert.equal(firstData.timeout, false);
+  assert.equal(firstData.job.id, jobId);
+  assert.equal(firstData.job.status, "uploading");
+  const firstSeq = firstData.job.seq;
+
+  const update = await fetch(`http://127.0.0.1:${port}/api/wait-jobs/${jobId}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: "https://example.com/a.jpg" }),
+  });
+  assert.equal(update.status, 200);
+
+  const get = await fetch(`http://127.0.0.1:${port}/api/wait-jobs/${jobId}?since=${firstSeq}&timeout=2000`, {
+    cache: "no-store",
+  });
   assert.equal(get.status, 200);
   const data = await get.json();
   assert.equal(data.ok, true);
-  assert.equal(data.status, "uploading");
-  assert.equal(data.url, "https://example.com/a.jpg");
-  assert.equal(typeof data.ts, "number");
+  assert.equal(data.timeout, false);
+  assert.equal(data.job.url, "https://example.com/a.jpg");
+  assert.equal(data.job.status, "ready");
+  assert.ok(data.job.seq > firstSeq);
+
+  const timeout = await fetch(`http://127.0.0.1:${port}/api/wait-jobs/missing-${Date.now()}?since=-1&timeout=20`, {
+    cache: "no-store",
+  });
+  assert.equal(timeout.status, 200);
+  const timeoutData = await timeout.json();
+  assert.equal(timeoutData.ok, true);
+  assert.equal(timeoutData.timeout, true);
+  assert.equal(timeoutData.job, null);
 });

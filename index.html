@@ -41,11 +41,10 @@
           <span class="focus-kicker">Search-first workflow</span>
           <h2 id="focusTitle">Drop an image and get to reverse search fast.</h2>
           <p class="focus-lede">
-            BlueLens works best as a fast launchpad: inspect one image locally, create a public URL only when you need it, and open the
-            search providers without the giant capability wall.
+            BlueLens works best as a fast launchpad: choose one image, let it prepare the temporary search URL automatically, and jump straight into provider review.
           </p>
           <ul class="focus-points">
-            <li>Upload once and go straight to the Search tab.</li>
+            <li>Choose once and BlueLens prepares the search launchpad automatically.</li>
             <li>Keep hashes, EXIF, OCR, and compare tools one click away.</li>
             <li>Launch Lens first, then use the prepared manual links for the rest.</li>
           </ul>
@@ -204,11 +203,10 @@
                 </label>
               </div>
 
-              <label class="toggle" style="margin-top: 10px" title="Makes the image public via a temporary URL">
-                <input id="chkEnableShare" type="checkbox" />
-                <span class="toggle-ui" aria-hidden="true"></span>
-                <span class="toggle-text">Enable one-click provider launcher (uploads image to generate a public URL).</span>
-              </label>
+              <div class="mono mono-box" title="Uploading starts automatically after you choose an image">
+                <input id="chkEnableShare" type="checkbox" checked hidden />
+                Automatic launch uploads the image to generate a temporary public URL as soon as you choose a file.
+              </div>
 
               <label class="toggle toggle-mini" title="Uploads the clean copy (re-encoded) instead of the original file">
                 <input id="chkShareSafe" type="checkbox" />
@@ -524,11 +522,11 @@
       <div class="cmdk-backdrop" data-cmdk-close></div>
       <div class="cmdk-panel" role="dialog" aria-modal="true" aria-label="Command palette">
         <div class="cmdk-top">
-          <input id="cmdkInput" class="cmdk-input" type="text" autocomplete="off" spellcheck="false" placeholder="Type a commandâ€¦" />
+          <input id="cmdkInput" class="cmdk-input" type="text" autocomplete="off" spellcheck="false" placeholder="Type a command…" />
           <div class="cmdk-kbd" aria-hidden="true">Ctrl+K</div>
         </div>
         <div id="cmdkList" class="cmdk-list" role="listbox"></div>
-        <div class="cmdk-hint">Enter â€¢ â†‘/â†“ â€¢ Esc</div>
+        <div class="cmdk-hint">Enter • ↑/↓ • Esc</div>
       </div>
     </div>
 

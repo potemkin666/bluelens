@@ -96,7 +96,7 @@
     <div class="wrap">
       <div class="card">
         <div id="title"><strong>Engine</strong> &mdash; waiting for public image URL&hellip;</div>
-        <div id="msg" class="muted" style="margin-top: 8px" aria-live="polite"><span class="spinner" aria-hidden="true"></span>Keep this tab open.</div>
+        <div id="msg" class="muted" style="margin-top: 8px" aria-live="polite"></div>
         <div id="link" style="margin-top: 10px"></div>
         <button id="close">Close</button>
       </div>
@@ -104,16 +104,40 @@
 
     <script>
       const params = new URLSearchParams(location.search);
-      const token = params.get("token") || "";
-      const engine = params.get("engine") || "";
-      const label = params.get("label") || engine || "Engine";
-      const key = `osint:${token}:${engine}`;
+      const jobId = params.get("job") || "";
+      let engine = params.get("engine") || "";
+      let label = params.get("label") || engine || "Engine";
+      let lastSeq = -1;
+      let stopped = false;
 
       const title = document.getElementById("title");
       const msg = document.getElementById("msg");
       const link = document.getElementById("link");
-      title.innerHTML = `<strong>${label}</strong> &mdash; waiting for public image URL&hellip;`;
-      document.title = `OSINT Lens - ${label}`;
+
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+      const setHeading = (nextLabel) => {
+        title.textContent = "";
+        const strong = document.createElement("strong");
+        strong.textContent = nextLabel;
+        title.appendChild(strong);
+        title.append(" — waiting for public image URL…");
+        document.title = `OSINT Lens - ${nextLabel}`;
+      };
+
+      const setMessage = (text, busy = false) => {
+        msg.textContent = "";
+        if (busy) {
+          const spinner = document.createElement("span");
+          spinner.className = "spinner";
+          spinner.setAttribute("aria-hidden", "true");
+          msg.appendChild(spinner);
+        }
+        msg.append(text);
+      };
+
+      setHeading(label);
+      setMessage("Connecting to local handoff…", true);
 
       document.getElementById("close").addEventListener("click", () => window.close());
 
@@ -133,69 +157,68 @@
         }
       };
 
-      const applyData = (data) => {
-        if (!data) return false;
-        if (data.status) {
-          msg.textContent = data.status === "uploading" ? "Uploading... (check main tab)" : String(data.status);
+      const applyJob = (job) => {
+        if (!job) return false;
+        if (job.label) {
+          label = job.label;
+          setHeading(label);
+        }
+        if (job.engine) engine = job.engine;
+        if (typeof job.seq === "number") lastSeq = job.seq;
+
+        if (job.err) {
+          setMessage(`Error: ${job.err}`);
+          stopped = true;
           return true;
         }
-        if (data.err) {
-          msg.textContent = `Error: ${data.err}`;
+        if (job.url) {
+          const target = buildTarget(job.url);
+          link.textContent = "";
+          const a = document.createElement("a");
+          a.href = target;
+          a.textContent = "Open manually";
+          link.appendChild(a);
+          location.replace(target);
+          stopped = true;
           return true;
         }
-        if (data.url) {
-          const t = buildTarget(data.url);
-          link.innerHTML = `<a href="${t}">Open manually</a>`;
-          location.replace(t);
-          return true;
+        if (job.status) {
+          setMessage(job.status === "uploading" ? "Uploading... (check main tab)" : String(job.status), true);
         }
         return false;
       };
 
-      const tickStorage = () => {
-        let raw = null;
-        try {
-          raw = localStorage.getItem(key);
-        } catch {}
-        if (!raw) return;
-        try {
-          applyData(JSON.parse(raw));
-        } catch {}
+      const watchJob = async () => {
+        if (!jobId) {
+          setMessage("Missing wait job ID.");
+          return;
+        }
+
+        while (!stopped) {
+          try {
+            const r = await fetch(
+              `/api/wait-jobs/${encodeURIComponent(jobId)}?since=${encodeURIComponent(lastSeq)}&timeout=25000`,
+              { cache: "no-store" },
+            );
+            if (!r.ok) {
+              if (r.status === 404) {
+                setMessage("Waiting for local handoff…", true);
+                await sleep(500);
+                continue;
+              }
+              throw new Error(`HTTP ${r.status}`);
+            }
+            const data = await r.json();
+            if (applyJob(data?.job)) return;
+            if (data?.timeout) setMessage("Still waiting for the upload job… reconnecting.", true);
+          } catch {
+            setMessage("Connection lost. Reconnecting…", true);
+            await sleep(1000);
+          }
+        }
       };
 
-      const tickApi = async () => {
-        if (!token || !engine) return;
-        try {
-          const r = await fetch(`/api/status?token=${encodeURIComponent(token)}&engine=${encodeURIComponent(engine)}`, {
-            cache: "no-store",
-          });
-          if (!r.ok) return;
-          const d = await r.json();
-          applyData(d);
-        } catch {}
-      };
-
-      // BroadcastChannel fallback (works even if storage is restricted)
-      let bc = null;
-      try {
-        bc = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("osint-lens") : null;
-      } catch {}
-      if (bc) {
-        bc.addEventListener("message", (ev) => {
-          const d = ev && ev.data;
-          if (!d || d.token !== token || d.engine !== engine) return;
-          applyData(d);
-        });
-      }
-
-      window.addEventListener("storage", (e) => {
-        if (e.key === key) tickStorage();
-      });
-
-      setInterval(tickStorage, 250);
-      setInterval(() => void tickApi(), 350);
-      void tickApi();
-      tickStorage();
+      void watchJob();
     </script>
   </body>
 </html>
