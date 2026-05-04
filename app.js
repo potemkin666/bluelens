@@ -310,7 +310,7 @@ const EXPORT_RUNTIME_CONFIG_SOURCE = JSON.stringify({
   },
 });
 const EXPORT_RUNTIME_CONFIG_FINGERPRINT = typeof sha256 === "function" ? sha256(EXPORT_RUNTIME_CONFIG_SOURCE) : EXPORT_RUNTIME_CONFIG_SOURCE;
-const DOCTOR_SONAR_POLL_MS = 45_000;
+const DOCTOR_SONAR_POLL_MS = 120_000;
 let doctorSonarTimer = 0;
 
 const nonFatalErrorState = new Map();
@@ -3922,6 +3922,12 @@ function startDoctorSonarPolling() {
   }, DOCTOR_SONAR_POLL_MS);
 }
 
+function stopDoctorSonarPolling() {
+  if (!doctorSonarTimer) return;
+  window.clearInterval(doctorSonarTimer);
+  doctorSonarTimer = 0;
+}
+
 async function runDoctorChecks({ quietStatus = false } = {}) {
   const libs = {
     exifr: Boolean(window.exifr),
@@ -6328,3 +6334,7 @@ state.session = loadSession();
 void refreshHostStats();
 setupEngineLaunchpad();
 setupSimpleUi();
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") stopDoctorSonarPolling();
+  else startDoctorSonarPolling();
+});
