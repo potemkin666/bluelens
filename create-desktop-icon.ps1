@@ -2,8 +2,12 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $target = Join-Path $root "bluelens-start.cmd"
+$icon = Join-Path $root "bluelens.ico"
 if (!(Test-Path $target)) {
   throw "Missing: $target"
+}
+if (!(Test-Path $icon)) {
+  throw "Missing: $icon"
 }
 
 $desktop = [Environment]::GetFolderPath("Desktop")
@@ -15,12 +19,7 @@ $s.TargetPath = $target
 $s.WorkingDirectory = $root
 $s.WindowStyle = 1
 $s.Description = "Start BlueLens (local OSINT console)"
-
-# Optional icon (falls back to default if missing)
-$ico = Join-Path $root "assets\\bluelens.ico"
-if (Test-Path $ico) {
-  $s.IconLocation = $ico
-}
+$s.IconLocation = $icon
 
 $s.Save()
 

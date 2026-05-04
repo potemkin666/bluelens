@@ -113,6 +113,12 @@ const elements = {
   actionLogOut: document.getElementById("actionLogOut"),
   btnRunDoctor: document.getElementById("btnRunDoctor"),
   doctorOut: document.getElementById("doctorOut"),
+  missionOutputOut: document.getElementById("missionOutputOut"),
+  resultIntakeInput: document.getElementById("resultIntakeInput"),
+  btnIngestResults: document.getElementById("btnIngestResults"),
+  btnClearResults: document.getElementById("btnClearResults"),
+  btnCopyResultsJson: document.getElementById("btnCopyResultsJson"),
+  resultIntakeSummary: document.getElementById("resultIntakeSummary"),
 
   // Command palette
   cmdk: document.getElementById("cmdk"),
@@ -253,6 +259,19 @@ const FX_FUN_MODE_DEFAULT = Boolean(FX_CONFIG.funModeDefault);
 const FX_HUD_DEFAULT = Boolean(FX_CONFIG.hudDefault);
 const FX_CHROME_DEFAULT = Boolean(FX_CONFIG.chromeDefault);
 const COMPARE_DIFF_SIZE = 96;
+const ENGINE_SWARM_DELAY_MS = 260;
+const RUN_QUEUE_STATUS = {
+  queued: "queued",
+  uploading: "uploading",
+  ready: "ready",
+  prepared: "prepared",
+  opened: "opened",
+  blocked: "blocked",
+  error: "error",
+};
+const UNKNOWN_EXPIRY_WINDOW = "unknown";
+const TEMP_EXTERNAL_ARTIFACT_WARNING = "Temporary external artifact — third-party upload URLs may expire or disappear before a reader opens the report.";
+const TEMP_EXTERNAL_ARTIFACT_NOTE = "Host retention is controlled by the third-party service and is not guaranteed by BlueLens.";
 const compareDiffScratchA = document.createElement("canvas");
 const compareDiffScratchB = document.createElement("canvas");
 const EXPORT_RUNTIME_CONFIG_SOURCE = JSON.stringify({
@@ -376,11 +395,19 @@ const state = {
     manual_notes: "",
     analyst_confidence: "unverified",
   },
+  sourceReviewLog: [],
   insights: {
     metadata_suspicion_score: null,
     metadata_suspicion_band: null,
     metadata_suspicion_inputs: [],
   },
+  missionOutput: null,
+  resultIntake: {
+    raw: "",
+    entries: [],
+    last_ingested_at: null,
+  },
+  pivotTaskResults: {},
   mutations: [],
   compare: {
     file: null,
@@ -395,6 +422,8 @@ const state = {
   },
   exif: null,
   entityConfidence: {},
+  entityReviewLog: [],
+  ocrDerivedEntries: [],
   lastEngineRun: null,
   manualNotes: "",
   actionLog: [],
@@ -405,6 +434,9 @@ const state = {
   captureTimeInfo: null,
   doctorReport: null,
 };
+
+const LAUNCHPAD_CORE = window.BLUELENS_LAUNCHPAD || {};
+const OCR_ENTITIES_UI = window.BLUELENS_OCR_ENTITIES || {};
 
 function setStatus(label, tone = "muted") {
   elements.statusPill.textContent = label;
@@ -436,6 +468,668 @@ function logAction(event, detail = "") {
   state.actionLog.push({ ts, event: String(event || "event"), detail: detail ? String(detail) : "" });
   if (state.actionLog.length > 200) state.actionLog = state.actionLog.slice(-200);
   renderActionLog();
+}
+
+function appendReviewEntry(listName, entry, max = 400) {
+  state[listName] = Array.isArray(state[listName]) ? state[listName] : [];
+  state[listName].push(entry);
+  if (state[listName].length > max) state[listName] = state[listName].slice(-max);
+}
+
+function createReviewEntry({
+  source = "manual",
+  scope = "annotation",
+  field = "",
+  value = null,
+  previousValue = null,
+  entityType = null,
+  entityKey = null,
+  entityValue = null,
+  note = "",
+} = {}) {
+  return {
+    ts: new Date().toISOString(),
+    source: String(source || "manual"),
+    scope: String(scope || "annotation"),
+    field: field ? String(field) : null,
+    value,
+    previous_value: previousValue,
+    entity_type: entityType ? String(entityType) : null,
+    entity_key: entityKey ? String(entityKey) : null,
+    entity_value: entityValue == null ? null : String(entityValue),
+    note: note ? String(note) : null,
+  };
+}
+
+function updateSourceInfoField(field, value, { source = "manual", note = "" } = {}) {
+  state.sourceInfo = state.sourceInfo || {};
+  const normalized = typeof value === "string" ? value : value == null ? "" : String(value);
+  const previous = typeof state.sourceInfo[field] === "string" ? state.sourceInfo[field] : state.sourceInfo[field] == null ? "" : String(state.sourceInfo[field]);
+  if (normalized === previous) return false;
+  state.sourceInfo[field] = normalized;
+  appendReviewEntry(
+    "sourceReviewLog",
+    createReviewEntry({
+      source,
+      scope: "source_reliability",
+      field,
+      value: normalized,
+      previousValue: previous || null,
+      note,
+    }),
+  );
+  return true;
+}
+
+function uploadExpiryWindowForHost(host) {
+  if (!host) return null;
+  if (host === "litterbox") return SERVER_CONFIG.upload?.litterboxExpiry || "72h";
+  return UNKNOWN_EXPIRY_WINDOW;
+}
+
+function uploadRetentionNoteForHost(host) {
+  if (!host) return null;
+  if (host === "litterbox") {
+    return `Litterbox uploads are configured for ${SERVER_CONFIG.upload?.litterboxExpiry || "72h"} and should be treated as disposable.`;
+  }
+  return TEMP_EXTERNAL_ARTIFACT_NOTE;
+}
+
+function buildUploadLifecycleMeta(uploadMeta = state.uploadMeta, purpose = state.publicUrlPurpose || "") {
+  if (!uploadMeta && !state.publicUrl) return null;
+  const host = uploadMeta?.host || null;
+  return {
+    ...(uploadMeta && typeof uploadMeta === "object" ? uploadMeta : {}),
+    host,
+    purpose: uploadMeta?.purpose || purpose || null,
+    created_at: uploadMeta?.created_at || null,
+    expected_expiry_window: uploadMeta?.expected_expiry_window || uploadExpiryWindowForHost(host),
+    retention_note: uploadMeta?.retention_note || uploadRetentionNoteForHost(host),
+    temporary_external_artifact: Boolean(host || state.publicUrl),
+    temporary_external_artifact_warning: uploadMeta?.temporary_external_artifact_warning || TEMP_EXTERNAL_ARTIFACT_WARNING,
+  };
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, Math.max(0, Number(ms) || 0)));
+}
+
+function normalizeEngineName(value, fallback = "") {
+  const raw = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "_");
+  if (!raw) return fallback;
+  if (raw === "google" || raw === "googleimages" || raw === "google_image") return "google_images";
+  if (raw === "tin_eye") return "tineye";
+  return ENGINE_ORDER.includes(raw) ? raw : fallback;
+}
+
+function canonicalizeExternalUrl(raw) {
+  try {
+    const input = String(raw || "").trim();
+    if (!input) return null;
+    const normalizedInput = /^https?:\/\//i.test(input) ? input : `https://${input.replace(/^\/+/, "")}`;
+    const parsed = new URL(normalizedInput);
+    parsed.hash = "";
+    parsed.hostname = (parsed.hostname || "").toLowerCase().replace(/^www\./i, "");
+    const pathname = (parsed.pathname || "/").replace(/\/{2,}/g, "/");
+    parsed.pathname = pathname !== "/" ? pathname.replace(/\/+$/g, "") || "/" : "/";
+    const kept = [];
+    parsed.searchParams.forEach((value, key) => {
+      if (/^utm_/i.test(key) || /^(fbclid|gclid|igshid|mc_cid|mc_eid|ref_src)$/i.test(key)) return;
+      kept.push([key, value]);
+    });
+    kept.sort((a, b) => a[0].localeCompare(b[0]) || a[1].localeCompare(b[1]));
+    parsed.search = "";
+    for (const [key, value] of kept) parsed.searchParams.append(key, value);
+    const canonical_url = parsed.toString();
+    return {
+      raw: input,
+      canonical_url,
+      domain: parsed.hostname || "",
+      path: parsed.pathname || "/",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function extractMediaHashFromText(text) {
+  const raw = String(text || "");
+  const labeledSha = raw.match(/\bsha(?:-?256)?[:=\s]+([a-f0-9]{64})\b/i);
+  if (labeledSha) return { algo: "sha256", value: labeledSha[1].toLowerCase() };
+  const labeledMd5 = raw.match(/\bmd5[:=\s]+([a-f0-9]{32})\b/i);
+  if (labeledMd5) return { algo: "md5", value: labeledMd5[1].toLowerCase() };
+  const labeledDhash = raw.match(/\bdhash[:=\s]+([a-f0-9]{16})\b/i);
+  if (labeledDhash) return { algo: "dhash", value: labeledDhash[1].toLowerCase() };
+  const sha = raw.match(/\b[a-f0-9]{64}\b/i);
+  if (sha) return { algo: "sha256", value: sha[0].toLowerCase() };
+  const md5 = raw.match(/\b[a-f0-9]{32}\b/i);
+  if (md5) return { algo: "md5", value: md5[0].toLowerCase() };
+  const dhash = raw.match(/\b[a-f0-9]{16}\b/i);
+  if (dhash) return { algo: "dhash", value: dhash[0].toLowerCase() };
+  return null;
+}
+
+function buildResultIntakeKey(entry) {
+  if (entry?.canonical_url) return `url:${entry.canonical_url}`;
+  if (entry?.domain && entry?.media_hash?.value) return `domain+hash:${entry.domain}:${entry.media_hash.value}`;
+  if (entry?.domain) return `domain:${entry.domain}`;
+  return `line:${entry?.source_line || ""}`;
+}
+
+function summarizeResultIntake(entries = []) {
+  const engines = new Set();
+  const domains = new Map();
+  let duplicatesMerged = 0;
+  for (const entry of entries) {
+    for (const engine of entry?.engines || []) engines.add(engine);
+    if (entry?.domain) domains.set(entry.domain, (domains.get(entry.domain) || 0) + 1);
+    duplicatesMerged += Math.max(0, Number(entry?.merged_count || 1) - 1);
+  }
+  const topDomains = Array.from(domains.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 4)
+    .map(([domain, count]) => `${domain}×${count}`);
+  return {
+    total: entries.length,
+    duplicatesMerged,
+    engines: Array.from(engines),
+    topDomains,
+  };
+}
+
+function parseResultIntakeRaw(raw, defaultEngine = "") {
+  const lines = String(raw || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const parsedEntries = [];
+  for (const line of lines) {
+    const parts = line.includes("\t") ? line.split("\t").map((part) => part.trim()) : line.split(/\s*\|\s*/).map((part) => part.trim());
+    let engine = defaultEngine;
+    let url = "";
+    let title = "";
+    let snippet = "";
+
+    if (parts.length >= 4 && !/^https?:\/\//i.test(parts[0]) && /^https?:\/\//i.test(parts[1])) {
+      [engine, url, title, snippet] = parts;
+    } else if (parts.length >= 4 && !/^https?:\/\//i.test(parts[0]) && /^[a-z0-9.-]+\.[a-z]{2,}/i.test(parts[1])) {
+      [engine, url, title, snippet] = parts;
+    } else {
+      [url, title, snippet, engine] = parts;
+    }
+
+    if (!url) {
+      const urlMatch = line.match(/\bhttps?:\/\/[^\s<>()]+/i);
+      url = urlMatch ? urlMatch[0] : "";
+    }
+    const canonical = canonicalizeExternalUrl(url);
+    if (!canonical) continue;
+    const mediaHash = extractMediaHashFromText(`${title} ${snippet} ${line}`);
+    parsedEntries.push({
+      source_line: line,
+      url: canonical.raw,
+      canonical_url: canonical.canonical_url,
+      domain: canonical.domain,
+      path: canonical.path,
+      title: title || "",
+      snippet: snippet || "",
+      media_hash: mediaHash,
+      engines: normalizeEngineName(engine) ? [normalizeEngineName(engine)] : [],
+      first_seen_at: new Date().toISOString(),
+      last_seen_at: new Date().toISOString(),
+      merged_count: 1,
+    });
+  }
+  return parsedEntries;
+}
+
+function mergeResultIntakeEntries(existingEntries, incomingEntries) {
+  const byKey = new Map();
+  for (const entry of existingEntries || []) byKey.set(buildResultIntakeKey(entry), { ...entry });
+  for (const incoming of incomingEntries || []) {
+    const key = buildResultIntakeKey(incoming);
+    const current = byKey.get(key);
+    if (!current) {
+      byKey.set(key, { ...incoming });
+      continue;
+    }
+    const engines = new Set([...(current.engines || []), ...(incoming.engines || [])]);
+    current.engines = Array.from(engines);
+    current.title = current.title || incoming.title;
+    current.snippet = current.snippet || incoming.snippet;
+    current.last_seen_at = incoming.last_seen_at || new Date().toISOString();
+    current.merged_count = Math.max(1, Number(current.merged_count || 1) + 1);
+    if (!current.media_hash && incoming.media_hash) current.media_hash = incoming.media_hash;
+    byKey.set(key, current);
+  }
+  return Array.from(byKey.values()).sort((a, b) => String(b.last_seen_at || "").localeCompare(String(a.last_seen_at || "")));
+}
+
+function renderMissionOutput() {
+  const el = elements.missionOutputOut;
+  if (!el) return;
+  const mission = state.missionOutput;
+  if (!mission || !Array.isArray(mission.items) || mission.items.length === 0) {
+    el.classList.remove("mission-grid");
+    el.textContent = mission?.summary || "Run a recon mission to structure handles, domains, metadata, or engine swarm prep.";
+    return;
+  }
+  el.classList.add("mission-grid");
+  const cards = mission.items
+    .map((item) => {
+      const lines = Array.isArray(item.lines) ? item.lines : [];
+      const links = Array.isArray(item.links) ? item.links : [];
+      return `
+        <div class="mission-card">
+          <div class="mission-card-head">
+            <div>${escapeHtml(item.label || item.type || "Finding")}</div>
+            ${item.meta ? `<div class="mission-card-meta">${escapeHtml(item.meta)}</div>` : ""}
+          </div>
+          ${lines.length ? `<div class="mission-card-lines">${lines.map((line) => `<div>${escapeHtml(line)}</div>`).join("")}</div>` : ""}
+          ${links.length ? `<div class="mission-card-links">${links.map((link) => `<a class="chip chip-link" href="${escapeAttr(link.url)}" target="_blank" rel="noreferrer">${escapeHtml(link.label || link.url)}</a>`).join("")}</div>` : ""}
+        </div>
+      `;
+    })
+    .join("");
+  el.innerHTML = `
+    <div class="mission-summary">${escapeHtml(mission.summary || "")}</div>
+    ${cards}
+  `;
+}
+
+function renderResultIntake() {
+  const el = elements.resultIntakeSummary;
+  if (!el) return;
+  const entries = Array.isArray(state.resultIntake?.entries) ? state.resultIntake.entries : [];
+  if (!entries.length) {
+    el.classList.remove("mission-grid");
+    el.textContent = "No external findings ingested yet.";
+    if (elements.btnClearResults) elements.btnClearResults.disabled = true;
+    if (elements.btnCopyResultsJson) elements.btnCopyResultsJson.disabled = true;
+    return;
+  }
+  const summary = summarizeResultIntake(entries);
+  el.classList.add("mission-grid");
+  el.innerHTML = `
+    <div class="mission-summary">
+      Intake queue: ${summary.total} deduped entries · merged ${summary.duplicatesMerged} duplicates · engines ${summary.engines.join(", ") || "—"} · top domains ${summary.topDomains.join(", ") || "—"}
+    </div>
+    ${entries
+      .slice(0, 12)
+      .map(
+        (entry) => `
+          <div class="mission-card">
+            <div class="mission-card-head">
+              <div>${escapeHtml(entry.title || entry.canonical_url || entry.url)}</div>
+              <div class="mission-card-meta">${escapeHtml(entry.domain || "unknown domain")}</div>
+            </div>
+            <div class="mission-card-lines">
+              <div>${escapeHtml(entry.canonical_url || entry.url || "—")}</div>
+              ${entry.snippet ? `<div>${escapeHtml(entry.snippet)}</div>` : ""}
+              <div>Engines: ${escapeHtml((entry.engines || []).join(", ") || "manual")}${entry.media_hash?.value ? ` · hash ${escapeHtml(`${entry.media_hash.algo}:${entry.media_hash.value}`)}` : ""}${entry.merged_count > 1 ? ` · merged ${entry.merged_count}` : ""}</div>
+            </div>
+          </div>
+        `,
+      )
+      .join("")}
+  `;
+  if (elements.btnClearResults) elements.btnClearResults.disabled = false;
+  if (elements.btnCopyResultsJson) elements.btnCopyResultsJson.disabled = false;
+}
+
+function setMissionOutput(output) {
+  state.missionOutput = output || null;
+  renderMissionOutput();
+}
+
+function ingestResults(raw) {
+  const incoming = parseResultIntakeRaw(raw, state.lastEngineRun?.mode === "swarm" ? "swarm" : "");
+  if (incoming.length === 0) return 0;
+  state.resultIntake = state.resultIntake || { raw: "", entries: [], last_ingested_at: null };
+  state.resultIntake.entries = mergeResultIntakeEntries(state.resultIntake.entries || [], incoming);
+  state.resultIntake.raw = raw || "";
+  state.resultIntake.last_ingested_at = new Date().toISOString();
+  renderResultIntake();
+  return incoming.length;
+}
+
+function normalizeReconEntities(text) {
+  return OCR_ENTITIES_UI.normalizeReconEntities({
+    text,
+    ocrPipeline: OCR_PIPELINE,
+    extractHandlesAndDomains,
+  });
+}
+
+function buildHandleReconOutput({ handles }) {
+  return OCR_ENTITIES_UI.buildHandleReconOutput({ handles });
+}
+
+function buildDomainReconOutput({ ent, domains }) {
+  return OCR_ENTITIES_UI.buildDomainReconOutput({ ent, domains, normalizeDomain: OCR_PIPELINE?.normalizeDomain });
+}
+
+function buildMetadataPassOutput() {
+  const captured = state.captureTimeInfo?.display || elements.kfCaptured?.textContent || "—";
+  const camera = elements.kfCamera?.textContent || "—";
+  const software = elements.kfSoftware?.textContent || "—";
+  const gps = elements.kfGps?.textContent || "—";
+  const suspicion = state.insights?.metadata_suspicion_band || "—";
+  const lines = [
+    `Captured: ${captured}`,
+    `Camera: ${camera}`,
+    `Software: ${software}`,
+    `GPS: ${gps}`,
+    `Metadata suspicion: ${suspicion}`,
+  ];
+  if (Array.isArray(state.insights?.metadata_suspicion_inputs)) {
+    lines.push(...state.insights.metadata_suspicion_inputs.slice(0, 4).map((line) => `Cue: ${line}`));
+  }
+  return {
+    mission: "metadata_pass",
+    summary: "Metadata pass structured the local capture, editor, GPS, and suspicion cues into one review block.",
+    items: [
+      {
+        type: "metadata",
+        label: state.file?.name || "Loaded image",
+        meta: elements.metaDim?.textContent || "metadata review",
+        lines,
+        links: state.gps ? [{ label: "Open map", url: `https://www.openstreetmap.org/?mlat=${encodeURIComponent(state.gps.lat)}&mlon=${encodeURIComponent(state.gps.lon)}#map=16/${encodeURIComponent(state.gps.lat)}/${encodeURIComponent(state.gps.lon)}` }] : [],
+      },
+    ],
+  };
+}
+
+function getBatchEntityClusters(items = state.batchItems) {
+  const clusters = new Map();
+  const addCluster = (type, value, fileName) => {
+    const cleanValue = String(value || "").trim();
+    if (!cleanValue) return;
+    const normalizedValue = cleanValue.toLowerCase();
+    const key = `${type}:${normalizedValue}`;
+    const current = clusters.get(key) || { key, type, value: cleanValue, files: new Set(), count: 0 };
+    current.files.add(fileName || "image");
+    current.count += 1;
+    clusters.set(key, current);
+  };
+  for (const item of items || []) {
+    const report = item?.report;
+    const fileName = report?.file?.name || item?.file?.name || "image";
+    const ent = report?.key_fields?.ocr_entities || (report?.ocr_text ? OCR_PIPELINE?.extractEntities?.(report.ocr_text) : null) || { urls: [], emails: [], handles: [], phones: [] };
+    for (const handle of ent.handles || []) {
+      const normalized = OCR_PIPELINE?.normalizeHandle?.(handle);
+      if (normalized) addCluster("handle", `@${normalized}`, fileName);
+    }
+    for (const email of ent.emails || []) addCluster("email", String(email).toLowerCase(), fileName);
+    for (const phone of ent.phones || []) {
+      const normalized = OCR_PIPELINE?.normalizePhone?.(phone);
+      if (normalized) addCluster("phone", normalized.e164 || normalized.digits || normalized.raw, fileName);
+    }
+    for (const url of ent.urls || []) {
+      const domain = OCR_PIPELINE?.normalizeDomain?.(url);
+      if (domain) addCluster("domain", domain, fileName);
+    }
+  }
+  return Array.from(clusters.values())
+    .map((cluster) => ({ ...cluster, file_count: cluster.files.size, files: Array.from(cluster.files).slice(0, 4) }))
+    .sort((a, b) => b.file_count - a.file_count || b.count - a.count || a.value.localeCompare(b.value));
+}
+
+function buildBatchEntityFollowUps(cluster) {
+  const value = String(cluster?.value || "");
+  if (!value) return [];
+  if (cluster.type === "handle") {
+    const clean = value.replace(/^@/, "");
+    return [
+      `https://www.instagram.com/${encodeURIComponent(clean)}/`,
+      `https://www.tiktok.com/@${encodeURIComponent(clean)}`,
+      `https://x.com/${encodeURIComponent(clean)}`,
+      `https://www.google.com/search?q=${encodeURIComponent(value)}`,
+    ];
+  }
+  if (cluster.type === "domain") {
+    return [
+      `https://www.google.com/search?q=${encodeURIComponent(`site:${value}`)}`,
+      `https://www.whois.com/whois/${encodeURIComponent(value)}`,
+      `https://dns.google/resolve?name=${encodeURIComponent(value)}&type=A`,
+      `https://crt.sh/?q=${encodeURIComponent(value)}`,
+      `https://web.archive.org/web/*/${encodeURIComponent(`https://${value}/*`)}`,
+    ];
+  }
+  return [`https://www.google.com/search?q=${encodeURIComponent(`"${value}"`)}`];
+}
+
+async function fetchLocalJson(endpoint, scope = "api.fetch") {
+  const res = await fetch(endpoint, { cache: "no-store" });
+  const text = await res.text();
+  const parsed = text ? safeJsonParse(text, null, `${scope}.parse`, { harmless: true, detail: { endpoint, status: res.status } }) : null;
+  if (!res.ok) {
+    throw new Error(parsed?.message || parsed?.error || `HTTP ${res.status}`);
+  }
+  if (!parsed || typeof parsed !== "object") throw new Error("Unexpected API response");
+  return parsed;
+}
+
+function extractEmailDomain(email) {
+  const value = String(email || "").trim().toLowerCase();
+  const at = value.lastIndexOf("@");
+  return at >= 0 ? value.slice(at + 1) : "";
+}
+
+function setPivotTaskResult(entityKey, result) {
+  if (!entityKey) return;
+  state.pivotTaskResults = state.pivotTaskResults && typeof state.pivotTaskResults === "object" ? state.pivotTaskResults : {};
+  state.pivotTaskResults[entityKey] = result;
+}
+
+function renderPivotTaskResult(container, result) {
+  if (!container) return;
+  container.innerHTML = "";
+  if (!result) {
+    container.hidden = true;
+    return;
+  }
+  container.hidden = false;
+  container.className = `pivot-task-box ${result.status === "error" ? "error" : result.status === "loading" ? "loading" : "ready"}`;
+
+  const head = document.createElement("div");
+  head.className = "pivot-task-head";
+  head.textContent = result.summary || "No structured acquisition result yet.";
+  container.appendChild(head);
+
+  if (Array.isArray(result.lines)) {
+    const list = document.createElement("div");
+    list.className = "pivot-task-lines";
+    for (const line of result.lines) {
+      const row = document.createElement("div");
+      row.textContent = line;
+      list.appendChild(row);
+    }
+    container.appendChild(list);
+  }
+
+  if (Array.isArray(result.links) && result.links.length) {
+    const chips = document.createElement("div");
+    chips.className = "pivot-task-links";
+    for (const link of result.links.slice(0, 8)) {
+      const anchor = document.createElement("a");
+      anchor.className = "chip chip-link";
+      anchor.href = link.url;
+      anchor.target = "_blank";
+      anchor.rel = "noreferrer";
+      anchor.textContent = link.label;
+      chips.appendChild(anchor);
+    }
+    container.appendChild(chips);
+  }
+}
+
+async function runPivotStructuredTask({ entityType, entityKey, entityValue }) {
+  const call = async (endpoint, scope) => {
+    try {
+      return { ok: true, data: await fetchLocalJson(endpoint, scope) };
+    } catch (error) {
+      return { ok: false, error: error?.message || "request failed" };
+    }
+  };
+
+  if (entityType === "handle") {
+    const handle = String(entityValue || "").replace(/^@/, "").trim();
+    const candidates = [
+      { label: "Instagram", url: `https://www.instagram.com/${encodeURIComponent(handle)}/` },
+      { label: "TikTok", url: `https://www.tiktok.com/@${encodeURIComponent(handle)}` },
+      { label: "X", url: `https://x.com/${encodeURIComponent(handle)}` },
+    ];
+    const probes = await Promise.all(
+      candidates.map(async (candidate) => ({
+        ...candidate,
+        result: await call(`/api/metadata?url=${encodeURIComponent(candidate.url)}`, `pivot.handle.${candidate.label.toLowerCase()}`),
+      })),
+    );
+    const live = probes.filter((probe) => probe.result.ok);
+    return {
+      status: live.length ? "ready" : "error",
+      summary: live.length ? `Resolved ${live.length}/${probes.length} profile probes for @${handle}.` : `No profile metadata fetched for @${handle}.`,
+      lines: probes.map((probe) =>
+        probe.result.ok
+          ? `${probe.label}: ${(probe.result.data?.metadata?.title || probe.result.data?.final_url || probe.url).slice(0, 120)}`
+          : `${probe.label}: ${probe.result.error}`,
+      ),
+      links: probes.map((probe) => ({ label: probe.label, url: probe.url })),
+      data: probes,
+      entity_type: entityType,
+      entity_key: entityKey,
+      entity_value: entityValue,
+      fetched_at: new Date().toISOString(),
+    };
+  }
+
+  if (entityType === "domain" || entityType === "url") {
+    const target = entityType === "domain" ? `https://${String(entityValue || "").trim()}` : String(entityValue || "").trim();
+    const [page, metadata, discover, archive] = await Promise.all([
+      call(`/api/fetch?url=${encodeURIComponent(target)}`, `pivot.${entityType}.fetch`),
+      call(`/api/metadata?url=${encodeURIComponent(target)}`, `pivot.${entityType}.metadata`),
+      call(`/api/discover?url=${encodeURIComponent(target)}`, `pivot.${entityType}.discover`),
+      call(`/api/archive?url=${encodeURIComponent(target)}`, `pivot.${entityType}.archive`),
+    ]);
+    const lines = [];
+    if (page.ok) lines.push(`Fetch: ${page.data?.status || "—"} · ${(page.data?.metadata?.title || page.data?.snippet || target).slice(0, 140)}`);
+    else lines.push(`Fetch: ${page.error}`);
+    if (metadata.ok) lines.push(`Canonical: ${metadata.data?.metadata?.canonical_url || metadata.data?.final_url || target}`);
+    else lines.push(`Metadata: ${metadata.error}`);
+    if (discover.ok) lines.push(`Discovery: ${Number(discover.data?.sitemaps?.length || 0)} sitemaps · robots ${discover.data?.robots_status || "—"}`);
+    else lines.push(`Discovery: ${discover.error}`);
+    if (archive.ok) {
+      const snap = archive.data?.snapshot;
+      lines.push(`Archive: ${snap?.available ? `${snap.timestamp || "snapshot"} available` : "no snapshot reported"}`);
+    } else {
+      lines.push(`Archive: ${archive.error}`);
+    }
+    const identityLinks = metadata.ok ? metadata.data?.metadata?.identities || [] : [];
+    return {
+      status: page.ok || metadata.ok || discover.ok || archive.ok ? "ready" : "error",
+      summary: `${entityType === "domain" ? "Domain" : "URL"} acquisition captured page metadata, discovery, and archive context.`,
+      lines,
+      links: [
+        { label: "Open target", url: target },
+        ...identityLinks.slice(0, 4).map((identity) => ({ label: `${identity.platform}`, url: identity.url })),
+      ],
+      data: { page, metadata, discover, archive },
+      entity_type: entityType,
+      entity_key: entityKey,
+      entity_value: entityValue,
+      fetched_at: new Date().toISOString(),
+    };
+  }
+
+  if (entityType === "email") {
+    const domain = extractEmailDomain(entityValue);
+    if (!domain) {
+      return {
+        status: "error",
+        summary: "Email lead could not be normalized.",
+        lines: [`Input: ${entityValue}`],
+        links: [],
+        entity_type: entityType,
+        entity_key: entityKey,
+        entity_value: entityValue,
+        fetched_at: new Date().toISOString(),
+      };
+    }
+    const domainTask = await runPivotStructuredTask({ entityType: "domain", entityKey: `domain:${domain}`, entityValue: domain });
+    return {
+      ...domainTask,
+      summary: `Email lead normalized to domain ${domain} and captured ownership/discovery context.`,
+      entity_type: entityType,
+      entity_key: entityKey,
+      entity_value: entityValue,
+    };
+  }
+
+  const query = entityType === "phone" ? `"${entityValue}"` : `"${String(entityValue || "").trim()}"`;
+  return {
+    status: "ready",
+    summary: `${entityType} lead normalized for analyst follow-up.`,
+    lines: [
+      `Value: ${entityValue}`,
+      "No direct public page fetch target was derived, so BlueLens stored a scoped follow-up query instead.",
+    ],
+    links: [{ label: "Search", url: `https://www.google.com/search?q=${encodeURIComponent(query)}` }],
+    data: { query },
+    entity_type: entityType,
+    entity_key: entityKey,
+    entity_value: entityValue,
+    fetched_at: new Date().toISOString(),
+  };
+}
+
+function recordEntityConfidenceReview({ entityType, entityKey, entityValue, confidence }) {
+  if (!entityKey) return;
+  state.entityConfidence = state.entityConfidence || {};
+  const normalized = confidence || "unverified";
+  const previous = state.entityConfidence[entityKey] || "unverified";
+  if (normalized === previous) return;
+  state.entityConfidence[entityKey] = normalized;
+  appendReviewEntry(
+    "entityReviewLog",
+    createReviewEntry({
+      source: "manual",
+      scope: "ocr_entity",
+      field: "confidence",
+      value: normalized,
+      previousValue: previous,
+      entityType,
+      entityKey,
+      entityValue,
+      note: "Analyst confidence label",
+    }),
+  );
+}
+
+function buildCurrentOcrReviewEntries() {
+  const derived = Array.isArray(state.ocrDerivedEntries) ? state.ocrDerivedEntries.slice() : [];
+  const currentKeys = new Set(derived.map((entry) => entry.entity_key).filter(Boolean));
+  const manual = Array.isArray(state.entityReviewLog)
+    ? state.entityReviewLog.filter((entry) => !entry?.entity_key || currentKeys.has(entry.entity_key))
+    : [];
+  const merged = [...derived, ...manual];
+  return merged.length ? merged : null;
+}
+
+function formatReviewHistory(entries, empty = "- —") {
+  if (!Array.isArray(entries) || entries.length === 0) return empty;
+  return entries
+    .map((entry) => {
+      const scope = entry?.source || entry?.scope || "entry";
+      const target = entry?.field || entry?.entity_key || entry?.entity_type || "value";
+      const value = entry?.entity_value || entry?.value || "—";
+      const note = entry?.note ? ` · ${entry.note}` : "";
+      return `- ${entry?.ts || "—"} · ${scope} · ${target} · ${value}${note}`;
+    })
+    .join("\n");
 }
 
 function renderOnboardingStrip() {
@@ -554,6 +1248,9 @@ function setUiBusy(busy, label = "") {
     elements.btnEvidencePack,
     elements.missionPreset,
     elements.btnRunMission,
+    elements.btnIngestResults,
+    elements.btnClearResults,
+    elements.btnCopyResultsJson,
     elements.btnMutateSearch,
     elements.btnCopyMutations,
     elements.batchInput,
@@ -590,6 +1287,9 @@ async function withUiLock(label, fn) {
     setUiBusy(false);
     setButtonsEnabled(Boolean(state.file));
     setShareControlsEnabled(Boolean(state.file));
+    renderMissionOutput();
+    renderResultIntake();
+    if (elements.btnIngestResults) elements.btnIngestResults.disabled = !(state.file && (elements.resultIntakeInput?.value || "").trim());
     setStatusLine("");
   }
 }
@@ -680,6 +1380,8 @@ function reset() {
   state.ocrRunning = false;
   state.lastOcrMode = "not_run";
   state.entityConfidence = {};
+  state.entityReviewLog = [];
+  state.ocrDerivedEntries = [];
   state.lastEngineRun = null;
   state.batchReports = [];
   state.batchItems = [];
@@ -695,7 +1397,11 @@ function reset() {
     manual_notes: "",
     analyst_confidence: "unverified",
   };
+  state.sourceReviewLog = [];
   state.insights = { metadata_suspicion_score: null, metadata_suspicion_band: null, metadata_suspicion_inputs: [] };
+  state.missionOutput = null;
+  state.resultIntake = { raw: "", entries: [], last_ingested_at: null };
+  state.pivotTaskResults = {};
   state.mutations = [];
   if (state.compare?.objectUrl) URL.revokeObjectURL(state.compare.objectUrl);
   state.compare = { file: null, objectUrl: null, dhash: "", diffScore: null };
@@ -790,6 +1496,18 @@ function reset() {
   if (elements.mutationOut) elements.mutationOut.textContent = "—";
   if (elements.mutationOut) elements.mutationOut.classList.remove("mut-box");
   if (elements.btnCopyMutations) elements.btnCopyMutations.disabled = true;
+  if (elements.missionOutputOut) {
+    elements.missionOutputOut.classList.remove("mission-grid");
+    elements.missionOutputOut.textContent = "Run a recon mission to structure handles, domains, metadata, or engine swarm prep.";
+  }
+  if (elements.resultIntakeInput) elements.resultIntakeInput.value = "";
+  if (elements.resultIntakeSummary) {
+    elements.resultIntakeSummary.classList.remove("mission-grid");
+    elements.resultIntakeSummary.textContent = "No external findings ingested yet.";
+  }
+  if (elements.btnIngestResults) elements.btnIngestResults.disabled = true;
+  if (elements.btnClearResults) elements.btnClearResults.disabled = true;
+  if (elements.btnCopyResultsJson) elements.btnCopyResultsJson.disabled = true;
   elements.batchOut.textContent = "—";
   elements.btnDownloadBatch.disabled = true;
   if (elements.actionLogOut) {
@@ -821,6 +1539,44 @@ function openUrl(url) {
   }
 }
 
+function getRunEngines(run) {
+  return LAUNCHPAD_CORE.getRunEngines({ run, engineOrder: ENGINE_ORDER });
+}
+
+function updateRunQueueStatus(run, engine, patch = {}) {
+  return LAUNCHPAD_CORE.updateRunQueueStatus({ run, engine, patch, runQueueStatus: RUN_QUEUE_STATUS });
+}
+
+function persistLaunchpadRun(run) {
+  state.lastEngineRun = run || null;
+  saveLastRun(run || null);
+  renderEngineLaunchpad(run || null);
+}
+
+function openTargetsForRun(run, engines) {
+  return LAUNCHPAD_CORE.openTargetsForRun({
+    run,
+    engines,
+    engineOrder: ENGINE_ORDER,
+    openUrl,
+    updateRunQueueStatus,
+    runQueueStatus: RUN_QUEUE_STATUS,
+  });
+}
+
+function getMissionPresetLabel(preset) {
+  const labels = {
+    fast: "Quick OCR",
+    deep: "Deep OCR",
+    share_search: "Upload + Launchpad",
+    handle_recon: "Handle Recon",
+    domain_recon: "Domain Recon",
+    metadata_pass: "Metadata Pass",
+    cross_engine_swarm: "Swarm",
+  };
+  return labels[String(preset || "fast")] || "Quick OCR";
+}
+
 function renderEngineLaunchpad(run) {
   const el = elements.engineLinks;
   if (!el) return;
@@ -836,12 +1592,15 @@ function renderEngineLaunchpad(run) {
   const opened = r.opened && typeof r.opened === "object" ? r.opened : {};
   const blocked = r.blocked && typeof r.blocked === "object" ? r.blocked : {};
   const chosen = r.chosen && typeof r.chosen === "object" ? r.chosen : {};
+  const queue = r.queue && typeof r.queue === "object" ? r.queue : {};
+  const engines = getRunEngines(r);
 
-  const chips = ENGINE_ORDER.map((eng) => {
+  const chips = engines.map((eng) => {
     const url = r.targets?.[eng] || "";
     const on = chosen?.[eng] !== false;
-    const st = blocked?.[eng] ? "blocked" : opened?.[eng] ? "opened" : "";
-    const title = blocked?.[eng] ? "Popup blocked" : opened?.[eng] ? "Opened" : "Not opened";
+    const queueState = queue?.[eng] || {};
+    const st = blocked?.[eng] ? "blocked" : opened?.[eng] ? "opened" : queueState.status || "";
+    const title = blocked?.[eng] ? "Popup blocked" : opened?.[eng] ? "Opened" : queueState.status ? `State: ${queueState.status}` : "Prepared";
     const disabled = url ? "" : "disabled";
     return `
       <label class="engine-chip ${st} ${disabled}" title="${escapeAttr(title)}">
@@ -852,17 +1611,42 @@ function renderEngineLaunchpad(run) {
     `;
   }).join("");
 
+  const queueCards = engines
+    .map((eng) => {
+      const q = queue?.[eng] || {};
+      const status = blocked?.[eng] ? RUN_QUEUE_STATUS.blocked : opened?.[eng] ? RUN_QUEUE_STATUS.opened : q.status || (r.targets?.[eng] ? RUN_QUEUE_STATUS.prepared : "idle");
+      const detail = [
+        q.job_id ? `job ${q.job_id.slice(0, 12)}…` : "",
+        Number.isFinite(q.attempts) && q.attempts > 0 ? `attempts ${q.attempts}` : "",
+        q.detail || "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      return `
+        <div class="lp-queue-card ${escapeAttr(status)}">
+          <div class="lp-queue-head">
+            <div>${escapeHtml(ENGINE_LABEL[eng] || eng)}</div>
+            <div class="lp-queue-status">${escapeHtml(status)}</div>
+          </div>
+          <div class="lp-queue-meta">${escapeHtml(detail || "No queue detail recorded.")}</div>
+        </div>
+      `;
+    })
+    .join("");
+
   el.classList.add("launchpad");
   el.hidden = false;
   el.innerHTML = `
     <div class="lp-top">
-      <div class="lp-title">Launchpad</div>
-      <div class="lp-meta">${escapeHtml(ts ? `Last: ${ts}` : "")}</div>
+      <div class="lp-title">${escapeHtml(r.mode === "swarm" ? "Swarm Cockpit" : "Launchpad")}</div>
+      <div class="lp-meta">${escapeHtml(ts ? `Last: ${ts}` : "")}${r.url ? ` · URL ready` : ""}</div>
     </div>
     <div class="lp-chips">${chips}</div>
+    ${queueCards ? `<div class="lp-queue">${queueCards}</div>` : ""}
     <div class="lp-actions">
       <button class="btn btn-secondary btn-small" type="button" data-lp-open="chosen" title="Open checked engines">Open chosen</button>
       <button class="btn btn-ghost btn-small" type="button" data-lp-open="all" title="Open all engines">Open all</button>
+      <button class="btn btn-ghost btn-small" type="button" data-lp-open="pending" title="Retry blocked or queued engines">Retry pending</button>
     </div>
   `;
 }
@@ -894,30 +1678,18 @@ function setupEngineLaunchpad() {
     if (!r || !r.targets) return;
 
     const chosen = r.chosen && typeof r.chosen === "object" ? r.chosen : {};
-    const openList =
-      mode === "chosen"
-        ? ENGINE_ORDER.filter((eng) => chosen?.[eng] !== false && r.targets?.[eng])
-        : ENGINE_ORDER.filter((eng) => r.targets?.[eng]);
-
-    // Synchronous opens: must stay inside click handler.
-    r.opened = {};
-    r.blocked = {};
-    for (const eng of openList) {
-      const url = r.targets[eng];
-      try {
-        const w = openUrl(url);
-        if (w) r.opened[eng] = true;
-        else r.blocked[eng] = true;
-      } catch {
-        r.blocked[eng] = true;
-      }
+    const queue = r.queue && typeof r.queue === "object" ? r.queue : {};
+    let openList = ENGINE_ORDER.filter((eng) => r.targets?.[eng]);
+    if (mode === "chosen") {
+      openList = openList.filter((eng) => chosen?.[eng] !== false);
+    } else if (mode === "pending") {
+      openList = openList.filter((eng) =>
+        [RUN_QUEUE_STATUS.queued, RUN_QUEUE_STATUS.blocked, RUN_QUEUE_STATUS.error].includes(String(queue?.[eng]?.status || "")),
+      );
     }
-
-    r.ts = Date.now();
-    state.lastEngineRun = r;
-    saveLastRun(r);
-    renderEngineLaunchpad(r);
-    setStatusLine(`Launchpad: opened ${openList.length}${Object.keys(r.blocked).length ? " (some blocked)" : ""}`);
+    const { openedCount, blockedCount } = openTargetsForRun(r, openList);
+    persistLaunchpadRun(r);
+    setStatusLine(`Launchpad: opened ${openedCount}${blockedCount ? ` · blocked ${blockedCount}` : ""}`);
   });
 }
 
@@ -932,8 +1704,7 @@ function setupSimpleUi() {
 
   const syncRunLabel = () => {
     if (!elements.btnRunMission || !elements.missionPreset) return;
-    const p = elements.missionPreset.value || "fast";
-    elements.btnRunMission.textContent = p === "share_search" ? "Upload + Launchpad" : p === "deep" ? "Deep OCR" : "Quick OCR";
+    elements.btnRunMission.textContent = getMissionPresetLabel(elements.missionPreset.value || "fast");
   };
   elements.missionPreset.addEventListener("change", syncRunLabel);
   syncRunLabel();
@@ -976,13 +1747,13 @@ function publishWaitState(jobId, data) {
   }
 }
 
-function openWaitJob(engine, label) {
+function openWaitJob(engine, label, { initialStatus = RUN_QUEUE_STATUS.uploading } = {}) {
   const jobId = newWaitJobId();
   const waitUrl = `/wait.html?job=${encodeURIComponent(jobId)}&engine=${encodeURIComponent(engine)}&label=${encodeURIComponent(label || "")}`;
-  openUrl(waitUrl);
-  publishWaitState(jobId, { engine, label: label || "", status: "uploading" });
-  logAction("wait_tab_opened", `${engine}${label ? ` (${label})` : ""}`);
-  return jobId;
+  const opened = Boolean(openUrl(waitUrl));
+  publishWaitState(jobId, { engine, label: label || "", status: initialStatus });
+  logAction(opened ? "wait_tab_opened" : "wait_tab_blocked", `${engine}${label ? ` (${label})` : ""}`);
+  return { jobId, opened };
 }
 
 function isFunModeEnabled() {
@@ -1162,6 +1933,7 @@ function renderBatchDashboard() {
   }
 
   const clusters = clusterBatchItems(items, DHASH_BATCH_CLUSTER_THRESHOLD);
+  const entityClusters = getBatchEntityClusters(items).slice(0, 10);
 
   const applyFilters = () => {
     const q = String(state.batchUi.query || "").toLowerCase().trim();
@@ -1210,6 +1982,25 @@ function renderBatchDashboard() {
     })
     .join("");
 
+  const entitySummary = entityClusters
+    .map((cluster) => {
+      const files = Array.isArray(cluster.files) ? cluster.files.join(", ") : "—";
+      return `
+        <div class="entity-cluster-card">
+          <div class="entity-cluster-head">
+            <div>${escapeHtml(cluster.value)}</div>
+            <div class="meta">${escapeHtml(`${cluster.type} · files ${cluster.file_count}`)}</div>
+          </div>
+          <div class="entity-cluster-files">${escapeHtml(files)}</div>
+          <div class="dash-tags">
+            <button class="btn btn-secondary btn-small" type="button" data-batch-entity-open="${escapeAttr(cluster.key)}">Open follow-up</button>
+            <button class="btn btn-ghost btn-small" type="button" data-batch-entity-mission="${escapeAttr(cluster.key)}">Seed mission</button>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+
   const selected = state.batchUi.selected && typeof state.batchUi.selected === "object" ? state.batchUi.selected : {};
   const selectedCount = Object.values(selected).filter(Boolean).length;
 
@@ -1235,6 +2026,7 @@ function renderBatchDashboard() {
       ${clusterChips || ""}
     </div>
     ${clusterSummary ? `<div class="cluster-summary">${clusterSummary}</div>` : ""}
+    ${entitySummary ? `<div class="entity-cluster-summary">${entitySummary}</div>` : ""}
   `;
 
   const rows = sorted
@@ -1320,6 +2112,34 @@ function renderBatchDashboard() {
       const nEl = el.querySelector?.("[data-batch-ocr-n]");
       const n = nEl ? Number(nEl.value) : 8;
       void runBatchOcrTopCandidates(n);
+      return;
+    }
+    const entityOpen = e.target?.getAttribute?.("data-batch-entity-open");
+    if (entityOpen) {
+      const cluster = entityClusters.find((row) => row.key === entityOpen);
+      if (!cluster) return;
+      for (const url of buildBatchEntityFollowUps(cluster)) openUrl(url);
+      setStatus(`Batch ${cluster.type} recon`);
+      setStatusLine(`${cluster.value} · files ${cluster.file_count}`);
+      return;
+    }
+    const entityMission = e.target?.getAttribute?.("data-batch-entity-mission");
+    if (entityMission) {
+      const cluster = entityClusters.find((row) => row.key === entityMission);
+      if (!cluster) return;
+      setMissionOutput({
+        mission: "batch_entity_recon",
+        summary: `Batch ${cluster.type} recon for ${cluster.value} across ${cluster.file_count} files.`,
+        items: [
+          {
+            label: cluster.value,
+            meta: `${cluster.type} · seen in ${cluster.file_count} files`,
+            lines: [`Files: ${(cluster.files || []).join(", ")}`, "Scoped follow-up targets prepared from the aggregated batch pivot."],
+            links: buildBatchEntityFollowUps(cluster).map((url, index) => ({ label: `Follow-up ${index + 1}`, url })),
+          },
+        ],
+      });
+      setStatus("Mission output updated");
     }
   };
 
@@ -1381,7 +2201,7 @@ async function openBatchTopLens(n = BATCH_TOP_LENS_DEFAULT) {
   const jobIds = [];
   for (let i = 0; i < pick.length; i += 1) {
     const label = `Batch · Lens · ${pick[i].report?.file?.name || `#${i + 1}`}`;
-    jobIds.push(openWaitJob("lens", label));
+    jobIds.push(openWaitJob("lens", label).jobId);
   }
 
   await withUiLock("Top lens…", async () => {
@@ -1413,7 +2233,7 @@ async function openBatchSelectedLens() {
   const jobIds = [];
   for (let i = 0; i < pick.length; i += 1) {
     const label = `Batch · Selected · Lens · ${pick[i].report?.file?.name || `#${i + 1}`}`;
-    jobIds.push(openWaitJob("lens", label));
+    jobIds.push(openWaitJob("lens", label).jobId);
   }
 
   await withUiLock(`Selected lens (${pick.length})…`, async () => {
@@ -1486,12 +2306,136 @@ async function runBatchOcrTopCandidates(n = BATCH_OCR_DEFAULT) {
   });
 }
 
+function ensureMissionShareEnabled(promptText) {
+  if (state.shareEnabled) return true;
+  const ok = window.confirm(promptText);
+  if (!ok) return false;
+  state.shareEnabled = true;
+  elements.chkEnableShare.checked = true;
+  setShareControlsEnabled(true);
+  return true;
+}
+
+async function ensureReconContext({ mode = "deep" } = {}) {
+  if (!state.ocrText) {
+    try {
+      await runOcrForCurrent({ mode });
+    } catch (error) {
+      reportNonFatalError("mission.ocr", error, { harmless: true, dedupeMs: 5000 });
+    }
+  }
+  return normalizeReconEntities(state.ocrText || "");
+}
+
+function createEngineRunRecord({ engines = ENGINE_ORDER, mode = "launchpad", url = "", artifact = state.publicUrlArtifact || "original" } = {}) {
+  return LAUNCHPAD_CORE.createEngineRunRecord({
+    engines,
+    mode,
+    url,
+    artifact,
+    reverseSearchUrl,
+    runQueueStatus: RUN_QUEUE_STATUS,
+  });
+}
+
+function buildMissionSummaryOutput(title, lines = []) {
+  return {
+    mission: title.toLowerCase().replace(/\s+/g, "_"),
+    summary: title,
+    items: [{ label: title, meta: "mission summary", lines }],
+  };
+}
+
+async function prepareLaunchpadRun({ engines = ENGINE_ORDER, openLens = true, mode = "launchpad", labelPrefix = "Launchpad" } = {}) {
+  return await LAUNCHPAD_CORE.prepareLaunchpadRun({
+    engines,
+    openLens,
+    mode,
+    labelPrefix,
+    createRun: createEngineRunRecord,
+    openWaitJob,
+    updateRunQueueStatus,
+    persistRun: persistLaunchpadRun,
+    ensurePublicUrl,
+    reverseSearchUrl,
+    publishWaitState,
+    runQueueStatus: RUN_QUEUE_STATUS,
+    getArtifact: () => state.publicUrlArtifact || "original",
+  });
+}
+
+async function prepareEngineSwarm({ engines = ENGINE_ORDER, labelPrefix = "Swarm" } = {}) {
+  return await LAUNCHPAD_CORE.prepareEngineSwarm({
+    engines,
+    labelPrefix,
+    createRun: createEngineRunRecord,
+    openWaitJob,
+    updateRunQueueStatus,
+    persistRun: persistLaunchpadRun,
+    ensurePublicUrl,
+    reverseSearchUrl,
+    publishWaitState,
+    runQueueStatus: RUN_QUEUE_STATUS,
+    getArtifact: () => state.publicUrlArtifact || "original",
+    sleep,
+    delayMs: ENGINE_SWARM_DELAY_MS,
+    engineLabel: ENGINE_LABEL,
+  });
+}
+
+async function prepareLaunchpad({
+  openLens = true,
+  autoEnableShare = false,
+  source = "launchpad",
+  busyLabel = "Preparing engine links…",
+  prompt = "To prepare provider links from one upload, BlueLens needs one temporary public handoff URL. Allow the upload?",
+  labelPrefix = "Launchpad",
+  summaryTitle = "Prepare Engine Links",
+  summaryLines = [],
+  successStatusLine = "Launchpad ready",
+} = {}) {
+  if (!state.file || state.uiBusy) return null;
+
+  if (!state.shareEnabled) {
+    if (!autoEnableShare) {
+      const ok = ensureMissionShareEnabled(prompt);
+      if (!ok) return null;
+    } else {
+      state.shareEnabled = true;
+      elements.chkEnableShare.checked = true;
+      setShareControlsEnabled(true);
+    }
+  }
+
+  return await withUiLock(busyLabel, async () => {
+    const run = await prepareLaunchpadRun({ engines: ENGINE_ORDER, openLens, mode: "launchpad", labelPrefix });
+    logAction("launchpad_prepared", `source=${source} targets=${Object.keys(run.targets || {}).length} artifact=${run.artifact}`);
+
+    state.session = loadSession();
+    if (openLens) state.session.engines_opened += 1;
+    saveSession();
+    void refreshHostStats();
+
+    triggerGlitterStorm(68);
+    setMissionOutput(buildMissionSummaryOutput(summaryTitle, summaryLines));
+    setStatusLine(successStatusLine);
+    setStatus("Ready");
+    return run;
+  }).catch((e) => {
+    setShareStatus("Upload failed");
+    const msg = e?.message || "unknown error";
+    elements.publicUrlOut.textContent = `Upload failed: ${msg}`;
+    return null;
+  });
+}
+
 async function runMissionPreset(preset) {
   if (!state.file) return;
   if (state.uiBusy) return;
   const p = String(preset || "fast");
 
-  await withUiLock(p === "share_search" ? "Upload + launchpad…" : p === "deep" ? "Deep OCR…" : "Quick OCR…", async () => {
+  const missionBusyLabel = `${getMissionPresetLabel(p)}…`;
+  await withUiLock(missionBusyLabel, async () => {
     const base = `Hashes: ✓ · EXIF: ✓`;
     if (p === "fast") {
       setStatusLine(`${base} · OCR: …`);
@@ -1524,48 +2468,59 @@ async function runMissionPreset(preset) {
     }
 
     if (p === "share_search") {
-      // Reduce popup chaos: open ONE tab (Lens) + render launchpad for the rest.
-      const engines = ["lens", "bing", "tineye", "yandex", "google_images"];
-      const jobId = openWaitJob("lens", "Mission · Lens");
+      await prepareLaunchpad({
+        openLens: true,
+        autoEnableShare: false,
+        source: "mission:share_search",
+        busyLabel: "Preparing mission launchpad…",
+        prompt: "Launchpad mission needs one temporary public upload to prepare reverse-search targets. Allow the upload?",
+        labelPrefix: "Mission",
+        summaryTitle: "Upload + Launchpad",
+        summaryLines: [
+          `Prepared ${ENGINE_ORDER.length} engine targets from one upload`,
+          "Result intake queue remains live for pasted findings and deduped analyst merge",
+        ],
+        successStatusLine: "Upload: ✓ · Lens: ✓ · Launchpad ready",
+      });
+      return;
+    }
 
-      if (!state.shareEnabled) {
-        state.shareEnabled = true;
-        elements.chkEnableShare.checked = true;
-        setShareControlsEnabled(true);
-      }
+    if (p === "handle_recon") {
+      const context = await ensureReconContext({ mode: "deep" });
+      setMissionOutput(buildHandleReconOutput(context));
+      setStatusLine(context.handles.length ? `Handle recon: ${context.handles.length} handles normalized` : "Handle recon: no stable handles found");
+      setStatus("Ready");
+      return;
+    }
 
-      setStatusLine("Upload: … · Lens: …");
-      const url = await ensurePublicUrl({ purpose: "lens" });
-      publishWaitState(jobId, { url });
+    if (p === "domain_recon") {
+      const context = await ensureReconContext({ mode: "deep" });
+      setMissionOutput(buildDomainReconOutput(context));
+      setStatusLine(context.domains.length ? `Domain recon: ${context.domains.length} domains normalized` : "Domain recon: no domains found");
+      setStatus("Ready");
+      return;
+    }
 
-      const targets = engines.map((e) => reverseSearchUrl(e, url));
-      const run = {
-        ts: Date.now(),
-        url,
-        token: jobId,
-        artifact: state.publicUrlArtifact || "original",
-        targets: {
-          lens: targets[0],
-          bing: targets[1],
-          tineye: targets[2],
-          yandex: targets[3],
-          google_images: targets[4],
-        },
-        chosen: { lens: true, bing: true, tineye: true, yandex: true, google_images: true },
-        opened: { lens: true },
-        blocked: {},
-      };
-      state.lastEngineRun = run;
-      saveLastRun(run);
-      renderEngineLaunchpad(run);
-      logAction("launchpad_prepared", `targets=${Object.keys(run.targets || {}).length} artifact=${run.artifact}`);
+    if (p === "metadata_pass") {
+      setMissionOutput(buildMetadataPassOutput());
+      setStatusLine("Metadata pass: structured local capture and provenance cues");
+      setStatus("Ready");
+      return;
+    }
 
+    if (p === "cross_engine_swarm") {
+      if (!ensureMissionShareEnabled("Cross-engine swarm opens queued wait tabs for every configured engine and uses one temporary upload for the shared handoff. Allow it?")) return;
+      setStatusLine("Swarm: staging wait tabs…");
+      const run = await prepareEngineSwarm({ engines: ENGINE_ORDER, labelPrefix: "Swarm" });
       state.session = loadSession();
-      state.session.engines_opened += 1;
+      state.session.engines_opened += ENGINE_ORDER.length;
       saveSession();
       void refreshHostStats();
-
-      setStatusLine("Upload: ✓ · Lens: ✓ · Launchpad ready");
+      setMissionOutput(buildMissionSummaryOutput("Cross-Engine Swarm", [
+        `Queued ${ENGINE_ORDER.length} engine waits with throttled handoff`,
+        `Swarm cockpit now tracks per-engine state, retries, and reopen status`,
+      ]));
+      setStatusLine("Swarm: queued and ready");
       setStatus("Ready");
     }
   });
@@ -1663,7 +2618,18 @@ async function uploadViaLocalProxy(file, purpose = "") {
   }
 
   if (parsed && typeof parsed === "object" && parsed.url) {
-    state.uploadMeta = { host: parsed.host || null, ms: parsed.ms || null, attempts: parsed.attempts || null };
+    const host = parsed.host || null;
+    state.uploadMeta = {
+      host,
+      ms: parsed.ms || null,
+      attempts: parsed.attempts || null,
+      created_at: new Date().toISOString(),
+      purpose: purpose || null,
+      expected_expiry_window: uploadExpiryWindowForHost(host),
+      retention_note: uploadRetentionNoteForHost(host),
+      temporary_external_artifact: true,
+      temporary_external_artifact_warning: TEMP_EXTERNAL_ARTIFACT_WARNING,
+    };
     state.session = loadSession();
     state.session.uploads_ok += 1;
     state.session.last_host = String(parsed.host || "");
@@ -1793,21 +2759,11 @@ async function handleQuickJump(engine) {
   if (!state.file) return;
   if (state.uiBusy) return;
 
-  if (!state.shareEnabled) {
-    const ok = window.confirm(
-      "To open reverse-search provider pages from one click, this will upload your image to a temporary file host to generate a public URL. Allow the upload?",
-    );
-    if (!ok) {
-      openUrl(reverseSearchUploadPage(engine));
-      return;
-    }
-    state.shareEnabled = true;
-    elements.chkEnableShare.checked = true;
-    setShareControlsEnabled(true);
+  if (!ensureMissionShareEnabled("To open a provider in one step, BlueLens needs one temporary public upload for the handoff URL. Allow the upload?")) {
+    openUrl(reverseSearchUploadPage(engine));
+    return;
   }
 
-  // Popup blockers: open a wait tab immediately, then upload.
-  const jobId = newWaitJobId();
   const label =
     engine === "lens"
       ? "Lens"
@@ -1816,88 +2772,58 @@ async function handleQuickJump(engine) {
         : engine === "tineye"
           ? "TinEye"
           : engine === "yandex"
-            ? "Yandex"
-            : "Google Images";
-  const waitUrl = `/wait.html?job=${encodeURIComponent(jobId)}&engine=${encodeURIComponent(engine)}&label=${encodeURIComponent(label)}`;
-  openUrl(waitUrl);
+          ? "Yandex"
+          : "Google Images";
+  const waitJob = openWaitJob(engine, label);
+  const run = createEngineRunRecord({ engines: [engine], mode: "quick_jump" });
+  updateRunQueueStatus(run, engine, {
+    job_id: waitJob.jobId,
+    attempts: 1,
+    status: waitJob.opened ? RUN_QUEUE_STATUS.uploading : RUN_QUEUE_STATUS.blocked,
+    detail: waitJob.opened ? "Quick jump wait tab is awaiting upload handoff" : "Quick jump wait tab was blocked",
+  });
+  if (!waitJob.opened) run.blocked[engine] = true;
+  persistLaunchpadRun(run);
   state.session = loadSession();
   state.session.engines_opened += 1;
   saveSession();
   void refreshHostStats();
-  publishWaitState(jobId, { engine, label, status: "uploading" });
 
   await withUiLock("Uploading…", async () => {
     try {
       const url = await ensurePublicUrl({ purpose: engine === "lens" ? "lens" : "" });
-      publishWaitState(jobId, { url });
+      run.url = url;
+      run.targets[engine] = reverseSearchUrl(engine, url);
+      updateRunQueueStatus(run, engine, { status: RUN_QUEUE_STATUS.ready, detail: "Provider target prepared from upload handoff" });
+      publishWaitState(waitJob.jobId, { url });
+      persistLaunchpadRun(run);
       setStatus("Ready");
     } catch (e) {
       const msg = e?.message || "unknown error";
       setShareStatus("Upload failed");
       elements.publicUrlOut.textContent = `Upload failed: ${msg}`;
-      publishWaitState(jobId, { err: msg });
+      updateRunQueueStatus(run, engine, { status: RUN_QUEUE_STATUS.error, detail: msg });
+      publishWaitState(waitJob.jobId, { err: msg });
+      persistLaunchpadRun(run);
       openUrl(reverseSearchUploadPage(engine));
     }
   });
 }
 
 async function handleSearchAll({ autoEnableShare = false, openLens = true } = {}) {
-  if (!state.file) return;
-  if (state.uiBusy) return;
-
-  const engines = ["lens", "bing", "tineye", "yandex", "google_images"];
-  const jobId = openLens ? openWaitJob("lens", "Lens") : "";
-
-  if (!state.shareEnabled) {
-    if (!autoEnableShare) {
-      const ok = window.confirm(
-        "To prepare provider links from one upload, this will upload your image to a temporary file host to generate a public URL. Allow the upload?",
-      );
-      if (!ok) return;
-    }
-    state.shareEnabled = true;
-    elements.chkEnableShare.checked = true;
-    setShareControlsEnabled(true);
-  }
-
-  await withUiLock("Preparing engine links…", async () => {
-    const url = await ensurePublicUrl({ purpose: "lens" });
-    if (jobId) publishWaitState(jobId, { url });
-
-    const targets = engines.map((e) => reverseSearchUrl(e, url));
-    const run = {
-      ts: Date.now(),
-      url,
-      token: jobId,
-      artifact: state.publicUrlArtifact || "original",
-      targets: {
-        lens: targets[0],
-        bing: targets[1],
-        tineye: targets[2],
-        yandex: targets[3],
-        google_images: targets[4],
-      },
-      chosen: { lens: true, bing: true, tineye: true, yandex: true, google_images: true },
-      opened: openLens ? { lens: true } : {},
-      blocked: {},
-    };
-    state.lastEngineRun = run;
-    saveLastRun(run);
-    renderEngineLaunchpad(run);
-    logAction("launchpad_prepared", `targets=${Object.keys(run.targets || {}).length} artifact=${run.artifact}`);
-
-    state.session = loadSession();
-    if (openLens) state.session.engines_opened += 1;
-    saveSession();
-    void refreshHostStats();
-
-    triggerGlitterStorm(68);
-    setStatus("Ready");
-  }).catch((e) => {
-    setShareStatus("Upload failed");
-    const msg = e?.message || "unknown error";
-    elements.publicUrlOut.textContent = `Upload failed: ${msg}`;
-    if (jobId) publishWaitState(jobId, { err: msg });
+  await prepareLaunchpad({
+    openLens,
+    autoEnableShare,
+    source: "search-all",
+    busyLabel: "Preparing engine links…",
+    prompt: "To prepare provider links from one upload, BlueLens needs one temporary public handoff URL. Allow the upload?",
+    labelPrefix: "Launchpad",
+    summaryTitle: "Prepare Engine Links",
+    summaryLines: [
+      `Prepared ${ENGINE_ORDER.length} engine targets from one upload`,
+      "Paste titles, snippets, and URLs back into Result Intake so BlueLens can normalize and dedupe the findings",
+    ],
+    successStatusLine: openLens ? "Upload: ✓ · Lens: ✓ · Launchpad ready" : "Upload: ✓ · Launchpad ready",
   });
 }
 
@@ -2194,8 +3120,17 @@ function buildPivotSearchUrlsFromEntities(ent) {
     urls.add(u);
   };
   for (const u of (ent?.urls || []).slice(0, 5)) add(u);
+  for (const u of (ent?.urls || []).slice(0, 5)) add(`https://web.archive.org/web/*/${encodeURIComponent(u)}`);
   for (const e of (ent?.emails || []).slice(0, 6)) add(google(`"${e}"`));
   for (const p of (ent?.phones || []).slice(0, 4)) add(google(`"${p}"`));
+  for (const person of (ent?.people || []).slice(0, 4)) add(google(`"${person}"`));
+  for (const org of (ent?.organizations || []).slice(0, 4)) add(google(`"${org}"`));
+  for (const loc of (ent?.locations || []).slice(0, 4)) {
+    add(google(`"${loc}" location`));
+    add(`https://www.google.com/maps/search/${encodeURIComponent(loc)}`);
+  }
+  for (const date of (ent?.dates || []).slice(0, 4)) add(google(`"${date}"`));
+  for (const alias of (ent?.aliases || []).slice(0, 4)) add(google(`"${alias}"`));
   for (const hRaw of (ent?.handles || []).slice(0, 8)) {
     const h = String(hRaw || "").replace(/^@/, "").trim();
     if (!h) continue;
@@ -2213,6 +3148,7 @@ function buildPivotSearchUrlsFromEntities(ent) {
       add(`https://www.whois.com/whois/${encodeURIComponent(host)}`);
       add(`https://dns.google/resolve?name=${encodeURIComponent(host)}&type=A`);
       add(`https://crt.sh/?q=${encodeURIComponent(host)}`);
+      add(`https://web.archive.org/web/*/${encodeURIComponent(`https://${host}/*`)}`);
     } catch (error) {
       reportNonFatalError("pivot.domains.parse", error, { harmless: true, detail: { value: u }, dedupeMs: 5000 });
     }
@@ -2229,6 +3165,9 @@ function buildMarkdownReport(report) {
   const capturedAt = kf.captured_at || null;
   const sr = r.source_reliability || {};
   const entities = kf.ocr_entities || {};
+  const upload = r.upload || {};
+  const sourceReviewEntries = Array.isArray(sr.review_entries) ? sr.review_entries : [];
+  const ocrReviewEntries = Array.isArray(kf.ocr_entity_review_entries) ? kf.ocr_entity_review_entries : [];
 
   const lines = [];
   lines.push(`# OSINT Report`);
@@ -2274,7 +3213,12 @@ function buildMarkdownReport(report) {
   lines.push(`- URL: ${r.public_url ? `${r.public_url}` : "—"}`);
   lines.push(`- Upload artifact: \`${r.public_upload_artifact || "—"}\``);
   lines.push(`- Share safe: \`${r.share_safe ? "on" : "off"}\``);
-  lines.push(`- Upload host: \`${r.upload?.host || "—"}\``);
+  lines.push(`- Upload host: \`${upload.host || "—"}\``);
+  lines.push(`- Created: ${upload.created_at ? `\`${upload.created_at}\`` : "—"}`);
+  lines.push(`- Purpose: ${upload.purpose ? `\`${upload.purpose}\`` : "—"}`);
+  lines.push(`- Expected expiry window: ${upload.expected_expiry_window ? `\`${upload.expected_expiry_window}\`` : "—"}`);
+  lines.push(`- Retention note: ${upload.retention_note || "—"}`);
+  lines.push(`- Warning: ${upload.temporary_external_artifact_warning || "—"}`);
   if (r.export_metadata?.runtime_config_fingerprint) lines.push(`- Runtime fingerprint: \`${r.export_metadata.runtime_config_fingerprint}\``);
   lines.push("");
   lines.push(`## OCR Pivots`);
@@ -2282,10 +3226,25 @@ function buildMarkdownReport(report) {
   const e = Array.isArray(entities.emails) ? entities.emails.slice(0, 8) : [];
   const h = Array.isArray(entities.handles) ? entities.handles.slice(0, 8) : [];
   const p = Array.isArray(entities.phones) ? entities.phones.slice(0, 6) : [];
+  const people = Array.isArray(entities.people) ? entities.people.slice(0, 6) : [];
+  const orgs = Array.isArray(entities.organizations) ? entities.organizations.slice(0, 6) : [];
+  const locations = Array.isArray(entities.locations) ? entities.locations.slice(0, 6) : [];
+  const dates = Array.isArray(entities.dates) ? entities.dates.slice(0, 6) : [];
+  const aliases = Array.isArray(entities.aliases) ? entities.aliases.slice(0, 6) : [];
   lines.push(`- URLs: ${u.length ? u.map((x) => x).join(" · ") : "—"}`);
   lines.push(`- Emails: ${e.length ? e.map((x) => `\`${x}\``).join(" · ") : "—"}`);
   lines.push(`- Handles: ${h.length ? h.map((x) => `\`${x}\``).join(" · ") : "—"}`);
   lines.push(`- Phones: ${p.length ? p.map((x) => `\`${x}\``).join(" · ") : "—"}`);
+  lines.push(`- People: ${people.length ? people.map((x) => `\`${x}\``).join(" · ") : "—"}`);
+  lines.push(`- Organizations: ${orgs.length ? orgs.map((x) => `\`${x}\``).join(" · ") : "—"}`);
+  lines.push(`- Locations: ${locations.length ? locations.map((x) => `\`${x}\``).join(" · ") : "—"}`);
+  lines.push(`- Dates: ${dates.length ? dates.map((x) => `\`${x}\``).join(" · ") : "—"}`);
+  lines.push(`- Aliases: ${aliases.length ? aliases.map((x) => `\`${x}\``).join(" · ") : "—"}`);
+  lines.push(`- Review entry count: \`${ocrReviewEntries.length}\``);
+  lines.push(`- Structured task count: \`${r.key_fields?.ocr_entity_tasks ? Object.keys(r.key_fields.ocr_entity_tasks).length : 0}\``);
+  lines.push("");
+  lines.push(`### OCR Annotation History`);
+  lines.push(formatReviewHistory(ocrReviewEntries));
   lines.push("");
   lines.push(`## Source Reliability`);
   lines.push(`- Where: ${sr.where_obtained ? `\`${sr.where_obtained}\`` : "—"}`);
@@ -2295,6 +3254,9 @@ function buildMarkdownReport(report) {
   lines.push(`- Analyst confidence (manual): \`${sr.analyst_confidence || "unverified"}\``);
   lines.push(`- Manual notes: ${sr.manual_notes ? `\`${sr.manual_notes}\`` : "—"}`);
   lines.push("");
+  lines.push(`### Source Review History`);
+  lines.push(formatReviewHistory(sourceReviewEntries));
+  lines.push("");
   lines.push(`## Launchpad`);
   const targets = r.launchpad?.targets || {};
   const targetList = Object.entries(targets)
@@ -2303,6 +3265,14 @@ function buildMarkdownReport(report) {
   lines.push(`- Targets: ${targetList.length ? targetList.join(" · ") : "—"}`);
   lines.push(`- OCR mode: \`${r.ocr?.mode || "—"}\``);
   lines.push(`- OCR language: \`${r.ocr?.selected_model || "—"}\``);
+  lines.push("");
+  lines.push(`## Mission Output`);
+  lines.push(`- Summary: ${r.mission_output?.summary ? `\`${r.mission_output.summary}\`` : "—"}`);
+  lines.push(`- Item count: \`${Array.isArray(r.mission_output?.items) ? r.mission_output.items.length : 0}\``);
+  lines.push("");
+  lines.push(`## Result Intake`);
+  lines.push(`- Deduped entries: \`${Array.isArray(r.result_intake?.entries) ? r.result_intake.entries.length : 0}\``);
+  lines.push(`- Last ingested: ${r.result_intake?.last_ingested_at ? `\`${r.result_intake.last_ingested_at}\`` : "—"}`);
   lines.push("");
   lines.push(`## Action Log`);
   const actionLog = Array.isArray(r.session_action_log) ? r.session_action_log : [];
@@ -2476,6 +3446,7 @@ function normalizeCapturedAt(exifObj) {
 }
 
 function buildExportMetadata({ ocrMode = state.lastOcrMode || "not_run", ocrLanguage = elements.ocrLang?.value || OCR_DEFAULT_LANGUAGE, uploadMeta = state.uploadMeta ? { ...state.uploadMeta } : null } = {}) {
+  const upload = buildUploadLifecycleMeta(uploadMeta, uploadMeta?.purpose || state.publicUrlPurpose || "");
   return {
     schema_version: EXPORT_SCHEMA_VERSION,
     app_version: APP_VERSION,
@@ -2493,9 +3464,14 @@ function buildExportMetadata({ ocrMode = state.lastOcrMode || "not_run", ocrLang
     upload_host_metadata: {
       preferred_host_order: SERVER_CONFIG.upload?.hosts || [],
       preferred_hosts_by_purpose: SERVER_CONFIG.upload?.preferredHostsByPurpose || {},
-      selected_host: uploadMeta?.host || null,
-      selected_host_latency_ms: uploadMeta?.ms || null,
-      attempt_count: Array.isArray(uploadMeta?.attempts) ? uploadMeta.attempts.length : null,
+      selected_host: upload?.host || null,
+      selected_host_latency_ms: upload?.ms || null,
+      attempt_count: Array.isArray(upload?.attempts) ? upload.attempts.length : null,
+      selected_strategy: elements.shareProvider?.value || null,
+      created_at: upload?.created_at || null,
+      expected_expiry_window: upload?.expected_expiry_window || null,
+      retention_note: upload?.retention_note || null,
+      temporary_external_artifact_warning: upload?.temporary_external_artifact_warning || null,
     },
   };
 }
@@ -2947,12 +3923,16 @@ function extractPivotsFromReport(report) {
 function buildOsintReport() {
   const keyFields = extractKeyFieldsObj(state.exif);
   const exportMetadata = buildExportMetadata();
+  const upload = buildUploadLifecycleMeta();
   return {
     schema_version: EXPORT_SCHEMA_VERSION,
     app_version: APP_VERSION,
     generated_at: new Date().toISOString(),
     export_metadata: exportMetadata,
-    source_reliability: { ...state.sourceInfo },
+    source_reliability: {
+      ...state.sourceInfo,
+      review_entries: Array.isArray(state.sourceReviewLog) && state.sourceReviewLog.length ? state.sourceReviewLog.slice() : null,
+    },
     file: state.file
       ? {
           name: state.file.name || null,
@@ -2966,7 +3946,7 @@ function buildOsintReport() {
     public_url: state.publicUrl || null,
     public_upload_artifact: state.publicUrl ? state.publicUrlArtifact || "original" : null,
     share_safe: Boolean(state.shareSafe),
-    upload: state.uploadMeta ? { ...state.uploadMeta } : null,
+    upload,
     gps: state.gps ? { lat: state.gps.lat, lon: state.gps.lon } : null,
     insights: {
       metadata_suspicion_score: state.insights.metadata_suspicion_score,
@@ -2983,6 +3963,11 @@ function buildOsintReport() {
       software: keyFields.software || elements.kfSoftware?.textContent || null,
       ocr_entities: state.ocrText ? OCR_PIPELINE?.extractEntities?.(state.ocrText) || null : null,
       ocr_entity_confidence: state.entityConfidence && Object.keys(state.entityConfidence).length ? { ...state.entityConfidence } : null,
+      ocr_entity_review_entries: buildCurrentOcrReviewEntries(),
+      ocr_entity_tasks:
+        state.pivotTaskResults && Object.keys(state.pivotTaskResults).length
+          ? JSON.parse(JSON.stringify(state.pivotTaskResults))
+          : null,
     },
     exif: state.exif || null,
     ocr_text: state.ocrText || null,
@@ -2993,10 +3978,25 @@ function buildOsintReport() {
     launchpad: state.lastEngineRun
       ? {
           ts: state.lastEngineRun.ts || null,
+          mode: state.lastEngineRun.mode || null,
           artifact: state.lastEngineRun.artifact || null,
           targets: state.lastEngineRun.targets ? { ...state.lastEngineRun.targets } : null,
           opened: state.lastEngineRun.opened ? { ...state.lastEngineRun.opened } : null,
           blocked: state.lastEngineRun.blocked ? { ...state.lastEngineRun.blocked } : null,
+          queue: state.lastEngineRun.queue ? { ...state.lastEngineRun.queue } : null,
+        }
+      : null,
+    mission_output: state.missionOutput
+      ? {
+          mission: state.missionOutput.mission || null,
+          summary: state.missionOutput.summary || null,
+          items: Array.isArray(state.missionOutput.items) ? state.missionOutput.items.slice() : null,
+        }
+      : null,
+    result_intake: state.resultIntake
+      ? {
+          last_ingested_at: state.resultIntake.last_ingested_at || null,
+          entries: Array.isArray(state.resultIntake.entries) ? state.resultIntake.entries.slice() : [],
         }
       : null,
     session_action_log: Array.isArray(state.actionLog) ? state.actionLog.slice() : [],
@@ -3165,6 +4165,9 @@ async function downloadEvidencePack() {
     `OCR mode: ${report.ocr?.mode || "not_run"}`,
     `OCR language: ${report.ocr?.selected_model || OCR_DEFAULT_LANGUAGE}`,
     `Upload host: ${report.upload?.host || "—"}`,
+    `Upload created: ${report.upload?.created_at || "—"}`,
+    `Upload expiry window: ${report.upload?.expected_expiry_window || "—"}`,
+    `Upload warning: ${report.upload?.temporary_external_artifact_warning || "—"}`,
     `Capture time: ${report.key_fields?.captured_at?.display || report.key_fields?.captured || "—"}`,
   ].join("\n");
   const entries = [
@@ -3274,181 +4277,32 @@ async function getOcrWorker(lang) {
 }
 
 function renderOcrEntities(text) {
-  const wrap = elements.ocrEntities;
-  if (!wrap) return;
-
-  const ent = OCR_PIPELINE?.extractEntities?.(text) || { urls: [], emails: [], handles: [], phones: [] };
-  const total =
-    ent.urls.length + ent.emails.length + ent.handles.length + ent.phones.length;
-
-  if (!total) {
-    wrap.hidden = true;
-    wrap.innerHTML = "";
-    if (elements.btnPivotSearch) elements.btnPivotSearch.disabled = true;
-    return;
-  }
-
-  wrap.hidden = false;
-  wrap.innerHTML = "";
-  if (elements.btnPivotSearch) elements.btnPivotSearch.disabled = false;
-
-  const group = (title, source) => {
-    const g = document.createElement("div");
-    g.className = "pivot-group";
-    const head = document.createElement("div");
-    head.className = "pivot-head";
-    head.textContent = source ? `${title} — ${source}` : title;
-    g.appendChild(head);
-    wrap.appendChild(g);
-    return g;
-  };
-
-  const addLinkChip = (parent, label, url, { title } = {}) => {
-    const a = document.createElement("a");
-    a.className = "chip chip-link";
-    a.href = url;
-    a.target = "_blank";
-    a.rel = "noreferrer";
-    a.title = title || label;
-    a.textContent = label;
-    parent.appendChild(a);
-  };
-
-  const addCopyChip = (parent, label, value) => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "chip";
-    b.title = `Copy ${label}`;
-    b.textContent = label;
-    b.addEventListener("click", () => void copyText(value));
-    parent.appendChild(b);
-  };
-
-  const addInfoChip = (parent, label) => {
-    const chip = document.createElement("span");
-    chip.className = "chip";
-    chip.textContent = label;
-    parent.appendChild(chip);
-  };
-
-  const addConfidence = (parent, key) => {
-    const sel = document.createElement("select");
-    sel.className = "select chip-select";
-    sel.title = "Analyst confidence (manual)";
-    sel.innerHTML =
-      `<option value="unverified">?</option>` +
-      `<option value="likely">~</option>` +
-      `<option value="confirmed">✓</option>`;
-    sel.addEventListener("change", () => {
-      state.sourceInfo = state.sourceInfo || {};
-      state.entityConfidence = state.entityConfidence || {};
-      state.entityConfidence[key] = sel.value;
-    });
-    parent.appendChild(sel);
-  };
-
-  const google = (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`;
-  const note = document.createElement("div");
-  note.className = "pivot-head";
-  note.textContent = "Manual pivots only — these are templated follow-ups from OCR hits, not investigative scoring.";
-  wrap.appendChild(note);
-
-  if (ent.handles.length) {
-    const g = group("Handles", "Source: direct OCR hit · Confidence: direct text");
-    for (const raw of ent.handles.slice(0, 6)) {
-      const h = OCR_PIPELINE?.normalizeHandle?.(raw) || raw.replace(/^@/, "");
-      if (!h) continue;
-      const row = document.createElement("div");
-      row.className = "pivot-row";
-      addCopyChip(row, `@${h}`, `@${h}`);
-      addInfoChip(row, "Manual follow-up");
-      addLinkChip(row, "IG", `https://www.instagram.com/${encodeURIComponent(h)}/`, { title: "Open Instagram profile" });
-      addLinkChip(row, "TikTok", `https://www.tiktok.com/@${encodeURIComponent(h)}`, { title: "Open TikTok profile" });
-      addLinkChip(row, "X", `https://x.com/${encodeURIComponent(h)}`, { title: "Open X profile" });
-      addLinkChip(row, "Search", google(`@${h}`), { title: "Search handle" });
-      addConfidence(row, `handle:${h.toLowerCase()}`);
-      g.appendChild(row);
-    }
-  }
-
-  if (ent.urls.length) {
-    const g = group("URLs / Domains", "Source: direct OCR hit · Confidence: direct text");
-    for (const u of ent.urls.slice(0, 6)) {
-      const d = OCR_PIPELINE?.normalizeDomain?.(u);
-      const row = document.createElement("div");
-      row.className = "pivot-row";
-      const short = String(u).replace(/^https?:\/\//i, "").slice(0, 44);
-      addLinkChip(row, short, u, { title: "Open URL" });
-      if (d) {
-        addInfoChip(row, "Derived domain follow-up");
-        addLinkChip(row, "WHOIS", `https://www.whois.com/whois/${encodeURIComponent(d)}`, { title: "WHOIS lookup" });
-        addLinkChip(row, "DNS", `https://dns.google/resolve?name=${encodeURIComponent(d)}&type=A`, { title: "DNS over HTTPS (Google)" });
-        addLinkChip(row, "CRT", `https://crt.sh/?q=${encodeURIComponent(d)}`, { title: "Certificate transparency" });
-        addLinkChip(row, "Search", google(`site:${d}`), { title: "Search site" });
-        addConfidence(row, `domain:${d}`);
-      } else {
-        addLinkChip(row, "Search", google(u), { title: "Search URL" });
-      }
-      g.appendChild(row);
-    }
-  }
-
-  if (ent.emails.length) {
-    const g = group("Emails", "Source: direct OCR hit · Confidence: direct text");
-    for (const e of ent.emails.slice(0, 6)) {
-      const row = document.createElement("div");
-      row.className = "pivot-row";
-      addCopyChip(row, e, e);
-      addInfoChip(row, "Manual search");
-      addLinkChip(row, "Search", google(`"${e}"`), { title: "Search email" });
-      addLinkChip(row, "Breach?", google(`"${e}" breach`), { title: "Search breach mentions" });
-      addConfidence(row, `email:${e.toLowerCase()}`);
-      g.appendChild(row);
-    }
-  }
-
-  if (ent.phones.length) {
-    const g = group("Phones", "Source: direct OCR hit · Confidence: direct text");
-    for (const p of ent.phones.slice(0, 6)) {
-      const n = OCR_PIPELINE?.normalizePhone?.(p);
-      const row = document.createElement("div");
-      row.className = "pivot-row";
-      const label = n?.e164 ? `${n.e164}${n.country_hint ? ` (${n.country_hint})` : ""}` : p;
-      addCopyChip(row, label, n?.e164 || p);
-      addInfoChip(row, "Manual search");
-      const q = n?.e164 || n?.digits || p;
-      addLinkChip(row, "Search", google(`"${q}"`), { title: "Search phone" });
-      addConfidence(row, `phone:${String(q).replace(/\s+/g, "")}`);
-      g.appendChild(row);
-    }
-  }
+  OCR_ENTITIES_UI.renderOcrEntities({
+    text,
+    state,
+    elements,
+    ocrPipeline: OCR_PIPELINE,
+    copyText,
+    renderPivotTaskResult,
+    runPivotStructuredTask,
+    setPivotTaskResult,
+    logAction,
+    recordEntityConfidenceReview,
+    createReviewEntry,
+  });
 }
 
 function detectScriptHint(text) {
-  const t = String(text || "");
-  if (!t) return null;
-  const ranked = OCR_SCRIPT_HINTS
-    .map((script) => ({ ...script, score: (t.match(script.test) || []).length }))
-    .filter((script) => script.score > 0)
-    .sort((a, b) => b.score - a.score);
-  const top = ranked[0];
-  if (!top) return null;
-  if (top.label !== "Latin" && top.score < 2) return null;
-  if (top.label === "Latin" && top.score < 8) return null;
-  return top;
+  return OCR_ENTITIES_UI.detectScriptHint({ text, scriptHints: OCR_SCRIPT_HINTS });
 }
 
 function renderOcrLangHint(text) {
-  const el = elements.ocrLangHint;
-  if (!el) return;
-  const hint = detectScriptHint(text);
-  if (!hint) {
-    el.hidden = true;
-    return;
-  }
-  const labels = hint.models.slice(0, 3).map((code) => getOcrLanguageLabel(code)).join(" / ");
-  el.hidden = false;
-  el.textContent = `Weak script hint: ${hint.label} → try ${labels}`;
+  OCR_ENTITIES_UI.renderOcrLangHint({
+    text,
+    element: elements.ocrLangHint,
+    scriptHints: OCR_SCRIPT_HINTS,
+    getOcrLanguageLabel,
+  });
 }
 
 async function runOcrForCurrent({ mode = "deep" } = {}) {
@@ -3704,7 +4558,7 @@ async function analyzeFile(file) {
 
     if (!elements.srcOrig.value) {
       elements.srcOrig.value = file.name || "";
-      state.sourceInfo.original_filename = elements.srcOrig.value;
+      updateSourceInfoField("original_filename", elements.srcOrig.value, { source: "derived", note: "Derived from loaded file name" });
     }
 
     setStatus("Ready");
@@ -3718,6 +4572,7 @@ async function analyzeFile(file) {
 
   window.__osintActivateTab?.("search");
   if (elements.btnEvidencePack) elements.btnEvidencePack.disabled = false;
+  if (elements.btnIngestResults) elements.btnIngestResults.disabled = !Boolean((elements.resultIntakeInput?.value || "").trim());
   logAction("image_loaded", `${file.name || "image"} · local review ready`);
   setStatusLine("Local review ready. Uploads start only when you choose a launch action.");
   renderOnboardingStrip();
@@ -4001,13 +4856,13 @@ function setupActions() {
   }
 
   const syncSourceInfo = () => {
-    state.sourceInfo.where_obtained = elements.srcWhere.value || "";
-    state.sourceInfo.when_obtained = elements.srcWhen.value || "";
-    state.sourceInfo.who_provided = elements.srcWho.value || "";
-    state.sourceInfo.original_filename = elements.srcOrig.value || "";
-    state.sourceInfo.manual_notes = elements.manualNotes?.value || "";
+    updateSourceInfoField("where_obtained", elements.srcWhere.value || "");
+    updateSourceInfoField("when_obtained", elements.srcWhen.value || "");
+    updateSourceInfoField("who_provided", elements.srcWho.value || "");
+    updateSourceInfoField("original_filename", elements.srcOrig.value || "");
+    updateSourceInfoField("manual_notes", elements.manualNotes?.value || "");
     state.manualNotes = state.sourceInfo.manual_notes;
-    if (elements.confLevel) state.sourceInfo.analyst_confidence = elements.confLevel.value || "unverified";
+    if (elements.confLevel) updateSourceInfoField("analyst_confidence", elements.confLevel.value || "unverified");
   };
   elements.srcWhere.addEventListener("input", syncSourceInfo);
   elements.srcWhen.addEventListener("input", syncSourceInfo);
@@ -4061,6 +4916,47 @@ function setupActions() {
     if (elements.doctorOut) elements.doctorOut.textContent = "Running doctor…";
     await runDoctorChecks();
     setStatus("Doctor updated");
+  });
+
+  const syncResultIngestButton = () => {
+    if (!elements.btnIngestResults) return;
+    const hasText = Boolean((elements.resultIntakeInput?.value || "").trim());
+    elements.btnIngestResults.disabled = state.uiBusy ? true : !(state.file && hasText);
+  };
+  elements.resultIntakeInput?.addEventListener("input", syncResultIngestButton);
+  elements.btnIngestResults?.addEventListener("click", () => {
+    const raw = elements.resultIntakeInput?.value || "";
+    const count = ingestResults(raw);
+    if (count > 0) {
+      logAction("result_intake_ingested", `${count} lines`);
+      setStatus("Results ingested");
+      setStatusLine(`Intake queue updated with ${count} parsed findings`);
+      if (elements.resultIntakeInput) elements.resultIntakeInput.value = "";
+    } else {
+      setStatus("No results parsed");
+    }
+    syncResultIngestButton();
+  });
+  elements.btnClearResults?.addEventListener("click", () => {
+    state.resultIntake = { raw: "", entries: [], last_ingested_at: null };
+    renderResultIntake();
+    setStatus("Queue cleared");
+    syncResultIngestButton();
+  });
+  elements.btnCopyResultsJson?.addEventListener("click", async () => {
+    await copyText(
+      JSON.stringify(
+        {
+          schema_version: EXPORT_SCHEMA_VERSION,
+          app_version: APP_VERSION,
+          generated_at: new Date().toISOString(),
+          intake: state.resultIntake?.entries || [],
+        },
+        null,
+        2,
+      ),
+    );
+    setStatus("Copied intake JSON");
   });
 
   elements.btnPivotSearch?.addEventListener("click", () => {
@@ -4166,7 +5062,7 @@ function setupActions() {
       const jobIds = [];
       for (let i = 0; i < muts.length; i += 1) {
         const label = `Lens · ${muts[i].label}`;
-        jobIds.push(openWaitJob("lens", label));
+        jobIds.push(openWaitJob("lens", label).jobId);
       }
       state.session = loadSession();
       state.session.engines_opened += muts.length;
@@ -4342,6 +5238,7 @@ function setupActions() {
   });
 
   elements.btnClearCompare.addEventListener("click", clearCompare);
+  syncResultIngestButton();
 }
 
 function validateLibs() {
@@ -4838,6 +5735,7 @@ function triggerGlitterStorm(intensity = 52) {
   window.setTimeout(() => layer.remove(), 1050);
 }
 
+setupGlobalErrorSurface();
 wireReverseSearchButtons();
 setupDnD();
 populateOcrLanguageOptions();
@@ -4858,4 +5756,3 @@ state.session = loadSession();
 void refreshHostStats();
 setupEngineLaunchpad();
 setupSimpleUi();
-setupGlobalErrorSurface();

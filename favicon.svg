@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">BlueLens mark</title>
+  <desc id="desc">A lens iris with sonar rings and an abyssal accent.</desc>
+  <defs>
+    <radialGradient id="bg" cx="32%" cy="28%" r="72%">
+      <stop offset="0%" stop-color="#0f4f8d"/>
+      <stop offset="54%" stop-color="#082341"/>
+      <stop offset="100%" stop-color="#030b17"/>
+    </radialGradient>
+    <radialGradient id="core" cx="46%" cy="42%" r="58%">
+      <stop offset="0%" stop-color="#f3fdff"/>
+      <stop offset="34%" stop-color="#7fe6ff"/>
+      <stop offset="72%" stop-color="#1b7fd1"/>
+      <stop offset="100%" stop-color="#072244"/>
+    </radialGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8af5ff"/>
+      <stop offset="100%" stop-color="#c887ff"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="56" fill="url(#bg)"/>
+  <circle cx="64" cy="64" r="40" fill="none" stroke="#6ee8ff" stroke-opacity=".32" stroke-width="4"/>
+  <circle cx="64" cy="64" r="27" fill="none" stroke="#d8fbff" stroke-opacity=".45" stroke-width="3"/>
+  <circle cx="64" cy="64" r="20" fill="url(#core)"/>
+  <circle cx="64" cy="64" r="7.5" fill="#03152e"/>
+  <path d="M84 22c13 6 22 20 22 35 0 14-7 27-18 34" fill="none" stroke="url(#accent)" stroke-linecap="round" stroke-width="7"/>
+  <path d="M92 74c-7 15-21 25-37 28 10-8 16-18 18-31z" fill="url(#accent)" fill-opacity=".95"/>
+  <circle cx="40" cy="40" r="5" fill="#ffffff" fill-opacity=".78"/>
+</svg>

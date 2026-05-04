@@ -3,7 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>OSINT Lens &mdash; Waiting</title>
+    <title>BlueLens &mdash; Waiting</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <style>
       html,
       body {
@@ -36,6 +37,15 @@
           inset 0 1px 0 rgba(255, 255, 255, 0.18);
         backdrop-filter: blur(18px) saturate(1.16);
         -webkit-backdrop-filter: blur(18px) saturate(1.16);
+      }
+      .mark {
+        width: 54px;
+        height: 54px;
+        display: block;
+        margin-bottom: 10px;
+        filter:
+          drop-shadow(0 0 28px rgba(94, 217, 255, 0.24))
+          drop-shadow(0 20px 40px rgba(7, 20, 44, 0.35));
       }
       .muted {
         opacity: 0.8;
@@ -95,6 +105,7 @@
   <body>
     <div class="wrap">
       <div class="card">
+        <img class="mark" src="./favicon.svg" alt="" aria-hidden="true" />
         <div id="title"><strong>Engine</strong> &mdash; waiting for public image URL&hellip;</div>
         <div id="msg" class="muted" style="margin-top: 8px" aria-live="polite"></div>
         <div id="link" style="margin-top: 10px"></div>
@@ -161,7 +172,7 @@
         strong.textContent = nextLabel;
         title.appendChild(strong);
         title.append(" — waiting for public image URL…");
-        document.title = `OSINT Lens - ${nextLabel}`;
+        document.title = `BlueLens - ${nextLabel}`;
       };
 
       const setMessage = (text, busy = false) => {

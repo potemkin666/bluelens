@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const http = require("node:http");
 const path = require("node:path");
 const { spawn } = require("node:child_process");
 
@@ -163,4 +164,121 @@ test("local server exposes ping and durable wait-job handoff routes", async (t) 
   const badUploadData = await badUpload.json();
   assert.equal(badUploadData.ok, false);
   assert.equal(badUploadData.error, "invalid_image_payload");
+});
+
+test("local server exposes scoped acquisition routes with provenance", async (t) => {
+  const upstreamPort = 8880;
+  const appPort = 8881;
+  const upstream = http.createServer((req, res) => {
+    const u = new URL(req.url, `http://${req.headers.host}`);
+    if (u.pathname === "/page") {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(`<!doctype html>
+        <html>
+          <head>
+            <title>Example Evidence</title>
+            <meta name="description" content="Structured metadata capture for BlueLens." />
+            <link rel="canonical" href="https://example.test/evidence" />
+          </head>
+          <body>
+            <h1>Example Evidence</h1>
+            <p>Mirror profile cluster seen in multiple reposts.</p>
+            <a href="https://instagram.com/example_handle">Instagram</a>
+          </body>
+        </html>`);
+      return;
+    }
+    if (u.pathname === "/robots.txt") {
+      res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
+      res.end(`User-agent: *\nAllow: /\nDisallow: /private\nSitemap: http://127.0.0.1:${upstreamPort}/sitemap.xml\n`);
+      return;
+    }
+    if (u.pathname === "/archive") {
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({
+        archived_snapshots: {
+          closest: {
+            available: true,
+            url: "https://web.archive.org/web/20200102030405/https://example.test/evidence",
+            timestamp: "20200102030405",
+            status: "200",
+          },
+        },
+      }));
+      return;
+    }
+    res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    res.end("not found");
+  });
+
+  await new Promise((resolve) => upstream.listen(upstreamPort, "127.0.0.1", resolve));
+  t.after(() => upstream.close());
+
+  const cwd = path.resolve(__dirname, "..");
+  const server = spawn(process.execPath, ["server.js"], {
+    cwd,
+    env: {
+      ...process.env,
+      PORT: String(appPort),
+      BLUELENS_ALLOW_PRIVATE_FETCH: "1",
+      BLUELENS_ARCHIVE_API_BASE: `http://127.0.0.1:${upstreamPort}/archive`,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("server start timeout")), SERVER_START_TIMEOUT);
+    server.stdout.on("data", (buf) => {
+      if (String(buf).includes(`http://localhost:${appPort}`)) {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+    server.once("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    server.once("exit", (code) => {
+      clearTimeout(timer);
+      reject(new Error(`server exited early: ${code}`));
+    });
+  });
+
+  t.after(() => {
+    server.kill("SIGTERM");
+  });
+
+  const target = `http://127.0.0.1:${upstreamPort}/page`;
+  const metadata = await fetch(`http://127.0.0.1:${appPort}/api/metadata?url=${encodeURIComponent(target)}`);
+  assert.equal(metadata.status, 200);
+  const metadataData = await metadata.json();
+  assert.equal(metadataData.ok, true);
+  assert.equal(metadataData.metadata.title, "Example Evidence");
+  assert.equal(metadataData.metadata.canonical_url, "https://example.test/evidence");
+  assert.equal(metadataData.metadata.h1, "Example Evidence");
+  assert.ok(Array.isArray(metadataData.metadata.identities));
+  assert.equal(metadataData.metadata.identities[0].platform, "instagram");
+  assert.equal(metadataData.provenance.rate_limit.scope, "metadata");
+
+  const scopedFetch = await fetch(`http://127.0.0.1:${appPort}/api/fetch?url=${encodeURIComponent(target)}`);
+  assert.equal(scopedFetch.status, 200);
+  const fetchData = await scopedFetch.json();
+  assert.equal(fetchData.ok, true);
+  assert.match(fetchData.snippet, /Mirror profile cluster/);
+
+  const discover = await fetch(`http://127.0.0.1:${appPort}/api/discover?url=${encodeURIComponent(target)}`);
+  assert.equal(discover.status, 200);
+  const discoverData = await discover.json();
+  assert.equal(discoverData.ok, true);
+  assert.equal(discoverData.robots_status, 200);
+  assert.deepEqual(discoverData.disallow, ["/private"]);
+  assert.deepEqual(discoverData.sitemaps, [`http://127.0.0.1:${upstreamPort}/sitemap.xml`]);
+
+  const archive = await fetch(`http://127.0.0.1:${appPort}/api/archive?url=${encodeURIComponent(target)}`);
+  assert.equal(archive.status, 200);
+  const archiveData = await archive.json();
+  assert.equal(archiveData.ok, true);
+  assert.equal(archiveData.snapshot.available, true);
+  assert.equal(archiveData.snapshot.timestamp, "20200102030405");
+  assert.equal(archiveData.provenance.rate_limit.scope, "archive");
 });

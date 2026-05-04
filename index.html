@@ -8,6 +8,7 @@
       name="description"
       content="Inspect local image hashes, metadata, OCR text, and launch reverse-search providers from a local-first workflow."
     />
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -21,7 +22,7 @@
 
     <header class="header">
       <div class="brand">
-        <div class="brand-mark" aria-hidden="true"></div>
+        <img class="brand-mark" src="./favicon.svg" alt="" aria-hidden="true" />
         <div class="brand-text">
           <h1>BlueLens</h1>
           <p>Inspect images locally, extract context, and launch reverse-search providers.</p>
@@ -35,30 +36,6 @@
 
     <section class="onboarding-shell" aria-label="Operator onboarding">
       <div id="onboardingStrip" class="onboarding-strip" hidden></div>
-    </section>
-
-    <section class="focus-shell" aria-labelledby="focusTitle">
-      <div class="focus-panel">
-        <div class="focus-copy">
-          <span class="focus-kicker">Search-first workflow</span>
-          <h2 id="focusTitle">Drop an image, inspect locally, then choose when to upload.</h2>
-          <p class="focus-lede">
-            BlueLens works best as a fast launchpad with explicit operator consent: inspect locally first, then choose if you want a temporary public URL for provider review.
-          </p>
-          <ul class="focus-points">
-            <li>Choose once to inspect locally; uploads happen only after you ask for launchpad links.</li>
-            <li>Keep hashes, EXIF, OCR, and compare tools one click away.</li>
-            <li>Launch Lens first, then use the prepared manual links for the rest.</li>
-          </ul>
-        </div>
-
-        <div class="focus-demo">
-          <img
-            src="https://github.com/user-attachments/assets/280b967d-aca5-4eb9-8fa7-af8c262acbc5"
-            alt="BlueLens image search workflow demo"
-          />
-        </div>
-      </div>
     </section>
 
     <main class="layout layout-single">
@@ -92,6 +69,10 @@
                 <option value="fast">Quick OCR</option>
                 <option value="deep">Deep OCR</option>
                 <option value="share_search">Upload + Launchpad</option>
+                <option value="handle_recon">Handle Recon</option>
+                <option value="domain_recon">Domain Recon</option>
+                <option value="metadata_pass">Metadata Pass</option>
+                <option value="cross_engine_swarm">Cross-Engine Swarm</option>
               </select>
               <button id="btnRunMission" class="btn" type="button" disabled title="Runs the selected mission preset">Run</button>
             </div>
@@ -243,8 +224,8 @@
               </label>
 
               <div class="row row-tight">
-                <select id="shareProvider" class="select" disabled title="Local proxy will try multiple hosts">
-                  <option value="0x0">Auto (failover)</option>
+                <select id="shareProvider" class="select" disabled title="Automatic host selection — the local proxy ranks temporary hosts and records which one actually accepted the upload.">
+                  <option value="0x0">Automatic host selection (ranked failover)</option>
                 </select>
                 <button id="btnCopyPublicUrl" class="btn btn-ghost" type="button" disabled title="Copy public URL">
                   Copy URL
@@ -265,6 +246,44 @@
               <div id="engineLinks" class="mono mono-box links" hidden></div>
               <div id="hostStatsOut" class="mono mono-box" hidden></div>
               <div id="actionLogOut" class="mono mono-box" hidden></div>
+            </div>
+
+            <div class="subcard hud" data-hud-key="mission-output">
+              <div class="subcard-head">
+                <div class="subcard-title">Mission Output</div>
+                <span class="pill pill-muted">structured</span>
+              </div>
+              <div id="missionOutputOut" class="mono mono-box mission-output-box">
+                Run a recon mission to structure handles, domains, metadata, or engine swarm prep.
+              </div>
+            </div>
+
+            <div class="subcard hud" data-hud-key="result-intake">
+              <div class="subcard-head">
+                <div class="subcard-title">Result Intake</div>
+                <span class="pill pill-muted">dedupe queue</span>
+              </div>
+              <div class="hint">Paste one result per line as <span class="mono">URL | title | snippet | engine</span> or <span class="mono">engine[TAB]URL[TAB]title[TAB]snippet</span>.</div>
+              <textarea
+                id="resultIntakeInput"
+                class="input textarea"
+                rows="4"
+                placeholder="https://example.com/post | Account mirror found | Same crop and caption fragment | yandex"
+              ></textarea>
+              <div class="row row-tight">
+                <button id="btnIngestResults" class="btn btn-secondary" type="button" disabled title="Normalize and merge pasted findings">
+                  Ingest Results
+                </button>
+                <button id="btnClearResults" class="btn btn-ghost" type="button" disabled title="Clear the intake queue">
+                  Clear Queue
+                </button>
+                <button id="btnCopyResultsJson" class="btn btn-ghost" type="button" disabled title="Copy the normalized queue as JSON">
+                  Copy JSON
+                </button>
+              </div>
+              <div id="resultIntakeSummary" class="mono mono-box mission-output-box">
+                No external findings ingested yet.
+              </div>
             </div>
 
             <details class="drawer hud" data-hud-key="advanced">
@@ -587,6 +606,30 @@
       </section>
     </main>
 
+    <section class="focus-shell" aria-labelledby="focusTitle">
+      <div class="focus-panel">
+        <div class="focus-copy">
+          <span class="focus-kicker">Search-first workflow</span>
+          <h2 id="focusTitle">Drop an image, inspect locally, then choose when to upload.</h2>
+          <p class="focus-lede">
+            BlueLens works best as a fast launchpad with explicit operator consent: inspect locally first, then choose if you want a temporary public URL for provider review.
+          </p>
+          <ul class="focus-points">
+            <li>Choose once to inspect locally; uploads happen only after you ask for launchpad links.</li>
+            <li>Keep hashes, EXIF, OCR, and compare tools one click away.</li>
+            <li>Launch Lens first, then use the prepared manual links for the rest.</li>
+          </ul>
+        </div>
+
+        <div class="focus-demo">
+          <img
+            src="https://github.com/user-attachments/assets/280b967d-aca5-4eb9-8fa7-af8c262acbc5"
+            alt="BlueLens image search workflow demo"
+          />
+        </div>
+      </div>
+    </section>
+
     <footer class="footer">
       <div>Built for investigative workflows. Use responsibly and respect privacy &amp; terms of service.</div>
     </footer>
@@ -611,6 +654,8 @@
     <script src="./bluelens-helpers.js"></script>
     <script src="./osint-lib.js"></script>
     <script src="./ocr-pipeline.js"></script>
+    <script src="./launchpad-core.js"></script>
+    <script src="./ocr-entities-ui.js"></script>
 
     <script src="./app.js"></script>
   </body>

@@ -9,6 +9,13 @@ const helpHtml = fs.readFileSync(path.join(__dirname, "..", "help.html"), "utf8"
 const stylesCss = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
 const waitHtml = fs.readFileSync(path.join(__dirname, "..", "wait.html"), "utf8");
 const startCmd = fs.readFileSync(path.join(__dirname, "..", "bluelens-start.cmd"), "utf8");
+const desktopIconPs1 = fs.readFileSync(path.join(__dirname, "..", "create-desktop-icon.ps1"), "utf8");
+const launchpadCoreJs = fs.readFileSync(path.join(__dirname, "..", "launchpad-core.js"), "utf8");
+const ocrEntitiesUiJs = fs.readFileSync(path.join(__dirname, "..", "ocr-entities-ui.js"), "utf8");
+const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+const readmeMd = fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8");
+const faviconSvgPath = path.join(__dirname, "..", "favicon.svg");
+const desktopIcoPath = path.join(__dirname, "..", "bluelens.ico");
 const oceanBgPath = path.join(__dirname, "..", "assets", "ocean-bg.jpg");
 const setupTabsBlock = appJs.match(/function setupTabs\(\) \{[\s\S]*?\n\}/)?.[0] || "";
 
@@ -18,6 +25,10 @@ test("mission preset selector stays reachable in the HTML", () => {
   assert.match(indexHtml, />Quick OCR</);
   assert.match(indexHtml, />Deep OCR</);
   assert.match(indexHtml, />Upload \+ Launchpad</);
+  assert.match(indexHtml, />Handle Recon</);
+  assert.match(indexHtml, />Domain Recon</);
+  assert.match(indexHtml, />Metadata Pass</);
+  assert.match(indexHtml, />Cross-Engine Swarm</);
 });
 
 test("help button points to the rendered help page", () => {
@@ -27,10 +38,18 @@ test("help button points to the rendered help page", () => {
   assert.match(helpHtml, />Operator defaults</);
 });
 
+test("package startup contract declares Node 18+ and a server start script", () => {
+  assert.equal(packageJson.scripts.start, "node server.js");
+  assert.equal(packageJson.engines.node, ">=18");
+  assert.match(readmeMd, /Node\.js 18 or newer/);
+  assert.match(readmeMd, /npm start/);
+});
+
 test("search-all UI is framed as link preparation, not automatic querying", () => {
   assert.match(indexHtml, />\s*Prepare Engine Links\s*</);
   assert.match(appJs, /Preparing engine links…/);
   assert.match(appJs, /Prepare Engine Links/);
+  assert.match(appJs, /Paste titles, snippets, and URLs back into Result Intake/);
 });
 
 
@@ -53,6 +72,10 @@ test("landing UI stays focused on image search", () => {
   assert.doesNotMatch(indexHtml, /Local file signals/);
 });
 
+test("upload control appears before the landing promo block", () => {
+  assert.ok(indexHtml.indexOf('id="dropzone"') < indexHtml.indexOf('class="focus-shell"'));
+});
+
 test("caseboard UI is removed from the landing workflow", () => {
   assert.doesNotMatch(indexHtml, /Caseboard/);
   assert.doesNotMatch(appJs, /caseboard:v1/);
@@ -61,7 +84,8 @@ test("caseboard UI is removed from the landing workflow", () => {
 
 test("source reliability state no longer uses stale caseInfo naming", () => {
   assert.match(appJs, /sourceInfo:/);
-  assert.match(appJs, /source_reliability: \{ \.\.\.state\.sourceInfo \}/);
+  assert.match(appJs, /source_reliability:\s*\{\s*\.\.\.state\.sourceInfo,/);
+  assert.match(appJs, /review_entries: Array\.isArray\(state\.sourceReviewLog\)/);
   assert.doesNotMatch(appJs, /caseInfo/);
 });
 
@@ -69,6 +93,19 @@ test("only the live squid background asset remains wired", () => {
   assert.match(stylesCss, /assets\/squid-bg\.jpg/);
   assert.doesNotMatch(stylesCss, /assets\/ocean-bg\.jpg/);
   assert.equal(fs.existsSync(oceanBgPath), false);
+});
+
+test("brand identity is carried through favicon, wait page, and shortcut icon", () => {
+  assert.match(indexHtml, /rel="icon" type="image\/svg\+xml" href="\.\/favicon\.svg"/);
+  assert.match(helpHtml, /rel="icon" type="image\/svg\+xml" href="\.\/favicon\.svg"/);
+  assert.match(waitHtml, /rel="icon" type="image\/svg\+xml" href="\.\/favicon\.svg"/);
+  assert.match(indexHtml, /<img class="brand-mark" src="\.\/favicon\.svg"/);
+  assert.match(waitHtml, /<img class="mark" src="\.\/favicon\.svg"/);
+  assert.match(stylesCss, /background: center \/ contain no-repeat url\("\.\/favicon\.svg"\)/);
+  assert.match(desktopIconPs1, /bluelens\.ico/);
+  assert.match(desktopIconPs1, /IconLocation/);
+  assert.equal(fs.existsSync(faviconSvgPath), true);
+  assert.equal(fs.existsSync(desktopIcoPath), true);
 });
 
 test("search tab is always the first panel shown on load", () => {
@@ -106,15 +143,22 @@ test("OCR UI uses manual models and weak script hints", () => {
   assert.match(indexHtml, /Weak script hint/);
   assert.match(indexHtml, /<option value="rus">Russian</);
   assert.match(indexHtml, /<option value="chi_sim">Chinese \(Simplified\)</);
-  assert.match(appJs, /function detectScriptHint\(text\)/);
-  assert.match(appJs, /Weak script hint: \$\{hint\.label\}/);
+  assert.match(ocrEntitiesUiJs, /const detectScriptHint = \(\{ text, scriptHints = \[\] \}\) =>/);
+  assert.match(ocrEntitiesUiJs, /Weak script hint: \$\{hint\.label\}/);
   assert.doesNotMatch(appJs, /elements\.ocrLang\.value\s*=\s*hint/);
 });
 
 test("OCR pivots are framed as manual follow-ups", () => {
   assert.match(indexHtml, />Manual pivots</);
-  assert.match(appJs, /Manual pivots only — these are templated follow-ups from OCR hits/);
+  assert.match(ocrEntitiesUiJs, /Manual pivots only — these are templated follow-ups from OCR hits/);
   assert.match(appJs, /Manual pivots \(\$\{targets\.length\}\)/);
+  assert.match(appJs, /function runPivotStructuredTask\(/);
+  assert.match(ocrEntitiesUiJs, /pivot_task_acquired/);
+  assert.match(appJs, /\/api\/metadata\?/);
+  assert.match(appJs, /\/api\/discover\?/);
+  assert.match(appJs, /People: /);
+  assert.match(appJs, /Organizations: /);
+  assert.match(appJs, /Locations: /);
 });
 
 test("metadata suspicion copy avoids faux-precise repost scoring", () => {
@@ -151,6 +195,14 @@ test("reports export structured capture provenance and runtime metadata", () => 
   assert.match(appJs, /runtime_config_fingerprint/);
   assert.match(appJs, /ocr_language/);
   assert.match(appJs, /upload_host_metadata/);
+  assert.match(appJs, /temporary_external_artifact_warning/);
+  assert.match(appJs, /expected_expiry_window/);
+  assert.match(appJs, /ocr_entity_review_entries/);
+});
+
+test("share provider UI is explicit about automatic host ranking", () => {
+  assert.match(indexHtml, /Automatic host selection — the local proxy ranks temporary hosts/);
+  assert.match(indexHtml, />Automatic host selection \(ranked failover\)</);
 });
 
 test("wait tab uses backoff and exposes reopen guidance", () => {
@@ -177,13 +229,54 @@ test("onboarding and evidence-pack UI expose operator caveats and export path", 
   assert.match(indexHtml, /id="btnEvidencePack"/);
   assert.match(indexHtml, /id="btnRunDoctor"/);
   assert.match(indexHtml, /id="doctorOut"/);
+  assert.match(indexHtml, /id="missionOutputOut"/);
+  assert.match(indexHtml, /id="resultIntakeInput"/);
+  assert.match(indexHtml, /id="btnIngestResults"/);
+  assert.match(indexHtml, /id="resultIntakeSummary"/);
   assert.match(indexHtml, /id="manualNotes"/);
   assert.match(indexHtml, /id="actionLogOut"/);
   assert.match(appJs, /function downloadEvidencePack\(\)/);
   assert.match(appJs, /function runDoctorChecks\(\)/);
+  assert.match(appJs, /function ingestResults\(raw\)/);
+  assert.match(appJs, /function renderMissionOutput\(\)/);
   assert.match(indexHtml, /Operator workflow: 1\) load image locally/);
   assert.match(appJs, /Batch export omits failures/);
   assert.match(helpHtml, />Doctor</);
+});
+
+test("launchpad now renders queue-aware swarm cockpit state", () => {
+  assert.match(appJs, /Swarm Cockpit/);
+  assert.match(appJs, /data-lp-open="pending"/);
+  assert.match(appJs, /function prepareEngineSwarm\(/);
+  assert.match(appJs, /ENGINE_SWARM_DELAY_MS/);
+  assert.match(waitHtml, /Uploading… \(check main tab\)\./);
+});
+
+test("batch dashboard exposes aggregated entity follow-up controls", () => {
+  assert.match(appJs, /function getBatchEntityClusters\(/);
+  assert.match(appJs, /data-batch-entity-open/);
+  assert.match(appJs, /data-batch-entity-mission/);
+  assert.match(stylesCss, /\.entity-cluster-summary/);
+});
+
+test("result intake accepts loose pipe delimiters and tracks blocked wait tabs honestly", () => {
+  assert.ok(appJs.includes('split(/\\s*\\|\\s*/)'));
+  assert.ok(appJs.includes('split("\\t")'));
+  assert.match(appJs, /wait_tab_blocked/);
+});
+
+test("browser modules split launchpad core and OCR entity UI out of app.js", () => {
+  assert.match(indexHtml, /src="\.\/launchpad-core\.js"/);
+  assert.match(indexHtml, /src="\.\/ocr-entities-ui\.js"/);
+  assert.match(appJs, /const LAUNCHPAD_CORE = window\.BLUELENS_LAUNCHPAD \|\| \{\};/);
+  assert.match(appJs, /const OCR_ENTITIES_UI = window\.BLUELENS_OCR_ENTITIES \|\| \{\};/);
+  assert.match(appJs, /async function prepareLaunchpad\(/);
+  assert.match(launchpadCoreJs, /const createEngineRunRecord = \(\{/);
+  assert.match(ocrEntitiesUiJs, /const renderOcrEntities = \(\{/);
+  assert.match(appJs, /source: "mission:share_search"/);
+  assert.match(appJs, /source: "search-all"/);
+  assert.doesNotMatch(appJs, /const run = await prepareLaunchpadRun\(\{ engines: ENGINE_ORDER, openLens: true, mode: "launchpad", labelPrefix: "Mission" \}\);/);
+  assert.doesNotMatch(appJs, /const run = await prepareLaunchpadRun\(\{ engines: ENGINE_ORDER, openLens, mode: "launchpad", labelPrefix: "Launchpad" \}\);/);
 });
 
 test("windows start script waits for ping before opening the browser", () => {
@@ -191,4 +284,10 @@ test("windows start script waits for ping before opening the browser", () => {
   assert.match(startCmd, /api\/ping/);
   assert.match(startCmd, /Invoke-WebRequest/);
   assert.ok(startCmd.indexOf("node server.js") < startCmd.lastIndexOf("start \"\" \"%BLUELENS_URL%\""));
+});
+
+test("global error surface is installed before storage-backed startup work", () => {
+  assert.ok(appJs.indexOf("setupGlobalErrorSurface();") < appJs.indexOf("void runDoctorChecks();"));
+  assert.ok(appJs.indexOf("setupGlobalErrorSurface();") < appJs.indexOf("setupFx();"));
+  assert.doesNotMatch(setupTabsBlock, /localStorage\.setItem\("ui:tab"/);
 });

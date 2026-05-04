@@ -18,13 +18,17 @@ Ocean-themed UI for image upload + reverse-image-search workflows, with an OSINT
 
 This is a static site, but the built-in server is recommended so explicit upload + launchpad actions work reliably.
 
+BlueLens expects **Node.js 18 or newer**. The local server uses built-in platform globals such as `fetch`, `Blob`, and `FormData`, so older Node releases will fail before the app boots.
+
 ```bash
-node server.js
+npm start
 ```
 
 Open:
 
 - http://localhost:8787
+
+If you prefer the direct command, `node server.js` is equivalent on supported Node versions.
 
 ## Notes
 
@@ -34,6 +38,8 @@ Open:
 - OCR model files load from a CDN on first use.
 - Batch export currently omits failed files from the downloadable JSON bundle.
 - EXIF capture times are exported with raw value, normalized form, source field, and timezone ambiguity notes.
+- Server-side archive lookups default to the Internet Archive Wayback availability API and can be overridden with `BLUELENS_ARCHIVE_API_BASE`.
+- `BLUELENS_ALLOW_PRIVATE_FETCH=1` is only for controlled local testing; do not enable it for untrusted targets because it disables the acquisition layer's private-network fetch guardrails.
 - Run tests with `npm test`.
 - Open the in-app Help page for startup, privacy, troubleshooting, and defaults.
 

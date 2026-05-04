@@ -381,25 +381,12 @@ body {
 }
 
 .brand-mark {
-  width: 42px;
-  height: 42px;
-  border-radius: 14px;
-  background: linear-gradient(135deg, rgba(175, 245, 255, 0.85), rgba(199, 182, 255, 0.6));
-  box-shadow: 0 14px 40px rgba(175, 245, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  position: relative;
-  overflow: hidden;
-  filter: drop-shadow(0 18px 40px rgba(145, 232, 255, 0.22));
-}
-
-.brand-mark::after {
-  content: "";
-  position: absolute;
-  inset: -40%;
-  background: linear-gradient(120deg, transparent 35%, rgba(255, 255, 255, 0.55), transparent 65%);
-  transform: translateX(-40%) rotate(10deg);
-  animation: sheen 4.2s ease-in-out infinite;
-  opacity: 0.35;
+  width: 52px;
+  height: 52px;
+  display: block;
+  filter:
+    drop-shadow(0 0 28px rgba(94, 217, 255, 0.24))
+    drop-shadow(0 20px 40px rgba(7, 20, 44, 0.35));
 }
 
 @keyframes sheen {
@@ -751,10 +738,10 @@ h2 {
 .dropzone-icon {
   width: 40px;
   height: 40px;
-  border-radius: 14px;
-  border: 1px solid rgba(53, 240, 255, 0.25);
-  background: radial-gradient(circle at 30% 30%, rgba(53, 240, 255, 0.35), transparent 60%),
-    radial-gradient(circle at 70% 70%, rgba(34, 197, 94, 0.22), transparent 60%);
+  background: center / contain no-repeat url("./favicon.svg");
+  filter:
+    drop-shadow(0 0 18px rgba(94, 217, 255, 0.16))
+    drop-shadow(0 16px 32px rgba(7, 20, 44, 0.22));
 }
 
 .dropzone-strong {
@@ -1413,6 +1400,13 @@ body.skin-chrome .tab.active {
   margin: 0 0 10px;
 }
 
+.batchdash .entity-cluster-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
 .batchdash .cluster-card {
   display: inline-flex;
   gap: 10px;
@@ -1427,6 +1421,13 @@ body.skin-chrome .tab.active {
 .batchdash .cluster-card .meta {
   font-size: 11px;
   color: rgba(230, 251, 255, 0.70);
+}
+
+.batchdash .entity-cluster-card {
+  padding: 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(198, 244, 255, 0.16);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .batchdash .thumb {
@@ -1484,6 +1485,93 @@ body.skin-chrome .tab.active {
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
+}
+
+.pivot-task-box {
+  width: 100%;
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(198, 244, 255, 0.16);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(235, 252, 255, 0.9);
+}
+
+.pivot-task-box.loading {
+  border-color: rgba(255, 209, 102, 0.3);
+}
+
+.pivot-task-box.error {
+  border-color: rgba(255, 122, 140, 0.32);
+  background: rgba(255, 122, 140, 0.08);
+}
+
+.pivot-task-head {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.22px;
+  color: rgba(230, 251, 255, 0.7);
+}
+
+.pivot-task-lines {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.pivot-task-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mission-output-box {
+  white-space: normal;
+}
+
+.mission-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.mission-summary {
+  color: rgba(235, 252, 255, 0.92);
+}
+
+.mission-card {
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(198, 244, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mission-card-head,
+.entity-cluster-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+  color: rgba(235, 252, 255, 0.92);
+}
+
+.mission-card-meta,
+.entity-cluster-head .meta,
+.entity-cluster-files {
+  font-size: 11px;
+  color: rgba(230, 251, 255, 0.70);
+}
+
+.mission-card-lines {
+  display: grid;
+  gap: 4px;
+}
+
+.mission-card-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 .chip-select {
@@ -1836,6 +1924,45 @@ body.hud-mode .hud .card-title-row {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
+}
+
+.lp-queue {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.lp-queue-card {
+  padding: 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(198, 244, 255, 0.18);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.lp-queue-card.ready,
+.lp-queue-card.prepared,
+.lp-queue-card.opened {
+  border-color: rgba(175, 245, 255, 0.34);
+}
+
+.lp-queue-card.blocked,
+.lp-queue-card.error {
+  border-color: rgba(255, 209, 102, 0.32);
+  background: rgba(255, 209, 102, 0.08);
+}
+
+.lp-queue-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.lp-queue-status,
+.lp-queue-meta {
+  font-size: 11px;
+  color: rgba(230, 251, 255, 0.72);
 }
 
 .field {

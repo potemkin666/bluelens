@@ -1,4 +1,4 @@
-/* Ocean OSINT Lens local server (static + upload proxy)
+/* BlueLens local server (static + upload proxy + acquisition layer)
    - Serves static files from this folder
    - Provides POST /api/upload to proxy-upload images to a public host (avoids browser CORS limitations)
    - Provides durable /api/wait-jobs/:id handoff routes for wait tabs
@@ -10,7 +10,9 @@
 */
 
 const http = require("http");
+const dns = require("node:dns").promises;
 const fs = require("fs");
+const net = require("net");
 const os = require("os");
 const path = require("path");
 const { URL } = require("url");
@@ -32,12 +34,22 @@ const LITTERBOX_EXPIRY = UPLOAD_CONFIG.litterboxExpiry || "72h";
 const WAIT_JOB_STORE_PATH = path.join(os.tmpdir(), "bluelens-wait-jobs-v1.json");
 const SERVER_STARTED_AT = Date.now();
 const DOCTOR_TIMEOUT_MS = 2500;
+const ACQ_CONFIG = SERVER_CONFIG.acquisition || {};
+const ACQ_TIMEOUT_MS = ACQ_CONFIG.timeoutMs || 10_000;
+const ACQ_MAX_BYTES = ACQ_CONFIG.maxBytes || 768 * 1024;
+const ACQ_RATE_LIMIT_MAX = ACQ_CONFIG.rateLimitMax || 18;
+const ACQ_RATE_LIMIT_WINDOW_MS = ACQ_CONFIG.rateLimitWindowMs || 60_000;
+const ACQ_ARCHIVE_API_BASE = process.env.BLUELENS_ARCHIVE_API_BASE || "https://archive.org/wayback/available";
+const ALLOW_PRIVATE_FETCH = process.env.BLUELENS_ALLOW_PRIVATE_FETCH === "1";
+const APP_VERSION = BLUELENS_CONFIG.meta?.appVersion || "dev";
+const FETCH_USER_AGENT = `BlueLens/${APP_VERSION} (+local acquisition layer)`;
 const UPLOAD_DOCTOR_URLS = {
   uguu: "https://uguu.se/",
   catbox: "https://catbox.moe/",
   litterbox: "https://litterbox.catbox.moe/",
   "0x0": "https://0x0.st/",
 };
+const ACQ_RATE_LIMITS = new Map();
 
 // Durable wait-job handoff for wait tabs.
 // Key: jobId -> { id, engine, label, status, url, err, seq, created_at, updated_at, expires_at }
@@ -70,6 +82,283 @@ async function fetchWithTimeout(url, init, ms) {
   } finally {
     clearTimeout(t);
   }
+}
+
+function clientAddress(req) {
+  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  return forwarded || req.socket?.remoteAddress || "local";
+}
+
+function pruneAcquisitionRateLimits(now = Date.now()) {
+  for (const [key, value] of ACQ_RATE_LIMITS.entries()) {
+    if (!value || value.reset_at <= now) ACQ_RATE_LIMITS.delete(key);
+  }
+}
+
+function acquisitionRateLimit(scope, req) {
+  pruneAcquisitionRateLimits();
+  const now = Date.now();
+  const key = `${scope}:${clientAddress(req)}`;
+  const current = ACQ_RATE_LIMITS.get(key);
+  if (!current || current.reset_at <= now) {
+    const next = { count: 1, reset_at: now + ACQ_RATE_LIMIT_WINDOW_MS };
+    ACQ_RATE_LIMITS.set(key, next);
+    return {
+      scope,
+      limit: ACQ_RATE_LIMIT_MAX,
+      remaining: Math.max(0, ACQ_RATE_LIMIT_MAX - next.count),
+      reset_at: next.reset_at,
+    };
+  }
+  if (current.count >= ACQ_RATE_LIMIT_MAX) {
+    const error = new Error(`Rate limit exceeded for ${scope}`);
+    error.statusCode = 429;
+    error.errorCode = "rate_limited";
+    error.rateLimit = {
+      scope,
+      limit: ACQ_RATE_LIMIT_MAX,
+      remaining: 0,
+      reset_at: current.reset_at,
+    };
+    throw error;
+  }
+  current.count += 1;
+  ACQ_RATE_LIMITS.set(key, current);
+  return {
+    scope,
+    limit: ACQ_RATE_LIMIT_MAX,
+    remaining: Math.max(0, ACQ_RATE_LIMIT_MAX - current.count),
+    reset_at: current.reset_at,
+  };
+}
+
+function isPrivateIpv4(address) {
+  const parts = String(address || "")
+    .split(".")
+    .map((value) => Number(value));
+  if (parts.length !== 4 || parts.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) return false;
+  if (parts[0] === 10 || parts[0] === 127 || parts[0] === 0) return true;
+  if (parts[0] === 169 && parts[1] === 254) return true;
+  if (parts[0] === 192 && parts[1] === 168) return true;
+  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return true;
+  if (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) return true;
+  return false;
+}
+
+function isPrivateIpv6(address) {
+  const normalized = String(address || "").toLowerCase();
+  if (!normalized) return false;
+  if (normalized === "::1" || normalized === "::") return true;
+  if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
+  if (normalized.startsWith("fe8") || normalized.startsWith("fe9") || normalized.startsWith("fea") || normalized.startsWith("feb")) return true;
+  return false;
+}
+
+function isPrivateIp(address) {
+  const version = net.isIP(address);
+  if (version === 4) return isPrivateIpv4(address);
+  if (version === 6) return isPrivateIpv6(address);
+  return false;
+}
+
+async function assertScopedPublicUrl(rawUrl) {
+  let parsed;
+  try {
+    parsed = new URL(String(rawUrl || "").trim());
+  } catch {
+    const error = new Error("Invalid target URL");
+    error.statusCode = 400;
+    error.errorCode = "invalid_target_url";
+    throw error;
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    const error = new Error("Only http(s) targets are supported");
+    error.statusCode = 400;
+    error.errorCode = "invalid_target_url";
+    throw error;
+  }
+  parsed.hash = "";
+  if (!parsed.pathname) parsed.pathname = "/";
+  const hostname = (parsed.hostname || "").toLowerCase();
+  if (!hostname) {
+    const error = new Error("Missing hostname");
+    error.statusCode = 400;
+    error.errorCode = "invalid_target_url";
+    throw error;
+  }
+  if (!ALLOW_PRIVATE_FETCH) {
+    if (hostname === "localhost" || hostname.endsWith(".local") || hostname.endsWith(".internal")) {
+      const error = new Error("Local or internal targets are blocked");
+      error.statusCode = 403;
+      error.errorCode = "blocked_target";
+      throw error;
+    }
+    if (isPrivateIp(hostname)) {
+      const error = new Error("Private-network targets are blocked");
+      error.statusCode = 403;
+      error.errorCode = "blocked_target";
+      throw error;
+    }
+    try {
+      const lookups = await dns.lookup(hostname, { all: true, verbatim: true });
+      if (lookups.some((entry) => isPrivateIp(entry.address))) {
+        const error = new Error("Private-network targets are blocked");
+        error.statusCode = 403;
+        error.errorCode = "blocked_target";
+        throw error;
+      }
+    } catch (error) {
+      if (error?.statusCode) throw error;
+      const wrapped = new Error(`Could not resolve target host: ${hostname}`);
+      wrapped.statusCode = 400;
+      wrapped.errorCode = "unresolvable_target";
+      throw wrapped;
+    }
+  }
+  return parsed.toString();
+}
+
+async function readResponseTextLimited(response, maxBytes = ACQ_MAX_BYTES) {
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of response.body || []) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buf.length;
+    if (total > maxBytes) {
+      const error = new Error("Response body exceeded size limit");
+      error.statusCode = 413;
+      error.errorCode = "response_too_large";
+      throw error;
+    }
+    chunks.push(buf);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function firstMatch(text, pattern) {
+  const match = String(text || "").match(pattern);
+  return match ? match[1].trim() : "";
+}
+
+function stripTags(html) {
+  return String(html || "")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script[^>]*>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style[^>]*>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function absoluteUrlOrEmpty(value, baseUrl = "") {
+  if (!value) return "";
+  try {
+    return new URL(value, baseUrl).toString();
+  } catch {
+    return "";
+  }
+}
+
+function extractIdentityLinks(html, baseUrl) {
+  const identities = new Map();
+  for (const match of String(html || "").matchAll(/<a[^>]+href=["']([^"'#]+)["']/gi)) {
+    const href = absoluteUrlOrEmpty(match[1], baseUrl);
+    if (!href) continue;
+    let hostname = "";
+    try {
+      hostname = new URL(href).hostname.toLowerCase().replace(/^www\./, "");
+    } catch {
+      hostname = "";
+    }
+    const platform =
+      hostname === "instagram.com"
+        ? "instagram"
+        : hostname === "tiktok.com"
+          ? "tiktok"
+          : hostname === "x.com" || hostname === "twitter.com"
+            ? "x"
+            : hostname === "youtube.com" || hostname === "youtu.be"
+              ? "youtube"
+              : hostname === "facebook.com"
+                ? "facebook"
+                : "";
+    if (!platform) continue;
+    identities.set(href, { platform, url: href });
+  }
+  return Array.from(identities.values()).slice(0, 10);
+}
+
+function extractNormalizedMetadata(html, sourceUrl, finalUrl) {
+  const title =
+    firstMatch(html, /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
+    firstMatch(html, /<title[^>]*>([\s\S]*?)<\/title>/i);
+  const description =
+    firstMatch(html, /<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) ||
+    firstMatch(html, /<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i);
+  const canonical =
+    firstMatch(html, /<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i) || finalUrl || sourceUrl;
+  const h1 = firstMatch(html, /<h1[^>]*>([\s\S]*?)<\/h1>/i).replace(/\s+/g, " ").trim();
+  const text = stripTags(html);
+  const snippet = text.slice(0, 240);
+  return {
+    title: title || "",
+    description: description || "",
+    canonical_url: absoluteUrlOrEmpty(canonical, finalUrl || sourceUrl) || "",
+    h1: h1 || "",
+    snippet,
+    identities: extractIdentityLinks(html, finalUrl || sourceUrl),
+  };
+}
+
+function extractSitemapsFromRobots(robotsText, baseUrl) {
+  const sitemaps = [];
+  for (const match of String(robotsText || "").matchAll(/^\s*Sitemap:\s*(.+)\s*$/gim)) {
+    const absolute = absoluteUrlOrEmpty(match[1], baseUrl);
+    if (absolute) sitemaps.push(absolute);
+  }
+  return Array.from(new Set(sitemaps)).slice(0, 12);
+}
+
+async function fetchScopedUrl(rawUrl, { req, scope = "fetch", accept = "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5" } = {}) {
+  const target = await assertScopedPublicUrl(rawUrl);
+  const rate_limit = acquisitionRateLimit(scope, req);
+  const startedAt = Date.now();
+  const response = await fetchWithTimeout(
+    target,
+    {
+      method: "GET",
+      redirect: "follow",
+      headers: {
+        accept,
+        "user-agent": FETCH_USER_AGENT,
+      },
+    },
+    ACQ_TIMEOUT_MS,
+  );
+  const body = await readResponseTextLimited(response, ACQ_MAX_BYTES);
+  const finalUrl = response.url || target;
+  const contentType = String(response.headers.get("content-type") || "");
+  return {
+    target,
+    final_url: finalUrl,
+    status: response.status,
+    ok: response.ok,
+    content_type: contentType,
+    body,
+    fetched_at: new Date().toISOString(),
+    provenance: {
+      requested_url: target,
+      final_url: finalUrl,
+      fetched_at: new Date().toISOString(),
+      duration_ms: Date.now() - startedAt,
+      status: response.status,
+      content_type: contentType || null,
+      etag: response.headers.get("etag") || null,
+      last_modified: response.headers.get("last-modified") || null,
+      rate_limit,
+    },
+  };
 }
 
 async function collectDoctorUploadReachability() {
@@ -558,6 +847,169 @@ async function handleWaitJobPost(req, res, jobId) {
   }
 }
 
+async function handleScopedFetch(req, res, u) {
+  try {
+    const target = u.searchParams.get("url") || "";
+    const fetched = await fetchScopedUrl(target, { req, scope: "fetch" });
+    const metadata = /html/i.test(fetched.content_type) ? extractNormalizedMetadata(fetched.body, fetched.target, fetched.final_url) : null;
+    send(
+      res,
+      200,
+      JSON.stringify({
+        ok: true,
+        target: fetched.target,
+        final_url: fetched.final_url,
+        status: fetched.status,
+        content_type: fetched.content_type,
+        snippet: metadata?.snippet || stripTags(fetched.body).slice(0, 240),
+        metadata,
+        provenance: fetched.provenance,
+      }),
+      { "Content-Type": "application/json; charset=utf-8" },
+    );
+  } catch (error) {
+    reportServerIssue("acq.fetch", error, { path: req.url });
+    send(
+      res,
+      Number(error?.statusCode) || 500,
+      JSON.stringify({ ok: false, error: error?.errorCode || "fetch_failed", message: error?.message || "unknown", rate_limit: error?.rateLimit || null }),
+      { "Content-Type": "application/json; charset=utf-8" },
+    );
+  }
+}
+
+async function handleMetadata(req, res, u) {
+  try {
+    const target = u.searchParams.get("url") || "";
+    const fetched = await fetchScopedUrl(target, { req, scope: "metadata" });
+    const metadata = extractNormalizedMetadata(fetched.body, fetched.target, fetched.final_url);
+    send(
+      res,
+      200,
+      JSON.stringify({
+        ok: true,
+        target: fetched.target,
+        final_url: fetched.final_url,
+        status: fetched.status,
+        metadata,
+        provenance: fetched.provenance,
+      }),
+      { "Content-Type": "application/json; charset=utf-8" },
+    );
+  } catch (error) {
+    reportServerIssue("acq.metadata", error, { path: req.url });
+    send(
+      res,
+      Number(error?.statusCode) || 500,
+      JSON.stringify({ ok: false, error: error?.errorCode || "metadata_failed", message: error?.message || "unknown", rate_limit: error?.rateLimit || null }),
+      { "Content-Type": "application/json; charset=utf-8" },
+    );
+  }
+}
+
+async function handleDiscover(req, res, u) {
+  try {
+    const target = await assertScopedPublicUrl(u.searchParams.get("url") || "");
+    const rate_limit = acquisitionRateLimit("discover", req);
+    const origin = new URL(target).origin;
+    const robotsUrl = `${origin}/robots.txt`;
+    const startedAt = Date.now();
+    const robotsRes = await fetchWithTimeout(
+      robotsUrl,
+      { method: "GET", redirect: "follow", headers: { accept: "text/plain,*/*;q=0.5", "user-agent": FETCH_USER_AGENT } },
+      ACQ_TIMEOUT_MS,
+    );
+    const robotsText = await readResponseTextLimited(robotsRes, ACQ_MAX_BYTES);
+    const sitemaps = extractSitemapsFromRobots(robotsText, origin);
+    const allow = Array.from(robotsText.matchAll(/^\s*Allow:\s*(.+)\s*$/gim)).map((match) => match[1].trim()).slice(0, 12);
+    const disallow = Array.from(robotsText.matchAll(/^\s*Disallow:\s*(.+)\s*$/gim)).map((match) => match[1].trim()).slice(0, 12);
+    send(
+      res,
+      200,
+      JSON.stringify({
+        ok: true,
+        target,
+        origin,
+        robots_url: robotsUrl,
+        robots_status: robotsRes.status,
+        sitemaps,
+        allow,
+        disallow,
+        provenance: {
+          requested_url: target,
+          final_url: robotsRes.url || robotsUrl,
+          fetched_at: new Date().toISOString(),
+          duration_ms: Date.now() - startedAt,
+          status: robotsRes.status,
+          content_type: robotsRes.headers.get("content-type") || null,
+          rate_limit,
+        },
+      }),
+      { "Content-Type": "application/json; charset=utf-8" },
+    );
+  } catch (error) {
+    reportServerIssue("acq.discover", error, { path: req.url });
+    send(
+      res,
+      Number(error?.statusCode) || 500,
+      JSON.stringify({ ok: false, error: error?.errorCode || "discover_failed", message: error?.message || "unknown", rate_limit: error?.rateLimit || null }),
+      { "Content-Type": "application/json; charset=utf-8" },
+    );
+  }
+}
+
+async function handleArchive(req, res, u) {
+  try {
+    const target = await assertScopedPublicUrl(u.searchParams.get("url") || "");
+    const rate_limit = acquisitionRateLimit("archive", req);
+    const startedAt = Date.now();
+    const archiveUrl = new URL(ACQ_ARCHIVE_API_BASE);
+    archiveUrl.searchParams.set("url", target);
+    const response = await fetchWithTimeout(
+      archiveUrl,
+      { method: "GET", headers: { accept: "application/json", "user-agent": FETCH_USER_AGENT } },
+      ACQ_TIMEOUT_MS,
+    );
+    const text = await readResponseTextLimited(response, ACQ_MAX_BYTES);
+    const parsed = safeJsonParse(text, {}, "archive.parse", { target });
+    const closest = parsed?.archived_snapshots?.closest || null;
+    send(
+      res,
+      200,
+      JSON.stringify({
+        ok: true,
+        target,
+        snapshot: closest
+          ? {
+              available: Boolean(closest.available),
+              url: closest.url || null,
+              timestamp: closest.timestamp || null,
+              status: closest.status || null,
+            }
+          : null,
+        provenance: {
+          requested_url: target,
+          final_url: response.url || archiveUrl.toString(),
+          fetched_at: new Date().toISOString(),
+          duration_ms: Date.now() - startedAt,
+          status: response.status,
+          content_type: response.headers.get("content-type") || null,
+          rate_limit,
+        },
+      }),
+      { "Content-Type": "application/json; charset=utf-8" },
+    );
+  } catch (error) {
+    reportServerIssue("acq.archive", error, { path: req.url });
+    send(
+      res,
+      Number(error?.statusCode) || 500,
+      JSON.stringify({ ok: false, error: error?.errorCode || "archive_failed", message: error?.message || "unknown", rate_limit: error?.rateLimit || null }),
+      { "Content-Type": "application/json; charset=utf-8" },
+    );
+  }
+}
+
 function serveStatic(req, res, pathname) {
   const p = pathname === "/" ? "/index.html" : pathname;
   const filePath = safeJoin(ROOT, p);
@@ -601,10 +1053,33 @@ const server = http.createServer(async (req, res) => {
         schema_version: BLUELENS_CONFIG.meta?.exportSchemaVersion || "bluelens-report-v1",
         node_version: process.version,
         server_started_at: SERVER_STARTED_AT,
+        acquisition: {
+          allow_private_fetch: ALLOW_PRIVATE_FETCH,
+          timeout_ms: ACQ_TIMEOUT_MS,
+          max_bytes: ACQ_MAX_BYTES,
+          rate_limit_max: ACQ_RATE_LIMIT_MAX,
+          rate_limit_window_ms: ACQ_RATE_LIMIT_WINDOW_MS,
+        },
         upload_reachability: uploadReachability,
       }),
       { "Content-Type": "application/json" },
     );
+    return;
+  }
+  if (req.method === "GET" && u.pathname === "/api/fetch") {
+    await handleScopedFetch(req, res, u);
+    return;
+  }
+  if (req.method === "GET" && u.pathname === "/api/metadata") {
+    await handleMetadata(req, res, u);
+    return;
+  }
+  if (req.method === "GET" && u.pathname === "/api/discover") {
+    await handleDiscover(req, res, u);
+    return;
+  }
+  if (req.method === "GET" && u.pathname === "/api/archive") {
+    await handleArchive(req, res, u);
     return;
   }
   if (u.pathname === "/api/upload-stats") {
@@ -632,5 +1107,5 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, "127.0.0.1", () => {
   // eslint-disable-next-line no-console
-  console.log(`Ocean OSINT Lens running at http://localhost:${PORT}`);
+  console.log(`BlueLens running at http://localhost:${PORT}`);
 });
