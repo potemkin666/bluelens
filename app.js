@@ -17,6 +17,11 @@ const elements = {
   previewEmpty: document.getElementById("previewEmpty"),
   statusPill: document.getElementById("statusPill"),
   statusLine: document.getElementById("statusLine"),
+  progressPanel: document.getElementById("progressPanel"),
+  progressLabel: document.getElementById("progressLabel"),
+  progressValue: document.getElementById("progressValue"),
+  progressTrack: document.getElementById("progressTrack"),
+  progressFill: document.getElementById("progressFill"),
   metaName: document.getElementById("metaName"),
   metaType: document.getElementById("metaType"),
   metaSize: document.getElementById("metaSize"),
@@ -76,6 +81,7 @@ const elements = {
   btnEvidencePack: document.getElementById("btnEvidencePack"),
   missionPreset: document.getElementById("missionPreset"),
   btnRunMission: document.getElementById("btnRunMission"),
+  missionExplain: document.getElementById("missionExplain"),
   manualRow: document.getElementById("manualRow"),
   missionRow: document.getElementById("missionRow"),
   radar: document.getElementById("radar"),
@@ -362,6 +368,12 @@ const state = {
   uploadMeta: null,
   uiBusy: false,
   uploading: false,
+  progress: {
+    visible: false,
+    label: "",
+    value: null,
+    detail: "",
+  },
   funMode: FX_FUN_MODE_DEFAULT,
   chromeSkinWanted: FX_CHROME_DEFAULT,
   hudWanted: FX_HUD_DEFAULT,
@@ -447,6 +459,50 @@ function setStatus(label, tone = "muted") {
 function setStatusLine(text) {
   if (!elements.statusLine) return;
   elements.statusLine.textContent = text || "";
+}
+
+function renderProgress() {
+  const panel = elements.progressPanel;
+  if (!panel || !elements.progressFill || !elements.progressLabel || !elements.progressValue || !elements.progressTrack) return;
+  const progress = state.progress || {};
+  const visible = Boolean(progress.visible);
+  panel.hidden = !visible;
+  if (!visible) {
+    panel.classList.remove("indeterminate");
+    elements.progressFill.style.width = "0%";
+    elements.progressLabel.textContent = "Working…";
+    elements.progressValue.textContent = "";
+    elements.progressTrack.setAttribute("aria-valuenow", "0");
+    return;
+  }
+
+  const hasValue = Number.isFinite(progress.value);
+  const pct = hasValue ? Math.max(0, Math.min(100, Math.round(progress.value))) : null;
+  panel.classList.toggle("indeterminate", !hasValue);
+  elements.progressLabel.textContent = progress.label || "Working…";
+  elements.progressValue.textContent = progress.detail || (hasValue ? `${pct}%` : "Working…");
+  elements.progressFill.style.width = hasValue ? `${pct}%` : "";
+  elements.progressTrack.setAttribute("aria-valuenow", hasValue ? String(pct) : "0");
+}
+
+function setProgress({ label = "", value = null, detail = "" } = {}) {
+  state.progress = {
+    visible: true,
+    label: String(label || "Working…"),
+    value: Number.isFinite(value) ? Number(value) : null,
+    detail: detail ? String(detail) : "",
+  };
+  renderProgress();
+}
+
+function clearProgress() {
+  state.progress = {
+    visible: false,
+    label: "",
+    value: null,
+    detail: "",
+  };
+  renderProgress();
 }
 
 function renderActionLog() {
@@ -1137,19 +1193,20 @@ function renderOnboardingStrip() {
   if (!el) return;
   const chips = [
     {
+      tone: "ok",
+      text: state.file ? "Loaded locally first." : "Load an image to start.",
+    },
+    {
       tone: state.localServerOnline === false ? "warn" : "ok",
       text:
         state.localServerOnline === null
-          ? "Checking local server — upload and launch actions need the local proxy."
+          ? "Checking local upload helper…"
           : state.localServerOnline === false
-          ? "Server offline — uploads/search launchpad need `node server.js`."
-          : "Server reachable — launchpad uploads available when you ask for them.",
+          ? "Uploads unavailable — start `node server.js`."
+          : "Uploads available when you ask for them.",
     },
-    { tone: "warn", text: "Uploads will be external — launch actions send the image to a temporary third-party host." },
-    { tone: state.popupLikely ? "warn" : "ok", text: state.popupLikely ? "Popup blocker likely — provider tabs may require another click." : "Provider popups opened in-session." },
-    { tone: "warn", text: "OCR model loads from CDN — first run needs network access to fetch Tesseract assets." },
-    { tone: "warn", text: "Batch export omits failures — only successful batch reports are included right now." },
-  ];
+    state.popupLikely ? { tone: "warn", text: "If a search tab does not open, click that engine again." } : null,
+  ].filter(Boolean);
   el.hidden = false;
   el.innerHTML = chips
     .map((chip) => `<span class="onboarding-chip ${chip.tone === "warn" ? "warn" : "ok"}">${escapeHtml(chip.text)}</span>`)
@@ -1216,6 +1273,11 @@ function setUiBusy(busy, label = "") {
   state.uiBusy = Boolean(busy);
   document.body.classList.toggle("ui-busy", state.uiBusy);
   if (label) setStatus(label, busy ? "busy" : "muted");
+  if (busy) {
+    setProgress({ label: label || "Working…", detail: "Working…" });
+  } else {
+    clearProgress();
+  }
 
   const disabled = state.uiBusy;
   const controls = [
@@ -1291,6 +1353,7 @@ async function withUiLock(label, fn) {
     renderResultIntake();
     if (elements.btnIngestResults) elements.btnIngestResults.disabled = !(state.file && (elements.resultIntakeInput?.value || "").trim());
     setStatusLine("");
+    clearProgress();
   }
 }
 
@@ -1363,6 +1426,7 @@ function setButtonsEnabled(enabled) {
 function reset() {
   state.uiBusy = false;
   document.body.classList.remove("ui-busy");
+  clearProgress();
   state.file = null;
   state.cleanBlob = null;
   state.cleanSignals = null;
@@ -1577,6 +1641,19 @@ function getMissionPresetLabel(preset) {
   return labels[String(preset || "fast")] || "Quick OCR";
 }
 
+function getMissionPresetSummary(preset) {
+  const summaries = {
+    fast: "Run one local OCR pass for a quick text read.",
+    deep: "Run the deeper local OCR flow with multiple preprocessing passes.",
+    share_search: "Upload once, open Lens, and prepare the other provider links.",
+    handle_recon: "Extract OCR text locally, then normalize handles for follow-up.",
+    domain_recon: "Extract OCR text locally, then normalize domains for follow-up.",
+    metadata_pass: "Review local metadata, attribution, and suspicion cues only.",
+    cross_engine_swarm: "Queue upload-backed engine targets for a wider launchpad run.",
+  };
+  return summaries[String(preset || "fast")] || summaries.fast;
+}
+
 function renderEngineLaunchpad(run) {
   const el = elements.engineLinks;
   if (!el) return;
@@ -1704,7 +1781,9 @@ function setupSimpleUi() {
 
   const syncRunLabel = () => {
     if (!elements.btnRunMission || !elements.missionPreset) return;
-    elements.btnRunMission.textContent = getMissionPresetLabel(elements.missionPreset.value || "fast");
+    const preset = elements.missionPreset.value || "fast";
+    elements.btnRunMission.textContent = `Run ${getMissionPresetLabel(preset)}`;
+    if (elements.missionExplain) elements.missionExplain.textContent = getMissionPresetSummary(preset);
   };
   elements.missionPreset.addEventListener("change", syncRunLabel);
   syncRunLabel();
@@ -2287,6 +2366,11 @@ async function runBatchOcrTopCandidates(n = BATCH_OCR_DEFAULT) {
     for (let i = 0; i < pick.length; i += 1) {
       const it = pick[i];
       setStatusLine(`Batch OCR: ${i + 1}/${pick.length} · ${it.report?.file?.name || "image"}`);
+      setProgress({
+        label: "Running batch OCR",
+        value: ((i + 0.2) / pick.length) * 100,
+        detail: `${i + 1}/${pick.length} · ${it.report?.file?.name || "image"}`,
+      });
       try {
         const text = await ocrForBatchFile(it.file, lang);
         it.report.ocr_text = text || null;
@@ -2301,6 +2385,7 @@ async function runBatchOcrTopCandidates(n = BATCH_OCR_DEFAULT) {
       }
       renderBatchDashboard();
     }
+    setProgress({ label: "Running batch OCR", value: 100, detail: failures ? `${failures} failed` : "Complete" });
     setStatus(failures ? `Batch OCR completed with ${failures} failures` : "Ready");
     setStatusLine(failures ? `Batch OCR: ${pick.length - failures}/${pick.length} ok · ${failures} failed` : "Batch OCR: ✓");
   });
@@ -2387,10 +2472,10 @@ async function prepareLaunchpad({
   openLens = true,
   autoEnableShare = false,
   source = "launchpad",
-  busyLabel = "Preparing engine links…",
+  busyLabel = "Uploading + preparing links…",
   prompt = "To prepare provider links from one upload, BlueLens needs one temporary public handoff URL. Allow the upload?",
   labelPrefix = "Launchpad",
-  summaryTitle = "Prepare Engine Links",
+  summaryTitle = "Upload + Prepare Links",
   summaryLines = [],
   successStatusLine = "Launchpad ready",
 } = {}) {
@@ -2815,10 +2900,10 @@ async function handleSearchAll({ autoEnableShare = false, openLens = true } = {}
     openLens,
     autoEnableShare,
     source: "search-all",
-    busyLabel: "Preparing engine links…",
+    busyLabel: "Uploading + preparing links…",
     prompt: "To prepare provider links from one upload, BlueLens needs one temporary public handoff URL. Allow the upload?",
     labelPrefix: "Launchpad",
-    summaryTitle: "Prepare Engine Links",
+    summaryTitle: "Upload + Prepare Links",
     summaryLines: [
       `Prepared ${ENGINE_ORDER.length} engine targets from one upload`,
       "Paste titles, snippets, and URLs back into Result Intake so BlueLens can normalize and dedupe the findings",
@@ -4082,6 +4167,11 @@ async function runBatchFiles(files) {
   const lines = [];
   for (let i = 0; i < imageFiles.length; i += 1) {
     const f = imageFiles[i];
+    setProgress({
+      label: "Running batch",
+      value: ((i + 0.2) / imageFiles.length) * 100,
+      detail: `${i + 1}/${imageFiles.length} · ${f.name}`,
+    });
     lines.push(`[${i + 1}/${imageFiles.length}] ${f.name}`);
     elements.batchOut.textContent = lines.join("\n");
     try {
@@ -4102,6 +4192,8 @@ async function runBatchFiles(files) {
     }
     elements.batchOut.textContent = lines.join("\n");
   }
+
+  setProgress({ label: "Running batch", value: 100, detail: `Completed ${state.batchReports.length}/${imageFiles.length}` });
 
   elements.btnRunBatch.disabled = false;
   elements.btnDownloadBatch.disabled = state.batchReports.length === 0;
@@ -4252,6 +4344,13 @@ async function getOcrWorker(lang) {
         if (!m || !m.status) return;
         const pct = typeof m.progress === "number" ? ` ${(m.progress * 100).toFixed(0)}%` : "";
         setOcrStatus(`${m.status}${pct}`);
+        if (state.ocrRunning) {
+          setProgress({
+            label: "Running OCR",
+            value: typeof m.progress === "number" ? m.progress * 100 : null,
+            detail: `${m.status}${pct}`,
+          });
+        }
       },
     });
 
@@ -4316,6 +4415,11 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
   elements.ocrOut.textContent = "Loading OCR…";
   setOcrStatus("Running…");
   setStatusLine(mode === "fast" ? "OCR: fast pass…" : "OCR: pass 1/3…");
+  setProgress({
+    label: "Running OCR",
+    value: mode === "fast" ? 8 : 5,
+    detail: mode === "fast" ? "Starting fast pass…" : "Starting pass 1 of 3…",
+  });
 
   try {
     const lang = elements.ocrLang.value || "eng";
@@ -4339,6 +4443,7 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
       setOcrStatus("Ready");
       if (text) pulseRadar("ocr");
       setStatusLine("OCR: ✓");
+      setProgress({ label: "Running OCR", value: 100, detail: "OCR complete" });
       return text;
     }
 
@@ -4356,10 +4461,13 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
     }
 
     setStatusLine("OCR: pass 1/3…");
+    setProgress({ label: "Running OCR", value: 20, detail: "Pass 1 of 3…" });
     const r1 = await worker.recognize(state.file);
     setStatusLine("OCR: pass 2/3…");
+    setProgress({ label: "Running OCR", value: 48, detail: "Pass 2 of 3…" });
     const r2 = enhanced ? await worker.recognize(enhanced) : null;
     setStatusLine("OCR: pass 3/3…");
+    setProgress({ label: "Running OCR", value: 76, detail: "Pass 3 of 3…" });
     const r3 = adaptive ? await worker.recognize(adaptive) : null;
 
     const t1 = (r1?.data?.text || "").trim();
@@ -4458,6 +4566,7 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
     setOcrStatus("Ready");
     if (finalText) pulseRadar("ocr");
     logAction("ocr_run", `${state.lastOcrMode} · ${finalText ? "text" : "no_text"}`);
+    setProgress({ label: "Running OCR", value: 100, detail: "OCR complete" });
 
     // Refresh hints with OCR-derived entities.
     try {
@@ -4505,6 +4614,7 @@ async function analyzeFile(file) {
   await withUiLock("Processing…", async () => {
     let img;
     try {
+      setProgress({ label: "Preparing local review", value: 12, detail: "Loading image…" });
       img = await loadImageFromFile(file);
     } catch {
       setStatus("Failed to load image");
@@ -4514,6 +4624,7 @@ async function analyzeFile(file) {
 
     elements.metaDim.textContent = `${img.naturalWidth || img.width} × ${img.naturalHeight || img.height}`;
 
+    setProgress({ label: "Preparing local review", value: 42, detail: "Computing hashes and metadata…" });
     const [hashes, exifObj] = await Promise.all([computeHashes(file), parseExif(file)]);
     state.signals.sha256 = hashes.sha;
     state.signals.md5 = hashes.md5;
@@ -4540,6 +4651,7 @@ async function analyzeFile(file) {
     state.insights.metadata_suspicion_band = band;
     state.insights.metadata_suspicion_inputs = inputs;
 
+    setProgress({ label: "Preparing local review", value: 78, detail: "Building clean copy and local signals…" });
     state.cleanBlob = await encodeCleanCopy(img, file.type);
     if (state.cleanBlob) {
       try {
@@ -4561,6 +4673,7 @@ async function analyzeFile(file) {
       updateSourceInfoField("original_filename", elements.srcOrig.value, { source: "derived", note: "Derived from loaded file name" });
     }
 
+    setProgress({ label: "Preparing local review", value: 100, detail: "Local review ready" });
     setStatus("Ready");
   });
 
@@ -5572,8 +5685,8 @@ function setupCommandPalette() {
   let activeIndex = 0;
 
   const actions = [
-    { name: "Prepare Engine Links", meta: "Reverse-search launchpad", keys: ["prepare", "search", "all", "reverse", "engines", "launchpad"], run: () => void handleSearchAll() },
-    { name: "OSINT Pass", meta: "OCR + signals", keys: ["pass", "ocr", "signals", "attribution"], run: () => elements.btnRunPass?.click() },
+    { name: "Upload + Prepare Links", meta: "Reverse-search launchpad", keys: ["upload", "prepare", "search", "all", "reverse", "engines", "launchpad"], run: () => void handleSearchAll() },
+    { name: "Refresh Local Analysis", meta: "OCR + signals", keys: ["refresh", "pass", "ocr", "signals", "attribution"], run: () => elements.btnRunPass?.click() },
     { name: "Copy Report", meta: "JSON to clipboard", keys: ["copy", "report", "json"], run: () => elements.btnCopyReport?.click() },
     { name: "Copy Public URL", meta: "If shared", keys: ["copy", "url", "public"], run: () => elements.btnCopyPublicUrl?.click() },
     { name: "Tab: Search", meta: "Console", keys: ["tab", "search"], run: () => window.__osintActivateTab?.("search") },

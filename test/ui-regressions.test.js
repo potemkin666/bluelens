@@ -46,16 +46,16 @@ test("package startup contract declares Node 18+ and a server start script", () 
 });
 
 test("search-all UI is framed as link preparation, not automatic querying", () => {
-  assert.match(indexHtml, />\s*Prepare Engine Links\s*</);
-  assert.match(appJs, /Preparing engine links…/);
-  assert.match(appJs, /Prepare Engine Links/);
+  assert.match(indexHtml, />\s*Upload \+ Prepare Links\s*</);
+  assert.match(appJs, /Uploading \+ preparing links…/);
+  assert.match(appJs, /Upload \+ Prepare Links/);
   assert.match(appJs, /Paste titles, snippets, and URLs back into Result Intake/);
 });
 
 
 test("sharing copy matches explicit upload consent", () => {
-  assert.match(indexHtml, /Launch actions upload to a temporary public host only after you explicitly choose them\./);
-  assert.match(indexHtml, /uploads happen only after you ask for launchpad links/i);
+  assert.match(indexHtml, /Uploads stay off until you run Upload \+ Launchpad, Upload \+ Prepare Links, or an engine open action\./);
+  assert.match(indexHtml, /upload only on demand/i);
 });
 
 
@@ -66,9 +66,10 @@ test("primary and secondary actions stay in a static order", () => {
 });
 
 test("landing UI stays focused on image search", () => {
-  assert.match(indexHtml, /Drop an image, inspect locally, then choose when to upload\./);
-  assert.match(indexHtml, /alt="BlueLens image search workflow demo"/);
-  assert.match(indexHtml, /<div class="focus-demo">[\s\S]*?<img/);
+  assert.match(indexHtml, /Know what runs before you click it\./);
+  assert.match(indexHtml, /Load image<\/strong> — BlueLens inspects it locally first\./);
+  assert.match(indexHtml, /Run local tools<\/strong> — hashes, EXIF, OCR, and compare stay on this device\./);
+  assert.doesNotMatch(indexHtml, /Search-first workflow/);
   assert.doesNotMatch(indexHtml, /Local file signals/);
 });
 
@@ -226,6 +227,8 @@ test("batch OCR failures are surfaced instead of silently ignored", () => {
 
 test("onboarding and evidence-pack UI expose operator caveats and export path", () => {
   assert.match(indexHtml, /id="onboardingStrip"/);
+  assert.match(indexHtml, /id="progressPanel"/);
+  assert.match(indexHtml, /id="missionExplain"/);
   assert.match(indexHtml, /id="btnEvidencePack"/);
   assert.match(indexHtml, /id="btnRunDoctor"/);
   assert.match(indexHtml, /id="doctorOut"/);
@@ -239,8 +242,9 @@ test("onboarding and evidence-pack UI expose operator caveats and export path", 
   assert.match(appJs, /function runDoctorChecks\(\)/);
   assert.match(appJs, /function ingestResults\(raw\)/);
   assert.match(appJs, /function renderMissionOutput\(\)/);
-  assert.match(indexHtml, /Operator workflow: 1\) load image locally/);
-  assert.match(appJs, /Batch export omits failures/);
+  assert.match(indexHtml, /Quick start: 1\) load image/);
+  assert.match(appJs, /function renderProgress\(\)/);
+  assert.match(appJs, /Loaded locally first\./);
   assert.match(helpHtml, />Doctor</);
 });
 
