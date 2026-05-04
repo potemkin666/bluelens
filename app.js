@@ -253,6 +253,7 @@ const FX_FUN_MODE_DEFAULT = Boolean(FX_CONFIG.funModeDefault);
 const FX_HUD_DEFAULT = Boolean(FX_CONFIG.hudDefault);
 const FX_CHROME_DEFAULT = Boolean(FX_CONFIG.chromeDefault);
 const COMPARE_DIFF_SIZE = 96;
+const UNKNOWN_EXPIRY_WINDOW = "unknown";
 const TEMP_EXTERNAL_ARTIFACT_WARNING = "Temporary external artifact — third-party upload URLs may expire or disappear before a reader opens the report.";
 const TEMP_EXTERNAL_ARTIFACT_NOTE = "Host retention is controlled by the third-party service and is not guaranteed by BlueLens.";
 const compareDiffScratchA = document.createElement("canvas");
@@ -497,7 +498,7 @@ function updateSourceInfoField(field, value, { source = "manual", note = "" } = 
 function uploadExpiryWindowForHost(host) {
   if (!host) return null;
   if (host === "litterbox") return SERVER_CONFIG.upload?.litterboxExpiry || "72h";
-  return "unknown";
+  return UNKNOWN_EXPIRY_WINDOW;
 }
 
 function uploadRetentionNoteForHost(host) {
