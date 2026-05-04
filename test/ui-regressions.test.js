@@ -9,6 +9,7 @@ const helpHtml = fs.readFileSync(path.join(__dirname, "..", "help.html"), "utf8"
 const stylesCss = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf8");
 const waitHtml = fs.readFileSync(path.join(__dirname, "..", "wait.html"), "utf8");
 const startCmd = fs.readFileSync(path.join(__dirname, "..", "bluelens-start.cmd"), "utf8");
+const oceanBgPath = path.join(__dirname, "..", "assets", "ocean-bg.jpg");
 const setupTabsBlock = appJs.match(/function setupTabs\(\) \{[\s\S]*?\n\}/)?.[0] || "";
 
 test("mission preset selector stays reachable in the HTML", () => {
@@ -56,6 +57,18 @@ test("caseboard UI is removed from the landing workflow", () => {
   assert.doesNotMatch(indexHtml, /Caseboard/);
   assert.doesNotMatch(appJs, /caseboard:v1/);
   assert.doesNotMatch(appJs, /Save to Caseboard/);
+});
+
+test("source reliability state no longer uses stale caseInfo naming", () => {
+  assert.match(appJs, /sourceInfo:/);
+  assert.match(appJs, /source_reliability: \{ \.\.\.state\.sourceInfo \}/);
+  assert.doesNotMatch(appJs, /caseInfo/);
+});
+
+test("only the live squid background asset remains wired", () => {
+  assert.match(stylesCss, /assets\/squid-bg\.jpg/);
+  assert.doesNotMatch(stylesCss, /assets\/ocean-bg\.jpg/);
+  assert.equal(fs.existsSync(oceanBgPath), false);
 });
 
 test("search tab is always the first panel shown on load", () => {

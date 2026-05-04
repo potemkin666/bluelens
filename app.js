@@ -368,7 +368,7 @@ const state = {
     cluster: "all",
     selected: {},
   },
-  caseInfo: {
+  sourceInfo: {
     where_obtained: "",
     when_obtained: "",
     who_provided: "",
@@ -687,7 +687,7 @@ function reset() {
   state.actionLog = [];
   state.doctorReport = null;
   state.batchUi.selected = {};
-  state.caseInfo = {
+  state.sourceInfo = {
     where_obtained: "",
     when_obtained: "",
     who_provided: "",
@@ -2952,7 +2952,7 @@ function buildOsintReport() {
     app_version: APP_VERSION,
     generated_at: new Date().toISOString(),
     export_metadata: exportMetadata,
-    source_reliability: { ...state.caseInfo },
+    source_reliability: { ...state.sourceInfo },
     file: state.file
       ? {
           name: state.file.name || null,
@@ -3340,7 +3340,7 @@ function renderOcrEntities(text) {
       `<option value="likely">~</option>` +
       `<option value="confirmed">✓</option>`;
     sel.addEventListener("change", () => {
-      state.caseInfo = state.caseInfo || {};
+      state.sourceInfo = state.sourceInfo || {};
       state.entityConfidence = state.entityConfidence || {};
       state.entityConfidence[key] = sel.value;
     });
@@ -3704,7 +3704,7 @@ async function analyzeFile(file) {
 
     if (!elements.srcOrig.value) {
       elements.srcOrig.value = file.name || "";
-      state.caseInfo.original_filename = elements.srcOrig.value;
+      state.sourceInfo.original_filename = elements.srcOrig.value;
     }
 
     setStatus("Ready");
@@ -4000,21 +4000,21 @@ function setupActions() {
     });
   }
 
-  const syncCase = () => {
-    state.caseInfo.where_obtained = elements.srcWhere.value || "";
-    state.caseInfo.when_obtained = elements.srcWhen.value || "";
-    state.caseInfo.who_provided = elements.srcWho.value || "";
-    state.caseInfo.original_filename = elements.srcOrig.value || "";
-    state.caseInfo.manual_notes = elements.manualNotes?.value || "";
-    state.manualNotes = state.caseInfo.manual_notes;
-    if (elements.confLevel) state.caseInfo.analyst_confidence = elements.confLevel.value || "unverified";
+  const syncSourceInfo = () => {
+    state.sourceInfo.where_obtained = elements.srcWhere.value || "";
+    state.sourceInfo.when_obtained = elements.srcWhen.value || "";
+    state.sourceInfo.who_provided = elements.srcWho.value || "";
+    state.sourceInfo.original_filename = elements.srcOrig.value || "";
+    state.sourceInfo.manual_notes = elements.manualNotes?.value || "";
+    state.manualNotes = state.sourceInfo.manual_notes;
+    if (elements.confLevel) state.sourceInfo.analyst_confidence = elements.confLevel.value || "unverified";
   };
-  elements.srcWhere.addEventListener("input", syncCase);
-  elements.srcWhen.addEventListener("input", syncCase);
-  elements.srcWho.addEventListener("input", syncCase);
-  elements.srcOrig.addEventListener("input", syncCase);
-  elements.manualNotes?.addEventListener("input", syncCase);
-  elements.confLevel?.addEventListener("change", syncCase);
+  elements.srcWhere.addEventListener("input", syncSourceInfo);
+  elements.srcWhen.addEventListener("input", syncSourceInfo);
+  elements.srcWho.addEventListener("input", syncSourceInfo);
+  elements.srcOrig.addEventListener("input", syncSourceInfo);
+  elements.manualNotes?.addEventListener("input", syncSourceInfo);
+  elements.confLevel?.addEventListener("change", syncSourceInfo);
 
   elements.chkEnableShare.addEventListener("change", () => {
     state.shareEnabled = Boolean(elements.chkEnableShare.checked);
