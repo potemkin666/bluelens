@@ -116,8 +116,14 @@
       const waitDiagnostics = new Map();
       const params = new URLSearchParams(location.search);
       const jobId = params.get("job") || "";
-      let engine = params.get("engine") || "";
-      let label = params.get("label") || engine || "Engine";
+      const normalizeLabel = (value, fallback = "Engine") =>
+        String(value || fallback || "Engine")
+          .replace(/[\u0000-\u001f\u007f]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 80) || fallback;
+      let engine = normalizeLabel(params.get("engine") || "", "");
+      let label = normalizeLabel(params.get("label") || "", engine || "Engine");
       let lastSeq = -1;
       let stopped = false;
       let retryMs = initialRetryMs;
@@ -225,7 +231,7 @@
       const applyJob = (job) => {
         if (!job) return false;
         if (job.label) {
-          label = job.label;
+          label = normalizeLabel(job.label, label || "Engine");
           setHeading(label);
         }
         if (job.engine) engine = job.engine;

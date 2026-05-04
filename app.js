@@ -216,6 +216,18 @@ const STORAGE_FX_FUN_MODE_KEY = STORAGE_KEYS.fxFunMode || "fx:funMode";
 const STORAGE_FX_HUD_KEY = STORAGE_KEYS.fxHud || "fx:hud";
 const STORAGE_SKIN_CHROME_KEY = STORAGE_KEYS.skinChrome || "ui:skinChrome";
 const STORAGE_OPERATOR_MODE_KEY = STORAGE_KEYS.operatorMode || "ui:operatorMode";
+const UTF8_ENCODER = new TextEncoder();
+const TAR_HEADER_SIZE = 512;
+const TAR_END_PADDING = 1024;
+const OCR_SCRIPT_HINTS = [
+  { label: "Arabic", test: /[\u0600-\u06FF]/g, models: ["ara"] },
+  { label: "Hebrew", test: /[\u0590-\u05FF]/g, models: ["heb"] },
+  { label: "Cyrillic", test: /[\u0400-\u04FF]/g, models: ["rus", "ukr"] },
+  { label: "Hangul", test: /[\uAC00-\uD7AF]/g, models: ["kor"] },
+  { label: "Japanese", test: /[\u3040-\u30FF]/g, models: ["jpn"] },
+  { label: "Han", test: /[\u4E00-\u9FFF]/g, models: ["chi_sim", "chi_tra", "jpn"] },
+  { label: "Latin", test: /[A-Za-zÀ-ÿ]/g, models: ["eng", "spa", "fra", "deu", "ita", "por", "nld", "pol", "tur"] },
+];
 const FX_SCANLINE_DEFAULT = Number.isFinite(FX_CONFIG.scanlineDefault) ? FX_CONFIG.scanlineDefault : 0;
 const FX_CHROMATIC_DEFAULT = Number.isFinite(FX_CONFIG.chromaticDefault) ? FX_CONFIG.chromaticDefault : 0;
 const FX_SCANLINE_FUN_DEFAULT = Number.isFinite(FX_CONFIG.scanlineFunDefault) ? FX_CONFIG.scanlineFunDefault : 0.18;
@@ -421,11 +433,11 @@ function applyOperatorMode(enabled, { persist = true } = {}) {
 }
 
 function toUtf8Bytes(text) {
-  return new TextEncoder().encode(String(text || ""));
+  return UTF8_ENCODER.encode(String(text || ""));
 }
 
 function padTarSize(size) {
-  return Math.ceil(size / 512) * 512;
+  return Math.ceil(size / TAR_HEADER_SIZE) * TAR_HEADER_SIZE;
 }
 
 function tarOctal(value, width) {
@@ -440,11 +452,11 @@ function writeTarString(view, offset, value, width) {
 
 function createTar(entries) {
   const files = entries.filter((entry) => entry?.name && entry?.data instanceof Uint8Array);
-  const total = files.reduce((sum, entry) => sum + 512 + padTarSize(entry.data.length), 0) + 1024;
+  const total = files.reduce((sum, entry) => sum + TAR_HEADER_SIZE + padTarSize(entry.data.length), 0) + TAR_END_PADDING;
   const out = new Uint8Array(total);
   let offset = 0;
   for (const entry of files) {
-    const header = out.subarray(offset, offset + 512);
+    const header = out.subarray(offset, offset + TAR_HEADER_SIZE);
     writeTarString(header, 0, entry.name, 100);
     writeTarString(header, 100, tarOctal(0o644, 8), 8);
     writeTarString(header, 108, tarOctal(0, 8), 8);
@@ -457,7 +469,7 @@ function createTar(entries) {
     writeTarString(header, 263, "00", 2);
     const checksum = header.reduce((sum, byte) => sum + byte, 0);
     writeTarString(header, 148, `${checksum.toString(8).padStart(6, "0")}\0 `, 8);
-    offset += 512;
+    offset += TAR_HEADER_SIZE;
     out.set(entry.data, offset);
     offset += padTarSize(entry.data.length);
   }
@@ -2856,7 +2868,7 @@ function downloadJson(obj, filename) {
 }
 
 async function downloadEvidencePack() {
-  if (!state.file) throw new Error("No file loaded");
+  if (!state.file) throw new Error("Cannot create evidence pack: no image file is currently loaded");
   const report = buildOsintReport();
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const baseName = (state.file.name || "image").replace(/\.[^/.]+$/, "") || "image";
@@ -3142,16 +3154,7 @@ function renderOcrEntities(text) {
 function detectScriptHint(text) {
   const t = String(text || "");
   if (!t) return null;
-  const scripts = [
-    { label: "Arabic", test: /[\u0600-\u06FF]/g, models: ["ara"] },
-    { label: "Hebrew", test: /[\u0590-\u05FF]/g, models: ["heb"] },
-    { label: "Cyrillic", test: /[\u0400-\u04FF]/g, models: ["rus", "ukr"] },
-    { label: "Hangul", test: /[\uAC00-\uD7AF]/g, models: ["kor"] },
-    { label: "Japanese", test: /[\u3040-\u30FF]/g, models: ["jpn"] },
-    { label: "Han", test: /[\u4E00-\u9FFF]/g, models: ["chi_sim", "chi_tra", "jpn"] },
-    { label: "Latin", test: /[A-Za-zÀ-ÿ]/g, models: ["eng", "spa", "fra", "deu", "ita", "por", "nld", "pol", "tur"] },
-  ];
-  const ranked = scripts
+  const ranked = OCR_SCRIPT_HINTS
     .map((script) => ({ ...script, score: (t.match(script.test) || []).length }))
     .filter((script) => script.score > 0)
     .sort((a, b) => b.score - a.score);
