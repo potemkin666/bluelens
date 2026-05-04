@@ -1462,6 +1462,19 @@ function openTargetsForRun(run, engines) {
   return { openedCount, blockedCount };
 }
 
+function getMissionPresetLabel(preset) {
+  const labels = {
+    fast: "Quick OCR",
+    deep: "Deep OCR",
+    share_search: "Upload + Launchpad",
+    handle_recon: "Handle Recon",
+    domain_recon: "Domain Recon",
+    metadata_pass: "Metadata Pass",
+    cross_engine_swarm: "Swarm",
+  };
+  return labels[String(preset || "fast")] || "Quick OCR";
+}
+
 function renderEngineLaunchpad(run) {
   const el = elements.engineLinks;
   if (!el) return;
@@ -1564,12 +1577,14 @@ function setupEngineLaunchpad() {
 
     const chosen = r.chosen && typeof r.chosen === "object" ? r.chosen : {};
     const queue = r.queue && typeof r.queue === "object" ? r.queue : {};
-    const openList =
-      mode === "chosen"
-        ? ENGINE_ORDER.filter((eng) => chosen?.[eng] !== false && r.targets?.[eng])
-        : mode === "pending"
-          ? ENGINE_ORDER.filter((eng) => r.targets?.[eng] && [RUN_QUEUE_STATUS.queued, RUN_QUEUE_STATUS.blocked, RUN_QUEUE_STATUS.error].includes(String(queue?.[eng]?.status || "")))
-          : ENGINE_ORDER.filter((eng) => r.targets?.[eng]);
+    let openList = ENGINE_ORDER.filter((eng) => r.targets?.[eng]);
+    if (mode === "chosen") {
+      openList = openList.filter((eng) => chosen?.[eng] !== false);
+    } else if (mode === "pending") {
+      openList = openList.filter((eng) =>
+        [RUN_QUEUE_STATUS.queued, RUN_QUEUE_STATUS.blocked, RUN_QUEUE_STATUS.error].includes(String(queue?.[eng]?.status || "")),
+      );
+    }
     const { openedCount, blockedCount } = openTargetsForRun(r, openList);
     persistLaunchpadRun(r);
     setStatusLine(`Launchpad: opened ${openedCount}${blockedCount ? ` · blocked ${blockedCount}` : ""}`);
@@ -1587,21 +1602,7 @@ function setupSimpleUi() {
 
   const syncRunLabel = () => {
     if (!elements.btnRunMission || !elements.missionPreset) return;
-    const p = elements.missionPreset.value || "fast";
-    elements.btnRunMission.textContent =
-      p === "share_search"
-        ? "Upload + Launchpad"
-        : p === "deep"
-          ? "Deep OCR"
-          : p === "handle_recon"
-            ? "Handle Recon"
-            : p === "domain_recon"
-              ? "Domain Recon"
-              : p === "metadata_pass"
-                ? "Metadata Pass"
-                : p === "cross_engine_swarm"
-                  ? "Swarm"
-                  : "Quick OCR";
+    elements.btnRunMission.textContent = getMissionPresetLabel(elements.missionPreset.value || "fast");
   };
   elements.missionPreset.addEventListener("change", syncRunLabel);
   syncRunLabel();
@@ -2321,20 +2322,7 @@ async function runMissionPreset(preset) {
   if (state.uiBusy) return;
   const p = String(preset || "fast");
 
-  const missionBusyLabel =
-    p === "share_search"
-      ? "Upload + launchpad…"
-      : p === "deep"
-        ? "Deep OCR…"
-        : p === "handle_recon"
-          ? "Handle recon…"
-          : p === "domain_recon"
-            ? "Domain recon…"
-            : p === "metadata_pass"
-              ? "Metadata pass…"
-              : p === "cross_engine_swarm"
-                ? "Swarm…"
-                : "Quick OCR…";
+  const missionBusyLabel = `${getMissionPresetLabel(p)}…`;
   await withUiLock(missionBusyLabel, async () => {
     const base = `Hashes: ✓ · EXIF: ✓`;
     if (p === "fast") {
