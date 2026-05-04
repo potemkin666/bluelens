@@ -96,24 +96,119 @@
     <div class="wrap">
       <div class="card">
         <div id="title"><strong>Engine</strong> &mdash; waiting for public image URL&hellip;</div>
-        <div id="msg" class="muted" style="margin-top: 8px" aria-live="polite"><span class="spinner" aria-hidden="true"></span>Keep this tab open.</div>
+        <div id="msg" class="muted" style="margin-top: 8px" aria-live="polite"></div>
         <div id="link" style="margin-top: 10px"></div>
+        <div id="recovery" class="muted" style="margin-top: 10px" hidden></div>
         <button id="close">Close</button>
       </div>
     </div>
 
+    <script src="./bluelens-config.js"></script>
     <script>
+      const runtimeConfig = window.BLUELENS_CONFIG || {};
+      const waitJobTimeoutMs = runtimeConfig?.server?.waitJobs?.defaultTimeoutMs || 25000;
+      const waitPageConfig = runtimeConfig?.app?.waitPage || {};
+      const initialRetryMs = waitPageConfig.initialRetryMs || 350;
+      const maxRetryMs = waitPageConfig.maxRetryMs || 5000;
+      const backoffFactor = waitPageConfig.backoffFactor || 1.8;
+      const missingJobTerminalMs = waitPageConfig.missingJobTerminalMs || 12000;
+      const stalledJobTerminalMs = waitPageConfig.stalledJobTerminalMs || 45000;
+      const waitDiagnostics = new Map();
       const params = new URLSearchParams(location.search);
-      const token = params.get("token") || "";
-      const engine = params.get("engine") || "";
-      const label = params.get("label") || engine || "Engine";
-      const key = `osint:${token}:${engine}`;
+      const jobId = params.get("job") || "";
+      const normalizeLabel = (value, fallback = "Engine") =>
+        String(value || fallback || "Engine")
+          .replace(/[\u0000-\u001f\u007f]/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 80) || fallback;
+      let engine = normalizeLabel(params.get("engine") || "", "");
+      let label = normalizeLabel(params.get("label") || "", engine || "Engine");
+      let lastSeq = -1;
+      let stopped = false;
+      let retryMs = initialRetryMs;
+      let firstSeenServerStartedAt = null;
+      let lastProgressAt = Date.now();
+      let missingSince = 0;
 
       const title = document.getElementById("title");
       const msg = document.getElementById("msg");
       const link = document.getElementById("link");
-      title.innerHTML = `<strong>${label}</strong> &mdash; waiting for public image URL&hellip;`;
-      document.title = `OSINT Lens - ${label}`;
+      const recovery = document.getElementById("recovery");
+
+      const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+      const reportWaitIssue = (scope, error, dedupeMs = 4000) => {
+        const msg = error?.message || String(error || "unknown error");
+        const key = `${scope}:${msg}`;
+        const now = Date.now();
+        const last = Number(waitDiagnostics.get(key) || 0);
+        if (now - last < dedupeMs) return;
+        waitDiagnostics.set(key, now);
+        if (waitDiagnostics.size > 100) {
+          const oldestKey = waitDiagnostics.keys().next().value;
+          if (oldestKey) waitDiagnostics.delete(oldestKey);
+        }
+        try {
+          console.info(`[BlueLens:wait.${scope}] ${msg}`);
+        } catch {
+          // ignore
+        }
+      };
+
+      const setHeading = (nextLabel) => {
+        title.textContent = "";
+        const strong = document.createElement("strong");
+        strong.textContent = nextLabel;
+        title.appendChild(strong);
+        title.append(" — waiting for public image URL…");
+        document.title = `OSINT Lens - ${nextLabel}`;
+      };
+
+      const setMessage = (text, busy = false) => {
+        msg.textContent = "";
+        if (busy) {
+          const spinner = document.createElement("span");
+          spinner.className = "spinner";
+          spinner.setAttribute("aria-hidden", "true");
+          msg.appendChild(spinner);
+        }
+        msg.append(text);
+      };
+
+      const setRecovery = (text) => {
+        if (!recovery) return;
+        recovery.hidden = false;
+        recovery.innerHTML = "";
+        recovery.append(text);
+        recovery.append(" ");
+        const a = document.createElement("a");
+        a.href = "./index.html";
+        a.target = "_blank";
+        a.rel = "noreferrer";
+        a.textContent = "Open main tab";
+        recovery.appendChild(a);
+      };
+
+      const stopWithRecovery = (text) => {
+        stopped = true;
+        setMessage(text);
+        setRecovery("The handoff was interrupted. Return to the main tab and restart the upload.");
+      };
+
+      const applyMeta = (meta) => {
+        const serverStartedAt = Number(meta?.server_started_at || 0);
+        if (!Number.isFinite(serverStartedAt) || serverStartedAt <= 0) return;
+        if (firstSeenServerStartedAt == null) {
+          firstSeenServerStartedAt = serverStartedAt;
+          return;
+        }
+        if (serverStartedAt !== firstSeenServerStartedAt) {
+          stopWithRecovery("Local handoff server restarted before this wait tab finished.");
+        }
+      };
+
+      setHeading(label);
+      setMessage("Connecting to local handoff…", true);
 
       document.getElementById("close").addEventListener("click", () => window.close());
 
@@ -133,69 +228,106 @@
         }
       };
 
-      const applyData = (data) => {
-        if (!data) return false;
-        if (data.status) {
-          msg.textContent = data.status === "uploading" ? "Uploading... (check main tab)" : String(data.status);
+      const applyJob = (job) => {
+        if (!job) return false;
+        if (job.label) {
+          label = normalizeLabel(job.label, label || "Engine");
+          setHeading(label);
+        }
+        if (job.engine) engine = job.engine;
+        if (typeof job.seq === "number" && job.seq > lastSeq) {
+          lastSeq = job.seq;
+          lastProgressAt = Date.now();
+        }
+
+        if (job.err) {
+          setMessage(`Error: ${job.err}`);
+          stopped = true;
           return true;
         }
-        if (data.err) {
-          msg.textContent = `Error: ${data.err}`;
+        if (job.url) {
+          const target = buildTarget(job.url);
+          link.textContent = "";
+          const a = document.createElement("a");
+          a.href = target;
+          a.textContent = "Open manually";
+          link.appendChild(a);
+          location.replace(target);
+          stopped = true;
           return true;
         }
-        if (data.url) {
-          const t = buildTarget(data.url);
-          link.innerHTML = `<a href="${t}">Open manually</a>`;
-          location.replace(t);
-          return true;
+        if (job.status) {
+          const remainingMs = Number(job.expires_at || 0) - Date.now();
+          const expiryNote =
+            Number.isFinite(remainingMs) && remainingMs > 0 && remainingMs < 60_000
+              ? ` Expires in ${Math.max(1, Math.ceil(remainingMs / 1000))}s.`
+              : "";
+          setMessage(job.status === "uploading" ? `Uploading… (check main tab).${expiryNote}` : `${String(job.status)}${expiryNote}`, true);
         }
         return false;
       };
 
-      const tickStorage = () => {
-        let raw = null;
-        try {
-          raw = localStorage.getItem(key);
-        } catch {}
-        if (!raw) return;
-        try {
-          applyData(JSON.parse(raw));
-        } catch {}
+      const watchJob = async () => {
+        if (!jobId) {
+          setMessage("Missing wait job ID.");
+          return;
+        }
+
+        while (!stopped) {
+          try {
+            const r = await fetch(
+              `/api/wait-jobs/${encodeURIComponent(jobId)}?since=${encodeURIComponent(lastSeq)}&timeout=${encodeURIComponent(waitJobTimeoutMs)}`,
+              { cache: "no-store" },
+            );
+            if (!r.ok) {
+              if (r.status === 404) {
+                reportWaitIssue("not-found", new Error("wait job not yet created"));
+                missingSince ||= Date.now();
+                if (Date.now() - missingSince >= missingJobTerminalMs) {
+                  stopWithRecovery("Local handoff never appeared. The server may have restarted before the wait state was published.");
+                  return;
+                }
+                retryMs = Math.min(maxRetryMs, Math.round(retryMs * backoffFactor));
+                setMessage(`Waiting for local handoff… retrying in ${(retryMs / 1000).toFixed(1)}s.`, true);
+                await sleep(retryMs);
+                continue;
+              }
+              throw new Error(`HTTP ${r.status}`);
+            }
+            const data = await r.json();
+            applyMeta(data?.meta);
+            if (stopped) return;
+            retryMs = initialRetryMs;
+            if (data?.missing) missingSince ||= Date.now();
+            else missingSince = 0;
+            if (applyJob(data?.job)) return;
+            if (data?.missing && Date.now() - missingSince >= missingJobTerminalMs) {
+              stopWithRecovery("The handoff state disappeared before the upload finished.");
+              return;
+            }
+            if (Date.now() - lastProgressAt >= stalledJobTerminalMs) {
+              stopWithRecovery("The wait tab stopped receiving handoff progress updates.");
+              return;
+            }
+            if (data?.timeout) {
+              retryMs = Math.min(maxRetryMs, Math.round(retryMs * backoffFactor));
+              setMessage(`Still waiting for the upload job… retrying in ${(retryMs / 1000).toFixed(1)}s.`, true);
+              await sleep(retryMs);
+            }
+          } catch (error) {
+            reportWaitIssue("poll", error);
+            retryMs = Math.min(maxRetryMs, Math.round(retryMs * backoffFactor));
+            if (Date.now() - lastProgressAt >= stalledJobTerminalMs) {
+              stopWithRecovery("Connection to the local handoff stayed down too long.");
+              return;
+            }
+            setMessage(`Connection lost. Reconnecting in ${(retryMs / 1000).toFixed(1)}s…`, true);
+            await sleep(retryMs);
+          }
+        }
       };
 
-      const tickApi = async () => {
-        if (!token || !engine) return;
-        try {
-          const r = await fetch(`/api/status?token=${encodeURIComponent(token)}&engine=${encodeURIComponent(engine)}`, {
-            cache: "no-store",
-          });
-          if (!r.ok) return;
-          const d = await r.json();
-          applyData(d);
-        } catch {}
-      };
-
-      // BroadcastChannel fallback (works even if storage is restricted)
-      let bc = null;
-      try {
-        bc = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("osint-lens") : null;
-      } catch {}
-      if (bc) {
-        bc.addEventListener("message", (ev) => {
-          const d = ev && ev.data;
-          if (!d || d.token !== token || d.engine !== engine) return;
-          applyData(d);
-        });
-      }
-
-      window.addEventListener("storage", (e) => {
-        if (e.key === key) tickStorage();
-      });
-
-      setInterval(tickStorage, 250);
-      setInterval(() => void tickApi(), 350);
-      void tickApi();
-      tickStorage();
+      void watchJob();
     </script>
   </body>
 </html>

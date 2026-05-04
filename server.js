@@ -1,7 +1,7 @@
 /* Ocean OSINT Lens local server (static + upload proxy)
    - Serves static files from this folder
    - Provides POST /api/upload to proxy-upload images to a public host (avoids browser CORS limitations)
-   - Provides /api/status so "wait tabs" can receive the URL reliably
+   - Provides durable /api/wait-jobs/:id handoff routes for wait tabs
 
    Run:
      node server.js
@@ -11,19 +11,82 @@
 
 const http = require("http");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { URL } = require("url");
+const BLUELENS_CONFIG = require("./bluelens-config.js");
 
 const ROOT = __dirname;
-const PORT = process.env.PORT ? Number(process.env.PORT) : 8787;
+const SERVER_CONFIG = BLUELENS_CONFIG.server || {};
+const WAIT_JOB_CONFIG = SERVER_CONFIG.waitJobs || {};
+const UPLOAD_CONFIG = SERVER_CONFIG.upload || {};
+const PORT = process.env.PORT ? Number(process.env.PORT) : SERVER_CONFIG.port || 8787;
+const WAIT_JOB_MAX_AGE_MS = WAIT_JOB_CONFIG.maxAgeMs || 10 * 60 * 1000;
+const WAIT_JOB_DEFAULT_TIMEOUT_MS = WAIT_JOB_CONFIG.defaultTimeoutMs || 25_000;
+const WAIT_JOB_MAX_TIMEOUT_MS = WAIT_JOB_CONFIG.maxTimeoutMs || 30_000;
+const WAIT_JOB_PRUNE_INTERVAL_MS = WAIT_JOB_CONFIG.pruneIntervalMs || 60 * 1000;
+const UPLOAD_TIMEOUT_MS = UPLOAD_CONFIG.timeoutMs || 35_000;
+const UPLOAD_HOSTS = Array.isArray(UPLOAD_CONFIG.hosts) ? UPLOAD_CONFIG.hosts : ["uguu", "catbox", "litterbox", "0x0"];
+const PREFERRED_HOSTS_BY_PURPOSE = UPLOAD_CONFIG.preferredHostsByPurpose || {};
+const LITTERBOX_EXPIRY = UPLOAD_CONFIG.litterboxExpiry || "72h";
+const WAIT_JOB_STORE_PATH = path.join(os.tmpdir(), "bluelens-wait-jobs-v1.json");
+const SERVER_STARTED_AT = Date.now();
+const DOCTOR_TIMEOUT_MS = 2500;
+const UPLOAD_DOCTOR_URLS = {
+  uguu: "https://uguu.se/",
+  catbox: "https://catbox.moe/",
+  litterbox: "https://litterbox.catbox.moe/",
+  "0x0": "https://0x0.st/",
+};
 
-// In-memory status handoff for wait tabs (avoids relying on localStorage being available).
-// Key: `${token}:${engine}` -> { status?, url?, err?, ts }
-const WAIT_STATUS = new Map();
+// Durable wait-job handoff for wait tabs.
+// Key: jobId -> { id, engine, label, status, url, err, seq, created_at, updated_at, expires_at }
+const WAIT_JOBS = new Map();
+const WAIT_JOB_LISTENERS = new Map();
 
 // Upload host telemetry for auto-fastest selection.
 // host -> { ok: number, fail: number, avgMs: number }
 const UPLOAD_STATS = new Map();
+function reportServerIssue(scope, error, detail = null) {
+  const msg = error?.message || String(error || "unknown error");
+  if (detail) console.warn("[BlueLens]", { scope, message: msg, detail });
+  else console.warn("[BlueLens]", { scope, message: msg });
+}
+
+function safeJsonParse(txt, fallback, scope, detail = null) {
+  try {
+    return JSON.parse(txt);
+  } catch (error) {
+    if (scope) reportServerIssue(scope, error, detail);
+    return fallback;
+  }
+}
+
+async function fetchWithTimeout(url, init, ms) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function collectDoctorUploadReachability() {
+  return await Promise.all(UPLOAD_HOSTS.map(async (host) => {
+    const url = UPLOAD_DOCTOR_URLS[host];
+    if (!url) {
+      return { host, reachable: false, status_code: null, error: "no diagnostic url configured" };
+    }
+    try {
+      const res = await fetchWithTimeout(url, { method: "GET" }, DOCTOR_TIMEOUT_MS);
+      return { host, reachable: res.ok, status_code: res.status, error: res.ok ? "" : `http ${res.status}` };
+    } catch (error) {
+      return { host, reachable: false, status_code: null, error: error?.message || "unreachable" };
+    }
+  }));
+}
+
 function updateUploadStats(host, ok, ms) {
   const cur = UPLOAD_STATS.get(host) || { ok: 0, fail: 0, avgMs: 0 };
   if (ok) cur.ok += 1;
@@ -39,16 +102,161 @@ function hostScore(host) {
   const n = Math.max(1, s.ok + s.fail);
   return { failRate: s.fail / n, avgMs: s.avgMs || 45_000 };
 }
-function waitKey(token, engine) {
-  return `${token || ""}:${engine || ""}`;
-}
-function pruneWaitStatus(maxAgeMs = 10 * 60 * 1000) {
+
+function sanitizeWaitJob(entry, idHint = "") {
+  if (!entry || typeof entry !== "object") return null;
+  const id = String(entry.id || idHint || "").trim();
+  if (!id) return null;
   const now = Date.now();
-  for (const [k, v] of WAIT_STATUS.entries()) {
-    if (!v || typeof v.ts !== "number" || now - v.ts > maxAgeMs) WAIT_STATUS.delete(k);
+  const createdAt = Number(entry.created_at || entry.updated_at || now);
+  const updatedAt = Number(entry.updated_at || createdAt || now);
+  const expiresAt = Number(entry.expires_at || updatedAt + WAIT_JOB_MAX_AGE_MS);
+  const seq = Number(entry.seq || 0);
+  if (!Number.isFinite(createdAt)) return null;
+  if (!Number.isFinite(updatedAt)) return null;
+  if (!Number.isFinite(expiresAt)) return null;
+  if (!Number.isFinite(seq)) return null;
+  return {
+    id,
+    engine: String(entry.engine || ""),
+    label: String(entry.label || ""),
+    status: String(entry.status || "queued"),
+    url: entry.url != null ? String(entry.url) : "",
+    err: entry.err != null ? String(entry.err) : "",
+    seq: Math.max(0, Math.floor(seq)),
+    created_at: createdAt,
+    updated_at: updatedAt,
+    expires_at: expiresAt,
+  };
+}
+
+function persistWaitJobs() {
+  try {
+    const tmpPath = `${WAIT_JOB_STORE_PATH}.tmp`;
+    fs.writeFileSync(tmpPath, JSON.stringify(Array.from(WAIT_JOBS.values()), null, 2), "utf8");
+    fs.renameSync(tmpPath, WAIT_JOB_STORE_PATH);
+  } catch (error) {
+    reportServerIssue("wait-jobs.persist", error);
   }
 }
-setInterval(() => pruneWaitStatus(), 60 * 1000).unref?.();
+
+function loadWaitJobs() {
+  try {
+    const raw = fs.readFileSync(WAIT_JOB_STORE_PATH, "utf8");
+    const parsed = safeJsonParse(raw, [], "wait-jobs.load.parse");
+    const entries = Array.isArray(parsed) ? parsed : Object.values(parsed || {});
+    for (const entry of entries) {
+      const job = sanitizeWaitJob(entry);
+      if (!job || job.expires_at <= Date.now()) continue;
+      WAIT_JOBS.set(job.id, job);
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") reportServerIssue("wait-jobs.load", error);
+  }
+}
+
+function pruneWaitJobs(maxAgeMs = WAIT_JOB_MAX_AGE_MS) {
+  const now = Date.now();
+  let changed = false;
+  for (const [k, v] of WAIT_JOBS.entries()) {
+    if (!v || typeof v.updated_at !== "number" || now - v.updated_at > maxAgeMs || v.expires_at <= now) {
+      WAIT_JOBS.delete(k);
+      WAIT_JOB_LISTENERS.delete(k);
+      changed = true;
+    }
+  }
+  if (changed) persistWaitJobs();
+}
+setInterval(() => pruneWaitJobs(), WAIT_JOB_PRUNE_INTERVAL_MS).unref?.();
+loadWaitJobs();
+
+function waitJobIdFromPath(pathname) {
+  const prefix = "/api/wait-jobs/";
+  if (!pathname.startsWith(prefix)) return "";
+  return decodeURIComponent(pathname.slice(prefix.length)).trim();
+}
+
+function waitJobListenersFor(jobId) {
+  const existing = WAIT_JOB_LISTENERS.get(jobId);
+  if (existing) return existing;
+  const next = new Set();
+  WAIT_JOB_LISTENERS.set(jobId, next);
+  return next;
+}
+
+function resolveWaitJobListeners(jobId, job) {
+  const listeners = WAIT_JOB_LISTENERS.get(jobId);
+  if (!listeners || listeners.size === 0) return;
+  WAIT_JOB_LISTENERS.delete(jobId);
+  for (const resolve of listeners) resolve(job);
+}
+
+function getWaitJob(jobId) {
+  pruneWaitJobs();
+  return WAIT_JOBS.get(jobId) || null;
+}
+
+function upsertWaitJob(jobId, patch = {}) {
+  const now = Date.now();
+  const current =
+    WAIT_JOBS.get(jobId) || {
+      id: jobId,
+      engine: "",
+      label: "",
+      status: "queued",
+      url: "",
+      err: "",
+      seq: 0,
+      created_at: now,
+      updated_at: now,
+      expires_at: now + WAIT_JOB_MAX_AGE_MS,
+    };
+
+  const next = {
+    ...current,
+    ...(patch.engine != null ? { engine: String(patch.engine) } : {}),
+    ...(patch.label != null ? { label: String(patch.label) } : {}),
+    ...(patch.status != null ? { status: String(patch.status) } : {}),
+    ...(patch.url != null ? { url: String(patch.url), err: "", status: patch.status != null ? String(patch.status) : "ready" } : {}),
+    ...(patch.err != null ? { err: String(patch.err), url: "", status: patch.status != null ? String(patch.status) : "error" } : {}),
+    seq: current.seq + 1,
+    updated_at: now,
+    expires_at: now + WAIT_JOB_MAX_AGE_MS,
+  };
+
+  WAIT_JOBS.set(jobId, next);
+  persistWaitJobs();
+  resolveWaitJobListeners(jobId, next);
+  return next;
+}
+
+function waitForWaitJobUpdate(jobId, since = -1, timeoutMs = WAIT_JOB_DEFAULT_TIMEOUT_MS) {
+  const current = getWaitJob(jobId);
+  if (current && current.seq > since) return Promise.resolve(current);
+
+  return new Promise((resolve) => {
+    const listeners = waitJobListenersFor(jobId);
+    let done = false;
+    const finish = (job) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      listeners.delete(finish);
+      if (listeners.size === 0) WAIT_JOB_LISTENERS.delete(jobId);
+      resolve(job || null);
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    listeners.add(finish);
+  });
+}
+
+function waitJobMeta() {
+  return {
+    server_started_at: SERVER_STARTED_AT,
+    wait_job_max_age_ms: WAIT_JOB_MAX_AGE_MS,
+    wait_job_default_timeout_ms: WAIT_JOB_DEFAULT_TIMEOUT_MS,
+  };
+}
 
 function send(res, status, body, headers = {}) {
   res.writeHead(status, { "Cache-Control": "no-store", ...headers });
@@ -91,6 +299,65 @@ function contentType(filePath) {
   }
 }
 
+const ALLOWED_UPLOAD_MIME_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "image/heic",
+  "image/heif",
+  "image/avif",
+]);
+
+function normalizeMime(mime) {
+  return String(mime || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+}
+
+function detectImageMime(buf) {
+  if (!buf || buf.length < 12) return null;
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47 && buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a) return "image/png";
+  if (buf.length >= 12 && buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP") return "image/webp";
+  if (buf.length >= 6) {
+    const gif = buf.toString("ascii", 0, 6);
+    if (gif === "GIF87a" || gif === "GIF89a") return "image/gif";
+  }
+  if (buf.length >= 12 && buf.toString("ascii", 4, 8) === "ftyp") {
+    const brand = buf.toString("ascii", 8, 12);
+    if (["heic", "heix", "hevc", "hevx"].includes(brand)) return "image/heic";
+    if (["mif1", "msf1"].includes(brand)) return "image/heif";
+    if (["avif", "avis"].includes(brand)) return "image/avif";
+  }
+  return null;
+}
+
+function validateImageUploadPayload(buf, mime) {
+  const normalizedMime = normalizeMime(mime);
+  const detectedMime = detectImageMime(buf);
+  if (!detectedMime) {
+    const error = new Error("Payload is not a supported image");
+    error.statusCode = 415;
+    error.errorCode = "invalid_image_payload";
+    throw error;
+  }
+  if (normalizedMime && !ALLOWED_UPLOAD_MIME_TYPES.has(normalizedMime)) {
+    const error = new Error(`Unsupported upload MIME type: ${normalizedMime}`);
+    error.statusCode = 415;
+    error.errorCode = "invalid_image_payload";
+    throw error;
+  }
+  if (normalizedMime && normalizedMime !== detectedMime) {
+    const error = new Error(`Upload MIME does not match file signature (${normalizedMime} vs ${detectedMime})`);
+    error.statusCode = 415;
+    error.errorCode = "invalid_image_payload";
+    throw error;
+  }
+  return detectedMime;
+}
+
 async function readBody(req, maxBytes = 25 * 1024 * 1024) {
   const chunks = [];
   let total = 0;
@@ -108,19 +375,10 @@ async function handleUpload(req, res) {
     const mime = (req.headers["content-type"] || "application/octet-stream").toString();
     const purpose = (req.headers["x-purpose"] || "").toString().toLowerCase();
     const buf = await readBody(req);
+    const detectedMime = validateImageUploadPayload(buf, mime);
 
     // Node 18+ has global Blob/FormData/fetch.
-    const blob = new Blob([buf], { type: mime });
-
-    const fetchWithTimeout = async (url, init, ms) => {
-      const controller = new AbortController();
-      const t = setTimeout(() => controller.abort(), ms);
-      try {
-        return await fetch(url, { ...init, signal: controller.signal });
-      } finally {
-        clearTimeout(t);
-      }
-    };
+    const blob = new Blob([buf], { type: detectedMime });
 
     const parseUrlFromText = (txt) => {
       const first = (txt || "").trim().split(/\s+/)[0];
@@ -128,29 +386,22 @@ async function handleUpload(req, res) {
     };
 
     const uploadUguu = async () => {
-      // Uguu expects `files[]` (plural) and returns JSON with a direct URL.
       const fd = new FormData();
       fd.append("files[]", blob, filename);
-      const upstream = await fetchWithTimeout("https://uguu.se/upload.php", { method: "POST", body: fd }, 35_000);
+      const upstream = await fetchWithTimeout("https://uguu.se/upload.php", { method: "POST", body: fd }, UPLOAD_TIMEOUT_MS);
       const txt = await upstream.text();
       if (!upstream.ok) throw new Error(`uguu (${upstream.status})`);
-      let obj = null;
-      try {
-        obj = JSON.parse(txt);
-      } catch {
-        obj = null;
-      }
+      const obj = safeJsonParse(txt, null, "upload.uguu.parse", { host: "uguu" });
       const url = obj?.files?.[0]?.url;
       if (!url || !/^https?:\/\//i.test(url)) throw new Error("uguu (bad response)");
       return url;
     };
 
     const uploadCatbox = async () => {
-      // Anonymous uploads supported when no userhash is supplied.
       const fd = new FormData();
       fd.append("reqtype", "fileupload");
       fd.append("fileToUpload", blob, filename);
-      const upstream = await fetchWithTimeout("https://catbox.moe/user/api.php", { method: "POST", body: fd }, 35_000);
+      const upstream = await fetchWithTimeout("https://catbox.moe/user/api.php", { method: "POST", body: fd }, UPLOAD_TIMEOUT_MS);
       const txt = await upstream.text();
       if (!upstream.ok) throw new Error(`catbox (${upstream.status})`);
       const url = parseUrlFromText(txt);
@@ -159,15 +410,14 @@ async function handleUpload(req, res) {
     };
 
     const uploadLitterbox = async () => {
-      // Temporary hosting (1h–72h). `time` is required. Returns a direct URL as plain text.
       const fd = new FormData();
       fd.append("reqtype", "fileupload");
-      fd.append("time", "72h");
+      fd.append("time", LITTERBOX_EXPIRY);
       fd.append("fileToUpload", blob, filename);
       const upstream = await fetchWithTimeout(
         "https://litterbox.catbox.moe/resources/internals/api.php",
         { method: "POST", body: fd },
-        35_000,
+        UPLOAD_TIMEOUT_MS,
       );
       const txt = await upstream.text();
       if (!upstream.ok) throw new Error(`litterbox (${upstream.status})`);
@@ -177,10 +427,9 @@ async function handleUpload(req, res) {
     };
 
     const upload0x0 = async () => {
-      // 0x0.st: simple multipart field `file`, returns direct URL as plain text.
       const fd = new FormData();
       fd.append("file", blob, filename);
-      const upstream = await fetchWithTimeout("https://0x0.st", { method: "POST", body: fd }, 35_000);
+      const upstream = await fetchWithTimeout("https://0x0.st", { method: "POST", body: fd }, UPLOAD_TIMEOUT_MS);
       const txt = await upstream.text();
       if (!upstream.ok) throw new Error(`0x0 (${upstream.status})`);
       const url = parseUrlFromText(txt);
@@ -188,19 +437,15 @@ async function handleUpload(req, res) {
       return url;
     };
 
-    const attempts = [
-      { name: "uguu", fn: uploadUguu },
-      { name: "catbox", fn: uploadCatbox },
-      { name: "litterbox", fn: uploadLitterbox },
-      { name: "0x0", fn: upload0x0 },
-    ];
+    const uploadFns = {
+      uguu: uploadUguu,
+      catbox: uploadCatbox,
+      litterbox: uploadLitterbox,
+      "0x0": upload0x0,
+    };
+    const attempts = UPLOAD_HOSTS.map((name) => ({ name, fn: uploadFns[name] })).filter((entry) => typeof entry.fn === "function");
 
-    // Auto-fastest routing (based on recent telemetry), with purpose-aware nudges.
-    // Some engines (notably Lens) behave better with stable hosts that allow third-party fetches.
-    const purposePreferredOrder =
-      purpose === "lens" || purpose === "google"
-        ? ["catbox", "0x0", "litterbox", "uguu"]
-        : ["uguu", "catbox", "0x0", "litterbox"];
+    const purposePreferredOrder = PREFERRED_HOSTS_BY_PURPOSE[purpose] || PREFERRED_HOSTS_BY_PURPOSE.default || UPLOAD_HOSTS;
 
     const purposeRank = (host) => {
       const i = purposePreferredOrder.indexOf(host);
@@ -250,59 +495,65 @@ async function handleUpload(req, res) {
       { "Content-Type": "application/json; charset=utf-8" },
     );
   } catch (e) {
+    const statusCode = Number(e?.statusCode) || 500;
+    const errorCode = e?.errorCode || "upload_error";
+    reportServerIssue("upload.handle", e, { path: req.url, statusCode, errorCode });
     send(
       res,
-      500,
-      JSON.stringify({ ok: false, error: "upload_error", message: e?.message || "unknown" }),
+      statusCode,
+      JSON.stringify({ ok: false, error: errorCode, message: e?.message || "unknown" }),
       { "Content-Type": "application/json; charset=utf-8" },
     );
   }
 }
 
-async function handleWaitStatusGet(req, res, u) {
-  pruneWaitStatus();
-  const token = u.searchParams.get("token") || "";
-  const engine = u.searchParams.get("engine") || "";
-  const v = WAIT_STATUS.get(waitKey(token, engine));
-  if (!v) {
-    send(res, 404, JSON.stringify({ ok: false, error: "not_found" }), { "Content-Type": "application/json" });
+async function handleWaitJobGet(req, res, u, jobId) {
+  if (!jobId) {
+    send(res, 400, JSON.stringify({ ok: false, error: "missing_job_id" }), { "Content-Type": "application/json" });
     return;
   }
-  send(res, 200, JSON.stringify({ ok: true, ...v }), { "Content-Type": "application/json" });
+
+  const sinceRaw = Number(u.searchParams.get("since"));
+  const since = Number.isFinite(sinceRaw) ? sinceRaw : -1;
+  const timeoutRaw = Number(u.searchParams.get("timeout"));
+  const timeoutMs = Number.isFinite(timeoutRaw) ? Math.max(0, Math.min(WAIT_JOB_MAX_TIMEOUT_MS, timeoutRaw)) : WAIT_JOB_DEFAULT_TIMEOUT_MS;
+  const job = await waitForWaitJobUpdate(jobId, since, timeoutMs);
+
+  if (job) {
+    send(res, 200, JSON.stringify({ ok: true, timeout: false, job, meta: waitJobMeta() }), { "Content-Type": "application/json" });
+    return;
+  }
+
+  const latest = getWaitJob(jobId);
+  send(res, 200, JSON.stringify({ ok: true, timeout: true, job: latest, missing: !latest, meta: waitJobMeta() }), { "Content-Type": "application/json" });
 }
 
-async function handleWaitStatusPost(req, res) {
+async function handleWaitJobPost(req, res, jobId) {
   try {
-    const buf = await readBody(req, 1 * 1024 * 1024);
-    let obj = null;
-    try {
-      obj = JSON.parse(buf.toString("utf8"));
-    } catch {
-      obj = null;
-    }
-
-    const token = (obj?.token || "").toString();
-    const engine = (obj?.engine || "").toString();
-    if (!token || !engine) {
-      send(res, 400, JSON.stringify({ ok: false, error: "missing_token_or_engine" }), {
-        "Content-Type": "application/json",
-      });
+    if (!jobId) {
+      send(res, 400, JSON.stringify({ ok: false, error: "missing_job_id" }), { "Content-Type": "application/json" });
       return;
     }
 
-    const status = obj?.status != null ? String(obj.status) : undefined;
-    const url = obj?.url != null ? String(obj.url) : undefined;
-    const err = obj?.err != null ? String(obj.err) : undefined;
+    const buf = await readBody(req, 1 * 1024 * 1024);
+    const obj = safeJsonParse(buf.toString("utf8"), null, "wait-jobs.post.parse");
+    if (!obj || typeof obj !== "object") {
+      send(res, 400, JSON.stringify({ ok: false, error: "invalid_json" }), { "Content-Type": "application/json" });
+      return;
+    }
 
-    WAIT_STATUS.set(waitKey(token, engine), {
-      ts: Date.now(),
-      ...(status ? { status } : {}),
-      ...(url ? { url } : {}),
-      ...(err ? { err } : {}),
-    });
+    const patch = {
+      ...(obj?.engine != null ? { engine: obj.engine } : {}),
+      ...(obj?.label != null ? { label: obj.label } : {}),
+      ...(obj?.status != null ? { status: obj.status } : {}),
+      ...(obj?.url != null ? { url: obj.url } : {}),
+      ...(obj?.err != null ? { err: obj.err } : {}),
+    };
 
-    send(res, 200, JSON.stringify({ ok: true }), { "Content-Type": "application/json" });
+    const job = upsertWaitJob(jobId, patch);
+    send(res, 200, JSON.stringify({ ok: true, job }), { "Content-Type": "application/json" });
   } catch (e) {
+    reportServerIssue("wait-jobs.post", e, { jobId });
     send(res, 500, JSON.stringify({ ok: false, error: e?.message || "unknown" }), { "Content-Type": "application/json" });
   }
 }
@@ -329,6 +580,7 @@ function serveStatic(req, res, pathname) {
 
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+  const waitJobId = waitJobIdFromPath(u.pathname);
   if (req.method === "POST" && u.pathname === "/api/upload") {
     await handleUpload(req, res);
     return;
@@ -337,18 +589,36 @@ const server = http.createServer(async (req, res) => {
     send(res, 200, JSON.stringify({ ok: true }), { "Content-Type": "application/json" });
     return;
   }
+  if (u.pathname === "/api/doctor") {
+    const uploadReachability = await collectDoctorUploadReachability();
+    send(
+      res,
+      200,
+      JSON.stringify({
+        ok: true,
+        ping_ok: true,
+        app_version: BLUELENS_CONFIG.meta?.appVersion || "dev",
+        schema_version: BLUELENS_CONFIG.meta?.exportSchemaVersion || "bluelens-report-v1",
+        node_version: process.version,
+        server_started_at: SERVER_STARTED_AT,
+        upload_reachability: uploadReachability,
+      }),
+      { "Content-Type": "application/json" },
+    );
+    return;
+  }
   if (u.pathname === "/api/upload-stats") {
     const obj = {};
     for (const [k, v] of UPLOAD_STATS.entries()) obj[k] = v;
     send(res, 200, JSON.stringify({ ok: true, stats: obj }), { "Content-Type": "application/json" });
     return;
   }
-  if (u.pathname === "/api/status" && req.method === "GET") {
-    await handleWaitStatusGet(req, res, u);
+  if (waitJobId && req.method === "GET") {
+    await handleWaitJobGet(req, res, u, waitJobId);
     return;
   }
-  if (u.pathname === "/api/status" && req.method === "POST") {
-    await handleWaitStatusPost(req, res);
+  if (waitJobId && req.method === "POST") {
+    await handleWaitJobPost(req, res, waitJobId);
     return;
   }
 

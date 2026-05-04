@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BlueLens Help</title>
+    <meta name="description" content="BlueLens startup, privacy, troubleshooting, and default configuration reference." />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body class="help-page">
+    <main class="help-shell">
+      <header class="help-hero card">
+        <div class="card-title-row">
+          <h1>BlueLens Help</h1>
+          <a class="btn btn-ghost" href="./index.html">Back to app</a>
+        </div>
+        <p class="focus-lede">Start here for startup steps, privacy expectations, troubleshooting, and the operator-visible defaults that shape launch behavior.</p>
+      </header>
+
+      <section class="help-grid">
+        <article class="card help-card">
+          <div class="card-title-row"><h2>Startup</h2></div>
+          <ol class="help-list">
+            <li>Run <code>node server.js</code> from the repository root.</li>
+            <li>Open <code id="helpPort">http://localhost:8787</code>.</li>
+            <li>Choose an image to inspect locally, then explicitly run a launch action when you want provider links.</li>
+            <li>Open the <strong>Doctor</strong> panel for a one-screen check of server, popup, storage, CDN, and upload-host reachability.</li>
+          </ol>
+        </article>
+
+        <article class="card help-card">
+          <div class="card-title-row"><h2>Privacy</h2></div>
+          <ul class="help-list">
+            <li>Hashes, EXIF parsing, OCR, and comparison stay local in the browser.</li>
+            <li>Choosing an image stays local; launch actions upload to a temporary public host only after you trigger them.</li>
+            <li>Use <strong>Share safe</strong> to upload a clean re-encoded copy instead of the original file.</li>
+          </ul>
+        </article>
+
+        <article class="card help-card">
+          <div class="card-title-row"><h2>Troubleshooting</h2></div>
+          <ul class="help-list">
+            <li>If upload or launch actions fail immediately, confirm the local server is running.</li>
+            <li>If dragging a remote image URL fails, the origin likely blocked browser fetches; save the file locally first.</li>
+            <li>Wait tabs reconnect automatically, but they still need the local server to stay reachable.</li>
+          </ul>
+        </article>
+
+        <article class="card help-card help-defaults">
+          <div class="card-title-row"><h2>Operator defaults</h2></div>
+          <table class="help-table">
+            <thead>
+              <tr>
+                <th>Setting</th>
+                <th>Default</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody id="helpDefaultsBody"></tbody>
+          </table>
+        </article>
+      </section>
+    </main>
+
+    <script src="./bluelens-config.js"></script>
+    <script>
+      const config = window.BLUELENS_CONFIG || {};
+      const defaults = Array.isArray(config?.help?.defaults) ? config.help.defaults : [];
+      const port = config?.server?.port || 8787;
+      const portEl = document.getElementById("helpPort");
+      if (portEl) portEl.textContent = `http://localhost:${port}`;
+      const body = document.getElementById("helpDefaultsBody");
+      if (body) {
+        body.innerHTML = defaults
+          .map(
+            (row) => `
+              <tr>
+                <td>${row.label || ""}</td>
+                <td><code>${row.value || ""}</code></td>
+                <td>${row.detail || ""}</td>
+              </tr>
+            `,
+          )
+          .join("");
+      }
+    </script>
+  </body>
+</html>

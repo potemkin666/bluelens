@@ -3,6 +3,7 @@
 /* global OCR_PIPELINE */
 /* global OSINT_LIB */
 /* global BLUELENS_HELPERS */
+/* global BLUELENS_CONFIG */
 
 const elements = {
   dropzone: document.getElementById("dropzone"),
@@ -54,10 +55,13 @@ const elements = {
   compareInput: document.getElementById("compareInput"),
   compareImg: document.getElementById("compareImg"),
   compareEmpty: document.getElementById("compareEmpty"),
+  compareDiffCanvas: document.getElementById("compareDiffCanvas"),
+  compareDiffEmpty: document.getElementById("compareDiffEmpty"),
   cmpA: document.getElementById("cmpA"),
   cmpB: document.getElementById("cmpB"),
   cmpDist: document.getElementById("cmpDist"),
   cmpVerdict: document.getElementById("cmpVerdict"),
+  cmpExplain: document.getElementById("cmpExplain"),
   chkEnableShare: document.getElementById("chkEnableShare"),
   chkShareSafe: document.getElementById("chkShareSafe"),
   shareProvider: document.getElementById("shareProvider"),
@@ -69,6 +73,7 @@ const elements = {
   btnSearchAll: document.getElementById("btnSearchAll"),
   btnRunPass: document.getElementById("btnRunPass"),
   btnCopyReport: document.getElementById("btnCopyReport"),
+  btnEvidencePack: document.getElementById("btnEvidencePack"),
   missionPreset: document.getElementById("missionPreset"),
   btnRunMission: document.getElementById("btnRunMission"),
   manualRow: document.getElementById("manualRow"),
@@ -81,6 +86,7 @@ const elements = {
   srcWhen: document.getElementById("srcWhen"),
   srcWho: document.getElementById("srcWho"),
   srcOrig: document.getElementById("srcOrig"),
+  manualNotes: document.getElementById("manualNotes"),
   confLevel: document.getElementById("confLevel"),
   btnMutateSearch: document.getElementById("btnMutateSearch"),
   btnCopyMutations: document.getElementById("btnCopyMutations"),
@@ -92,6 +98,8 @@ const elements = {
   scanlineSlider: document.getElementById("scanlineSlider"),
   chromaticSlider: document.getElementById("chromaticSlider"),
   btnOverclock: document.getElementById("btnOverclock"),
+  chkFunMode: document.getElementById("chkFunMode"),
+  chkOperatorMode: document.getElementById("chkOperatorMode"),
   chkChrome: document.getElementById("chkChrome"),
   chkHud: document.getElementById("chkHud"),
   btnOpenLens: document.getElementById("btnOpenLens"),
@@ -101,31 +109,17 @@ const elements = {
   btnOpenGoogleImages: document.getElementById("btnOpenGoogleImages"),
   btnRetryUpload: document.getElementById("btnRetryUpload"),
   ocrLangHint: document.getElementById("ocrLangHint"),
+  onboardingStrip: document.getElementById("onboardingStrip"),
+  actionLogOut: document.getElementById("actionLogOut"),
+  btnRunDoctor: document.getElementById("btnRunDoctor"),
+  doctorOut: document.getElementById("doctorOut"),
 
   // Command palette
   cmdk: document.getElementById("cmdk"),
   cmdkInput: document.getElementById("cmdkInput"),
   cmdkList: document.getElementById("cmdkList"),
 
-  // Caseboard
-  caseName: document.getElementById("caseName"),
-  btnNewCase: document.getElementById("btnNewCase"),
-  btnSaveCase: document.getElementById("btnSaveCase"),
-  caseSelect: document.getElementById("caseSelect"),
-  btnLoadCase: document.getElementById("btnLoadCase"),
-  btnExportCase: document.getElementById("btnExportCase"),
-  btnDeleteCase: document.getElementById("btnDeleteCase"),
-  caseOut: document.getElementById("caseOut"),
-  caseNote: document.getElementById("caseNote"),
 };
-
-const osintBroadcast = (() => {
-  try {
-    return typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("osint-lens") : null;
-  } catch {
-    return null;
-  }
-})();
 
 const appHelpers = BLUELENS_HELPERS || {};
 const hammingHex =
@@ -172,6 +166,169 @@ const sortBatchItems =
     });
   });
 
+const runtimeConfig = BLUELENS_CONFIG || {};
+const CONFIG_META = runtimeConfig.meta || {};
+const APP_CONFIG = runtimeConfig.app || {};
+const SERVER_CONFIG = runtimeConfig.server || {};
+const FX_CONFIG = runtimeConfig.fx || {};
+const STORAGE_KEYS = runtimeConfig.storageKeys || {};
+
+const ENGINE_ORDER = APP_CONFIG.engines?.order || ["lens", "bing", "tineye", "yandex", "google_images"];
+const ENGINE_LABEL = APP_CONFIG.engines?.labels || {
+  lens: "Lens",
+  bing: "Bing",
+  tineye: "TinEye",
+  yandex: "Yandex",
+  google_images: "Google",
+};
+const ENGINE_ICON = APP_CONFIG.engines?.icons || {
+  lens: "⌕",
+  bing: "⧉",
+  tineye: "◎",
+  yandex: "⟡",
+  google_images: "◉",
+};
+const BATCH_TOP_LENS_DEFAULT = APP_CONFIG.batch?.topLensDefault || 5;
+const BATCH_TOP_LENS_MAX = APP_CONFIG.batch?.topLensMax || 10;
+const BATCH_OCR_DEFAULT = APP_CONFIG.batch?.ocrDefault || 8;
+const BATCH_OCR_MAX = APP_CONFIG.batch?.ocrMax || 20;
+const OCR_DEFAULT_LANGUAGE = APP_CONFIG.ocr?.defaultLanguage || "eng";
+const OCR_LANGUAGE_OPTIONS = Array.isArray(APP_CONFIG.ocr?.languages) && APP_CONFIG.ocr.languages.length
+  ? APP_CONFIG.ocr.languages
+  : [
+      { value: "eng", label: "English" },
+      { value: "spa", label: "Spanish" },
+      { value: "fra", label: "French" },
+      { value: "deu", label: "German" },
+    ];
+const OCR_FAST_PREPROCESS_MAX_DIM = APP_CONFIG.ocr?.fastPreprocessMaxDim || 1200;
+const OCR_BATCH_PREPROCESS_MAX_DIM = APP_CONFIG.ocr?.batchPreprocessMaxDim || 1400;
+const DHASH_BATCH_CLUSTER_THRESHOLD = APP_CONFIG.dhash?.batchClusterThreshold || 8;
+const DHASH_MUTATION_CLUSTER_THRESHOLD = APP_CONFIG.dhash?.mutationClusterThreshold || 10;
+const HOST_STATS_REFRESH_TIMEOUT_MS = APP_CONFIG.hostStats?.refreshTimeoutMs || 2000;
+const UPLOAD_PROXY_TIMEOUT_MS = APP_CONFIG.upload?.endpointTimeoutMs || 45000;
+const UPLOAD_PREFLIGHT_TIMEOUT_MS = APP_CONFIG.upload?.preflightTimeoutMs || 2500;
+const WAIT_JOB_DEFAULT_TIMEOUT_MS = SERVER_CONFIG.waitJobs?.defaultTimeoutMs || 25000;
+const LOCAL_SERVER_HINT_TIMEOUT_MS = APP_CONFIG.localServerHint?.timeoutMs || 900;
+const LOCAL_SERVER_HINT_MESSAGE = APP_CONFIG.localServerHint?.offlineMessage || "Local server offline — start `bluelens-start.cmd` (or `node server.js`) for Upload + Launchpad.";
+const WAIT_JOB_ENDPOINT_PREFIX = "/api/wait-jobs/";
+const SESSION_KEY = STORAGE_KEYS.session || "osint:session:v1";
+const LAST_RUN_KEY = STORAGE_KEYS.lastRun || "osint:lastRun:v1";
+const STORAGE_MISSION_PRESET_KEY = STORAGE_KEYS.missionPreset || "ui:missionPreset";
+const STORAGE_SHARE_SAFE_KEY = STORAGE_KEYS.shareSafe || "ui:shareSafe";
+const STORAGE_FX_SCANLINE_KEY = STORAGE_KEYS.fxScanline || "fx:scanline";
+const STORAGE_FX_CHROMATIC_KEY = STORAGE_KEYS.fxChromatic || "fx:chromatic";
+const STORAGE_FX_FUN_MODE_KEY = STORAGE_KEYS.fxFunMode || "fx:funMode";
+const STORAGE_FX_HUD_KEY = STORAGE_KEYS.fxHud || "fx:hud";
+const STORAGE_SKIN_CHROME_KEY = STORAGE_KEYS.skinChrome || "ui:skinChrome";
+const STORAGE_OPERATOR_MODE_KEY = STORAGE_KEYS.operatorMode || "ui:operatorMode";
+const APP_VERSION = CONFIG_META.appVersion || "dev";
+const EXPORT_SCHEMA_VERSION = CONFIG_META.exportSchemaVersion || "bluelens-report-v1";
+const METADATA_SUSPICION_BANDS = {
+  high: 75,
+  elevated: 60,
+  mixed: 40,
+};
+const UTF8_ENCODER = new TextEncoder();
+const TAR_HEADER_SIZE = 512;
+const TAR_END_PADDING = 1024;
+const OCR_SCRIPT_HINTS = [
+  { label: "Arabic", test: /[\u0600-\u06FF]/g, models: ["ara"] },
+  { label: "Hebrew", test: /[\u0590-\u05FF]/g, models: ["heb"] },
+  { label: "Cyrillic", test: /[\u0400-\u04FF]/g, models: ["rus", "ukr"] },
+  { label: "Hangul", test: /[\uAC00-\uD7AF]/g, models: ["kor"] },
+  { label: "Japanese", test: /[\u3040-\u30FF]/g, models: ["jpn"] },
+  { label: "Han", test: /[\u4E00-\u9FFF]/g, models: ["chi_sim", "chi_tra", "jpn"] },
+  { label: "Latin", test: /[A-Za-zÀ-ÿ]/g, models: ["eng", "spa", "fra", "deu", "ita", "por", "nld", "pol", "tur"] },
+];
+const FX_SCANLINE_DEFAULT = Number.isFinite(FX_CONFIG.scanlineDefault) ? FX_CONFIG.scanlineDefault : 0;
+const FX_CHROMATIC_DEFAULT = Number.isFinite(FX_CONFIG.chromaticDefault) ? FX_CONFIG.chromaticDefault : 0;
+const FX_SCANLINE_FUN_DEFAULT = Number.isFinite(FX_CONFIG.scanlineFunDefault) ? FX_CONFIG.scanlineFunDefault : 0.18;
+const FX_CHROMATIC_FUN_DEFAULT = Number.isFinite(FX_CONFIG.chromaticFunDefault) ? FX_CONFIG.chromaticFunDefault : 0.7;
+const FX_SCANLINE_MAX = Number.isFinite(FX_CONFIG.scanlineMax) ? FX_CONFIG.scanlineMax : 0.35;
+const FX_CHROMATIC_MAX = Number.isFinite(FX_CONFIG.chromaticMax) ? FX_CONFIG.chromaticMax : 1.2;
+const FX_OVERCLOCK_SCANLINE = Number.isFinite(FX_CONFIG.overclockScanline) ? FX_CONFIG.overclockScanline : 0.28;
+const FX_OVERCLOCK_CHROMATIC = Number.isFinite(FX_CONFIG.overclockChromatic) ? FX_CONFIG.overclockChromatic : 1.05;
+const FX_FUN_MODE_DEFAULT = Boolean(FX_CONFIG.funModeDefault);
+const FX_HUD_DEFAULT = Boolean(FX_CONFIG.hudDefault);
+const FX_CHROME_DEFAULT = Boolean(FX_CONFIG.chromeDefault);
+const COMPARE_DIFF_SIZE = 96;
+const compareDiffScratchA = document.createElement("canvas");
+const compareDiffScratchB = document.createElement("canvas");
+const EXPORT_RUNTIME_CONFIG_SOURCE = JSON.stringify({
+  meta: CONFIG_META,
+  upload: {
+    hosts: SERVER_CONFIG.upload?.hosts || [],
+    preferredHostsByPurpose: SERVER_CONFIG.upload?.preferredHostsByPurpose || {},
+    litterboxExpiry: SERVER_CONFIG.upload?.litterboxExpiry || null,
+  },
+  ocr: {
+    defaultLanguage: APP_CONFIG.ocr?.defaultLanguage || null,
+    languages: APP_CONFIG.ocr?.languages || [],
+    fastPreprocessMaxDim: APP_CONFIG.ocr?.fastPreprocessMaxDim || null,
+    batchPreprocessMaxDim: APP_CONFIG.ocr?.batchPreprocessMaxDim || null,
+  },
+  heuristics: {
+    dhash: APP_CONFIG.dhash || {},
+    metadataSuspicionBands: METADATA_SUSPICION_BANDS,
+  },
+});
+const EXPORT_RUNTIME_CONFIG_FINGERPRINT = typeof sha256 === "function" ? sha256(EXPORT_RUNTIME_CONFIG_SOURCE) : EXPORT_RUNTIME_CONFIG_SOURCE;
+
+const nonFatalErrorState = new Map();
+
+function reportNonFatalError(scope, error, { harmless = false, detail = null, dedupeMs = 0 } = {}) {
+  const msg = error?.message || String(error || "unknown error");
+  const key = `${scope}:${msg}`;
+  const now = Date.now();
+  if (dedupeMs > 0) {
+    const last = Number(nonFatalErrorState.get(key) || 0);
+    if (now - last < dedupeMs) return;
+    nonFatalErrorState.set(key, now);
+    if (nonFatalErrorState.size > 200) {
+      const oldestKey = nonFatalErrorState.keys().next().value;
+      if (oldestKey) nonFatalErrorState.delete(oldestKey);
+    }
+  }
+  const logger = harmless ? console.info : console.warn;
+  try {
+    if (detail) logger(`[BlueLens:${scope}] ${msg}`, detail);
+    else logger(`[BlueLens:${scope}] ${msg}`);
+  } catch {
+    // ignore
+  }
+}
+
+function readStorage(key, fallback, scope, storage = localStorage) {
+  try {
+    const value = storage.getItem(key);
+    return value == null ? fallback : value;
+  } catch (error) {
+    reportNonFatalError(scope, error, { harmless: true, detail: { key } });
+    return fallback;
+  }
+}
+
+function writeStorage(key, value, scope, storage = localStorage) {
+  try {
+    storage.setItem(key, value);
+    return true;
+  } catch (error) {
+    reportNonFatalError(scope, error, { harmless: true, detail: { key } });
+    return false;
+  }
+}
+
+function removeStorage(key, scope, storage = localStorage) {
+  try {
+    storage.removeItem(key);
+    return true;
+  } catch (error) {
+    reportNonFatalError(scope, error, { harmless: true, detail: { key } });
+    return false;
+  }
+}
+
 const state = {
   file: null,
   objectUrl: null,
@@ -186,6 +343,9 @@ const state = {
   uploadMeta: null,
   uiBusy: false,
   uploading: false,
+  funMode: FX_FUN_MODE_DEFAULT,
+  chromeSkinWanted: FX_CHROME_DEFAULT,
+  hudWanted: FX_HUD_DEFAULT,
   session: {
     started_at: Date.now(),
     uploads_ok: 0,
@@ -197,7 +357,6 @@ const state = {
   gps: null,
   ocrText: "",
   ocrRunning: false,
-  ocrLangTouched: false,
   batchReports: [],
   batchItems: [],
   batchUi: {
@@ -209,22 +368,25 @@ const state = {
     cluster: "all",
     selected: {},
   },
-  caseInfo: {
+  sourceInfo: {
     where_obtained: "",
     when_obtained: "",
     who_provided: "",
     original_filename: "",
+    manual_notes: "",
     analyst_confidence: "unverified",
   },
   insights: {
-    repost_score: null,
-    repost_reasons: [],
+    metadata_suspicion_score: null,
+    metadata_suspicion_band: null,
+    metadata_suspicion_inputs: [],
   },
   mutations: [],
   compare: {
     file: null,
     objectUrl: null,
     dhash: "",
+    diffScore: null,
   },
   signals: {
     sha256: "",
@@ -234,6 +396,14 @@ const state = {
   exif: null,
   entityConfidence: {},
   lastEngineRun: null,
+  manualNotes: "",
+  actionLog: [],
+  operatorMode: true,
+  localServerOnline: null,
+  popupLikely: true,
+  lastOcrMode: "not_run",
+  captureTimeInfo: null,
+  doctorReport: null,
 };
 
 function setStatus(label, tone = "muted") {
@@ -245,6 +415,107 @@ function setStatus(label, tone = "muted") {
 function setStatusLine(text) {
   if (!elements.statusLine) return;
   elements.statusLine.textContent = text || "";
+}
+
+function renderActionLog() {
+  const el = elements.actionLogOut;
+  if (!el) return;
+  const rows = Array.isArray(state.actionLog) ? state.actionLog.slice(-40) : [];
+  if (rows.length === 0) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  el.hidden = false;
+  el.textContent = rows.map((row) => `${row.ts} · ${row.event}${row.detail ? ` · ${row.detail}` : ""}`).join("\n");
+}
+
+function logAction(event, detail = "") {
+  const ts = new Date().toISOString();
+  state.actionLog = Array.isArray(state.actionLog) ? state.actionLog : [];
+  state.actionLog.push({ ts, event: String(event || "event"), detail: detail ? String(detail) : "" });
+  if (state.actionLog.length > 200) state.actionLog = state.actionLog.slice(-200);
+  renderActionLog();
+}
+
+function renderOnboardingStrip() {
+  const el = elements.onboardingStrip;
+  if (!el) return;
+  const chips = [
+    {
+      tone: state.localServerOnline === false ? "warn" : "ok",
+      text:
+        state.localServerOnline === null
+          ? "Checking local server — upload and launch actions need the local proxy."
+          : state.localServerOnline === false
+          ? "Server offline — uploads/search launchpad need `node server.js`."
+          : "Server reachable — launchpad uploads available when you ask for them.",
+    },
+    { tone: "warn", text: "Uploads will be external — launch actions send the image to a temporary third-party host." },
+    { tone: state.popupLikely ? "warn" : "ok", text: state.popupLikely ? "Popup blocker likely — provider tabs may require another click." : "Provider popups opened in-session." },
+    { tone: "warn", text: "OCR model loads from CDN — first run needs network access to fetch Tesseract assets." },
+    { tone: "warn", text: "Batch export omits failures — only successful batch reports are included right now." },
+  ];
+  el.hidden = false;
+  el.innerHTML = chips
+    .map((chip) => `<span class="onboarding-chip ${chip.tone === "warn" ? "warn" : "ok"}">${escapeHtml(chip.text)}</span>`)
+    .join("");
+}
+
+function applyOperatorMode(enabled, { persist = true } = {}) {
+  state.operatorMode = Boolean(enabled);
+  document.body.classList.toggle("operator-mode", state.operatorMode);
+  if (elements.chkOperatorMode) elements.chkOperatorMode.checked = state.operatorMode;
+  if (persist) writeStorage(STORAGE_OPERATOR_MODE_KEY, state.operatorMode ? "1" : "0", "ui.operator-mode.write");
+  renderActionLog();
+}
+
+function toUtf8Bytes(text) {
+  return UTF8_ENCODER.encode(String(text || ""));
+}
+
+function padTarSize(size) {
+  return Math.ceil(size / TAR_HEADER_SIZE) * TAR_HEADER_SIZE;
+}
+
+function tarOctal(value, width) {
+  const txt = Math.max(0, Number(value) || 0).toString(8);
+  return txt.padStart(width - 1, "0") + "\0";
+}
+
+function writeTarString(view, offset, value, width) {
+  const bytes = toUtf8Bytes(String(value || "").slice(0, width));
+  for (let i = 0; i < Math.min(bytes.length, width); i += 1) view[offset + i] = bytes[i];
+}
+
+function createTar(entries) {
+  const files = entries.filter((entry) => entry?.name && entry?.data instanceof Uint8Array);
+  const total = files.reduce((sum, entry) => sum + TAR_HEADER_SIZE + padTarSize(entry.data.length), 0) + TAR_END_PADDING;
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const entry of files) {
+    const header = out.subarray(offset, offset + TAR_HEADER_SIZE);
+    writeTarString(header, 0, entry.name, 100);
+    writeTarString(header, 100, tarOctal(0o644, 8), 8);
+    writeTarString(header, 108, tarOctal(0, 8), 8);
+    writeTarString(header, 116, tarOctal(0, 8), 8);
+    writeTarString(header, 124, tarOctal(entry.data.length, 12), 12);
+    writeTarString(header, 136, tarOctal(entry.mtime || 0, 12), 12);
+    for (let i = 148; i < 156; i += 1) header[i] = 32;
+    header[156] = "0".charCodeAt(0);
+    writeTarString(header, 257, "ustar", 6);
+    writeTarString(header, 263, "00", 2);
+    const checksum = header.reduce((sum, byte) => sum + byte, 0);
+    writeTarString(header, 148, `${checksum.toString(8).padStart(6, "0")}\0 `, 8);
+    offset += TAR_HEADER_SIZE;
+    out.set(entry.data, offset);
+    offset += padTarSize(entry.data.length);
+  }
+  return new Blob([out], { type: "application/x-tar" });
+}
+
+async function fileToBytes(file) {
+  return new Uint8Array(await file.arrayBuffer());
 }
 
 function setUiBusy(busy, label = "") {
@@ -280,6 +551,7 @@ function setUiBusy(busy, label = "") {
     elements.btnSearchAll,
     elements.btnRunPass,
     elements.btnCopyReport,
+    elements.btnEvidencePack,
     elements.missionPreset,
     elements.btnRunMission,
     elements.btnMutateSearch,
@@ -301,14 +573,6 @@ function setUiBusy(busy, label = "") {
     elements.srcWho,
     elements.srcOrig,
     elements.confLevel,
-    elements.caseName,
-    elements.btnNewCase,
-    elements.btnSaveCase,
-    elements.caseSelect,
-    elements.btnLoadCase,
-    elements.btnExportCase,
-    elements.btnDeleteCase,
-    elements.caseNote,
   ].filter(Boolean);
 
   for (const el of controls) {
@@ -383,7 +647,6 @@ function setButtonsEnabled(enabled) {
     elements.btnCopyReport,
     elements.missionPreset,
     elements.btnRunMission,
-    elements.btnSaveCase,
     elements.btnMutateSearch,
     elements.btnOpenLens,
     elements.btnOpenBing,
@@ -405,6 +668,7 @@ function reset() {
   state.cleanSignals = null;
   state.signals = { sha256: "", md5: "", dhash: "" };
   state.exif = null;
+  state.captureTimeInfo = null;
   state.publicUrl = "";
   state.publicUrlPurpose = "";
   state.publicUrlArtifact = "original";
@@ -414,22 +678,27 @@ function reset() {
   state.gps = null;
   state.ocrText = "";
   state.ocrRunning = false;
-  state.ocrLangTouched = false;
+  state.lastOcrMode = "not_run";
   state.entityConfidence = {};
+  state.lastEngineRun = null;
   state.batchReports = [];
   state.batchItems = [];
+  state.manualNotes = "";
+  state.actionLog = [];
+  state.doctorReport = null;
   state.batchUi.selected = {};
-  state.caseInfo = {
+  state.sourceInfo = {
     where_obtained: "",
     when_obtained: "",
     who_provided: "",
     original_filename: "",
+    manual_notes: "",
     analyst_confidence: "unverified",
   };
-  state.insights = { repost_score: null, repost_reasons: [] };
+  state.insights = { metadata_suspicion_score: null, metadata_suspicion_band: null, metadata_suspicion_inputs: [] };
   state.mutations = [];
   if (state.compare?.objectUrl) URL.revokeObjectURL(state.compare.objectUrl);
-  state.compare = { file: null, objectUrl: null, dhash: "" };
+  state.compare = { file: null, objectUrl: null, dhash: "", diffScore: null };
 
   if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
   state.objectUrl = null;
@@ -469,11 +738,13 @@ function reset() {
   }
   if (elements.ocrLangHint) {
     elements.ocrLangHint.hidden = true;
-    elements.ocrLangHint.textContent = "Hint";
+    elements.ocrLangHint.textContent = "Weak script hint";
   }
+  if (elements.ocrLang && !elements.ocrLang.value) elements.ocrLang.value = OCR_DEFAULT_LANGUAGE;
   elements.ocrLang.disabled = true;
   elements.btnRunOcr.disabled = true;
   elements.btnCopyOcr.disabled = true;
+  if (elements.btnEvidencePack) elements.btnEvidencePack.disabled = true;
   if (elements.btnPivotSearch) elements.btnPivotSearch.disabled = true;
   elements.ocrPill.textContent = "Idle";
   elements.ocrPill.classList.add("pill-muted");
@@ -484,10 +755,20 @@ function reset() {
   elements.compareImg.removeAttribute("src");
   elements.compareImg.style.display = "none";
   elements.compareEmpty.style.display = "grid";
+  if (elements.compareDiffCanvas) {
+    const ctx = elements.compareDiffCanvas.getContext("2d");
+    ctx?.clearRect(0, 0, elements.compareDiffCanvas.width || 0, elements.compareDiffCanvas.height || 0);
+    elements.compareDiffCanvas.style.display = "none";
+  }
+  if (elements.compareDiffEmpty) elements.compareDiffEmpty.style.display = "grid";
   elements.cmpA.textContent = "—";
   elements.cmpB.textContent = "—";
   elements.cmpDist.textContent = "—";
   elements.cmpVerdict.textContent = "—";
+  if (elements.cmpExplain) {
+    elements.cmpExplain.textContent =
+      "dHash is a 64-bit perceptual heuristic. Lower Hamming distance means the thumbnails look closer, not that the files are proven to be the same image.";
+  }
   setButtonsEnabled(false);
   setShareControlsEnabled(false);
   setShareStatus("Not shared");
@@ -504,42 +785,41 @@ function reset() {
   elements.srcWhen.value = "";
   elements.srcWho.value = "";
   elements.srcOrig.value = "";
+  if (elements.manualNotes) elements.manualNotes.value = "";
   if (elements.confLevel) elements.confLevel.value = "unverified";
   if (elements.mutationOut) elements.mutationOut.textContent = "—";
   if (elements.mutationOut) elements.mutationOut.classList.remove("mut-box");
   if (elements.btnCopyMutations) elements.btnCopyMutations.disabled = true;
   elements.batchOut.textContent = "—";
   elements.btnDownloadBatch.disabled = true;
+  if (elements.actionLogOut) {
+    elements.actionLogOut.hidden = true;
+    elements.actionLogOut.textContent = "";
+  }
   setStatus("Idle");
   setStatusLine("");
   elements.btnTogglePretty.textContent = "Pretty: On";
+  renderOnboardingStrip();
 
   try {
     document.dispatchEvent(new Event("osint:file-changed"));
-  } catch {
-    // ignore
+  } catch (error) {
+    reportNonFatalError("file-change.dispatch", error, { harmless: true, dedupeMs: 5000 });
   }
 }
 
 function openUrl(url) {
-  window.open(url, "_blank", "noopener,noreferrer");
+  try {
+    const w = window.open(url, "_blank", "noopener,noreferrer");
+    state.popupLikely = !w;
+    renderOnboardingStrip();
+    return w;
+  } catch {
+    state.popupLikely = true;
+    renderOnboardingStrip();
+    return null;
+  }
 }
-
-const ENGINE_ORDER = ["lens", "bing", "tineye", "yandex", "google_images"];
-const ENGINE_LABEL = {
-  lens: "Lens",
-  bing: "Bing",
-  tineye: "TinEye",
-  yandex: "Yandex",
-  google_images: "Google",
-};
-const ENGINE_ICON = {
-  lens: "⌕",
-  bing: "⧉",
-  tineye: "◎",
-  yandex: "⟡",
-  google_images: "◉",
-};
 
 function renderEngineLaunchpad(run) {
   const el = elements.engineLinks;
@@ -625,7 +905,7 @@ function setupEngineLaunchpad() {
     for (const eng of openList) {
       const url = r.targets[eng];
       try {
-        const w = window.open(url, "_blank", "noopener,noreferrer");
+        const w = openUrl(url);
         if (w) r.opened[eng] = true;
         else r.blocked[eng] = true;
       } catch {
@@ -642,53 +922,21 @@ function setupEngineLaunchpad() {
 }
 
 function setupSimpleUi() {
-  // Make "missions" the default control surface; tuck manual buttons into Advanced drawer.
-  try {
-    if (elements.btnRunMission) {
-      elements.btnRunMission.classList.remove("btn-secondary");
-      elements.btnRunMission.classList.add("btn");
-    }
+  if (!elements.missionPreset) return;
+  elements.missionPreset.hidden = false;
+  const saved = readStorage(STORAGE_MISSION_PRESET_KEY, "", "ui.missionPreset.read");
+  elements.missionPreset.value = saved || "share_search";
+  elements.missionPreset.addEventListener("change", () => {
+    writeStorage(STORAGE_MISSION_PRESET_KEY, elements.missionPreset.value || "share_search", "ui.missionPreset.write");
+  });
 
-    // Move Copy Report into the mission row (keeps IDs, reduces visible button clutter).
-    if (elements.missionRow && elements.btnCopyReport && elements.btnCopyReport.parentElement !== elements.missionRow) {
-      elements.missionRow.appendChild(elements.btnCopyReport);
-    }
-
-    // Move the manual action row into the Advanced drawer body.
-    const advBody = document.querySelector("details.drawer .drawer-body");
-    if (advBody && elements.manualRow && elements.manualRow.parentElement !== advBody) {
-      advBody.prepend(elements.manualRow);
-    }
-
-    // Default to the one thing most people want (persisted).
-    if (elements.missionPreset) {
-      elements.missionPreset.hidden = false;
-      let saved = "";
-      try {
-        saved = localStorage.getItem("ui:missionPreset") || "";
-      } catch {
-        saved = "";
-      }
-      elements.missionPreset.value = saved || "share_search";
-      elements.missionPreset.addEventListener("change", () => {
-        try {
-          localStorage.setItem("ui:missionPreset", elements.missionPreset.value || "share_search");
-        } catch {
-          // ignore
-        }
-      });
-    }
-
-    const syncRunLabel = () => {
-      if (!elements.btnRunMission || !elements.missionPreset) return;
-      const p = elements.missionPreset.value || "fast";
-      elements.btnRunMission.textContent = p === "share_search" ? "Upload + Launchpad" : p === "deep" ? "Deep OCR" : "Quick OCR";
-    };
-    elements.missionPreset?.addEventListener?.("change", syncRunLabel);
-    syncRunLabel();
-  } catch {
-    // ignore
-  }
+  const syncRunLabel = () => {
+    if (!elements.btnRunMission || !elements.missionPreset) return;
+    const p = elements.missionPreset.value || "fast";
+    elements.btnRunMission.textContent = p === "share_search" ? "Upload + Launchpad" : p === "deep" ? "Deep OCR" : "Quick OCR";
+  };
+  elements.missionPreset.addEventListener("change", syncRunLabel);
+  syncRunLabel();
 }
 
 function setupGlobalErrorSurface() {
@@ -705,37 +953,47 @@ function setupGlobalErrorSurface() {
   });
 }
 
-function publishWaitState(token, engine, data) {
-  if (!token || !engine || !data) return;
+function newWaitJobId() {
   try {
-    localStorage.setItem(`osint:${token}:${engine}`, JSON.stringify(data));
+    return crypto?.randomUUID ? `wait_${crypto.randomUUID()}` : `wait_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   } catch {
-    // ignore
+    return `wait_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   }
+}
+
+function publishWaitState(jobId, data) {
+  if (!jobId || !data) return;
   try {
-    osintBroadcast?.postMessage({ token, engine, ...data });
-  } catch {
-    // ignore
-  }
-  try {
-    void fetch("/api/status", {
+    void fetch(`${WAIT_JOB_ENDPOINT_PREFIX}${encodeURIComponent(jobId)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ token, engine, ...data }),
-    }).catch(() => {
-      // ignore
+      body: JSON.stringify(data),
+    }).catch((error) => {
+      reportNonFatalError("wait.publish.fetch", error, { detail: { jobId }, dedupeMs: 5000 });
     });
-  } catch {
-    // ignore
+  } catch (error) {
+    reportNonFatalError("wait.publish.init", error, { detail: { jobId }, dedupeMs: 5000 });
   }
+}
+
+function openWaitJob(engine, label) {
+  const jobId = newWaitJobId();
+  const waitUrl = `/wait.html?job=${encodeURIComponent(jobId)}&engine=${encodeURIComponent(engine)}&label=${encodeURIComponent(label || "")}`;
+  openUrl(waitUrl);
+  publishWaitState(jobId, { engine, label: label || "", status: "uploading" });
+  logAction("wait_tab_opened", `${engine}${label ? ` (${label})` : ""}`);
+  return jobId;
+}
+
+function isFunModeEnabled() {
+  return Boolean(state.funMode);
 }
 
 function pulseRadar(kind) {
   const el = elements.radar;
-  if (!el) return;
+  if (!el || !isFunModeEnabled() || state.operatorMode) return;
   el.classList.toggle("ocr", kind === "ocr");
   el.classList.remove("pulse");
-  // force reflow for restart
   void el.offsetWidth;
   el.classList.add("pulse");
   window.setTimeout(() => el.classList.remove("pulse"), 950);
@@ -758,47 +1016,28 @@ function setShareControlsEnabled(fileLoaded) {
   }
 }
 
-const SESSION_KEY = "osint:session:v1";
-const LAST_RUN_KEY = "osint:lastRun:v1";
-
 function loadSession() {
   const fallback = { started_at: Date.now(), uploads_ok: 0, uploads_fail: 0, engines_opened: 0, last_host: "", last_ms: null };
-  try {
-    const raw = sessionStorage.getItem(SESSION_KEY) || "";
-    const obj = raw ? safeJsonParse(raw, fallback) : fallback;
-    if (!obj || typeof obj !== "object") return fallback;
-    return { ...fallback, ...obj };
-  } catch {
-    return fallback;
-  }
+  const raw = readStorage(SESSION_KEY, "", "session.read", sessionStorage);
+  const obj = raw ? safeJsonParse(raw, fallback, "session.parse", { harmless: true }) : fallback;
+  if (!obj || typeof obj !== "object") return fallback;
+  return { ...fallback, ...obj };
 }
 
 function loadLastRun() {
-  try {
-    const raw = sessionStorage.getItem(LAST_RUN_KEY) || "";
-    const obj = raw ? safeJsonParse(raw, null) : null;
-    if (!obj || typeof obj !== "object") return null;
-    if (!obj.targets || typeof obj.targets !== "object") return null;
-    return obj;
-  } catch {
-    return null;
-  }
+  const raw = readStorage(LAST_RUN_KEY, "", "launchpad.read", sessionStorage);
+  const obj = raw ? safeJsonParse(raw, null, "launchpad.parse", { harmless: true }) : null;
+  if (!obj || typeof obj !== "object") return null;
+  if (!obj.targets || typeof obj.targets !== "object") return null;
+  return obj;
 }
 
 function saveLastRun(run) {
-  try {
-    sessionStorage.setItem(LAST_RUN_KEY, JSON.stringify(run || null));
-  } catch {
-    // ignore
-  }
+  writeStorage(LAST_RUN_KEY, JSON.stringify(run || null), "launchpad.write", sessionStorage);
 }
 
 function saveSession() {
-  try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(state.session));
-  } catch {
-    // ignore
-  }
+  writeStorage(SESSION_KEY, JSON.stringify(state.session), "session.write", sessionStorage);
 }
 
 function fmtMs(ms) {
@@ -810,8 +1049,8 @@ function fmtMs(ms) {
 
 function triageSignalsForReport(report) {
   const gps = report?.gps && Number.isFinite(report.gps.lat) && Number.isFinite(report.gps.lon);
-  // Keep reading the old field from saved cases/reports until they have all been re-exported with repost_heuristic.
-  const repost = Number(report?.insights?.repost_heuristic ?? report?.insights?.repost_likelihood);
+  // Keep reading the old field from saved cases/reports until they have all been re-exported with metadata_suspicion_score.
+  const repost = Number(report?.insights?.metadata_suspicion_score ?? report?.insights?.repost_heuristic ?? report?.insights?.repost_likelihood);
   const hasExif = Boolean(report?.exif && Object.keys(report.exif).length > 0);
   const software = String(report?.key_fields?.software || report?.exif?.Software || "").trim();
 
@@ -838,7 +1077,7 @@ function triageSignalsForReport(report) {
   }
   const entCount = (ent.urls?.length || 0) + (ent.emails?.length || 0) + (ent.handles?.length || 0) + (ent.phones?.length || 0);
 
-  // Lead score: prioritize local pivotability + quick-review heuristics.
+  // Lead score: prioritize local pivotability + quick-review suspicion cues.
   let lead = 0;
   lead += gps ? 30 : 0;
   lead += Math.min(24, entCount * 6);
@@ -853,13 +1092,13 @@ function triageSignalsForReport(report) {
   if (!hasExif) tags.push({ t: "NOEXIF", tone: "warn" });
   if (software) tags.push({ t: "EDITED", tone: repost >= 70 ? "hot" : "warn" });
   if (lowRes) tags.push({ t: "LOWRES", tone: "warn" });
-  if (Number.isFinite(repost) && repost >= 80) tags.push({ t: "REPOST↑", tone: "hot" });
+  if (Number.isFinite(repost) && repost >= 80) tags.push({ t: "SUSP↑", tone: "hot" });
   if (report?.ocr_error) tags.push({ t: "OCRERR", tone: "warn" });
 
   return { lead, gps, repost: Number.isFinite(repost) ? repost : null, software, lowRes, hasExif, ent, entCount, tags, w, h, mp };
 }
 
-function clusterBatchItems(items, threshold = 8) {
+function clusterBatchItems(items, threshold = DHASH_BATCH_CLUSTER_THRESHOLD) {
   const clusters = [];
   for (const it of items) {
     const dh = it?.report?.hashes?.dhash || "";
@@ -922,7 +1161,7 @@ function renderBatchDashboard() {
     }
   }
 
-  const clusters = clusterBatchItems(items, 8);
+  const clusters = clusterBatchItems(items, DHASH_BATCH_CLUSTER_THRESHOLD);
 
   const applyFilters = () => {
     const q = String(state.batchUi.query || "").toLowerCase().trim();
@@ -1004,7 +1243,7 @@ function renderBatchDashboard() {
       const t = it.triage;
       const name = it.report?.file?.name || "image";
       const dims = it.report?.dimensions || "—";
-      const rep = t.repost != null ? `${t.repost}/100` : "—";
+      const rep = t.repost != null ? formatMetadataSuspicionBand(t.repost) : "—";
       const gps = t.gps ? "✓" : "—";
       const ent = t.entCount ? String(t.entCount) : "—";
       const cl = it.clusterId || "—";
@@ -1041,7 +1280,7 @@ function renderBatchDashboard() {
           ${head("dim", "Dim")}
           ${head("gps", "GPS")}
           ${head("ent", "Ent")}
-          ${head("repost", "Repost heuristic")}
+          ${head("repost", "Metadata suspicion")}
           ${head("cluster", "Cluster")}
           <th>Flags</th>
         </tr>
@@ -1070,7 +1309,7 @@ function renderBatchDashboard() {
     }
     const openTop = e.target?.getAttribute?.("data-batch-open-top");
     if (openTop != null) {
-      void openBatchTopLens(5);
+      void openBatchTopLens(BATCH_TOP_LENS_DEFAULT);
     }
     const openSel = e.target?.getAttribute?.("data-batch-open-sel");
     if (openSel != null) {
@@ -1127,7 +1366,7 @@ async function fileToUploadForBatch(file) {
   return clean || file;
 }
 
-async function openBatchTopLens(n = 5) {
+async function openBatchTopLens(n = BATCH_TOP_LENS_DEFAULT) {
   if (state.uiBusy) return;
   const items = Array.isArray(state.batchItems) ? state.batchItems.filter((x) => x?.file && x?.report) : [];
   if (items.length === 0) return;
@@ -1137,14 +1376,12 @@ async function openBatchTopLens(n = 5) {
   const pick = items
     .slice()
     .sort((a, b) => (b.triage?.lead || 0) - (a.triage?.lead || 0))
-    .slice(0, Math.max(1, Math.min(10, n)));
+    .slice(0, Math.max(1, Math.min(BATCH_TOP_LENS_MAX, n)));
 
-  const tokens = pick.map((_, i) => `${Date.now()}-${Math.random().toString(16).slice(2)}-${i}`);
+  const jobIds = [];
   for (let i = 0; i < pick.length; i += 1) {
     const label = `Batch · Lens · ${pick[i].report?.file?.name || `#${i + 1}`}`;
-    const waitUrl = `/wait.html?token=${encodeURIComponent(tokens[i])}&engine=lens&label=${encodeURIComponent(label)}`;
-    window.open(waitUrl, "_blank");
-    publishWaitState(tokens[i], "lens", { status: "uploading" });
+    jobIds.push(openWaitJob("lens", label));
   }
 
   await withUiLock("Top lens…", async () => {
@@ -1152,9 +1389,9 @@ async function openBatchTopLens(n = 5) {
       try {
         const f = await fileToUploadForBatch(pick[i].file);
         const url = await publicUrlForFile(f, "lens");
-        publishWaitState(tokens[i], "lens", { url });
+        publishWaitState(jobIds[i], { url });
       } catch (e) {
-        publishWaitState(tokens[i], "lens", { err: e?.message || "upload failed" });
+        publishWaitState(jobIds[i], { err: e?.message || "upload failed" });
       }
     }
     setStatus("Ready");
@@ -1170,15 +1407,13 @@ async function openBatchSelectedLens() {
   const picked = items.filter((it) => Boolean(selected?.[it.id]));
   if (picked.length === 0) return;
 
-  const cap = Math.min(10, picked.length);
+  const cap = Math.min(BATCH_TOP_LENS_MAX, picked.length);
   const pick = picked.slice(0, cap);
 
-  const tokens = pick.map((_, i) => `${Date.now()}-${Math.random().toString(16).slice(2)}-${i}`);
+  const jobIds = [];
   for (let i = 0; i < pick.length; i += 1) {
     const label = `Batch · Selected · Lens · ${pick[i].report?.file?.name || `#${i + 1}`}`;
-    const waitUrl = `/wait.html?token=${encodeURIComponent(tokens[i])}&engine=lens&label=${encodeURIComponent(label)}`;
-    window.open(waitUrl, "_blank");
-    publishWaitState(tokens[i], "lens", { status: "uploading" });
+    jobIds.push(openWaitJob("lens", label));
   }
 
   await withUiLock(`Selected lens (${pick.length})…`, async () => {
@@ -1186,9 +1421,9 @@ async function openBatchSelectedLens() {
       try {
         const f = await fileToUploadForBatch(pick[i].file);
         const url = await publicUrlForFile(f, "lens");
-        publishWaitState(tokens[i], "lens", { url });
+        publishWaitState(jobIds[i], { url });
       } catch (e) {
-        publishWaitState(tokens[i], "lens", { err: e?.message || "upload failed" });
+        publishWaitState(jobIds[i], { err: e?.message || "upload failed" });
       }
     }
     setStatus("Ready");
@@ -1196,13 +1431,14 @@ async function openBatchSelectedLens() {
 }
 
 async function ocrForBatchFile(file, lang) {
-  const worker = await getOcrWorker(lang || "eng");
+  const worker = await getOcrWorker(lang || OCR_DEFAULT_LANGUAGE);
   let enhanced = null;
   const url = URL.createObjectURL(file);
   try {
     try {
-      enhanced = await OCR_PIPELINE.preprocessOtsu(url, { maxDim: 1400 });
-    } catch {
+      enhanced = await OCR_PIPELINE.preprocessOtsu(url, { maxDim: OCR_BATCH_PREPROCESS_MAX_DIM });
+    } catch (error) {
+      reportNonFatalError("ocr.batch.preprocess", error, { harmless: true, detail: { file: file?.name || "" }, dedupeMs: 5000 });
       enhanced = null;
     }
     const rr = await worker.recognize(enhanced || file);
@@ -1212,12 +1448,12 @@ async function ocrForBatchFile(file, lang) {
   }
 }
 
-async function runBatchOcrTopCandidates(n = 8) {
+async function runBatchOcrTopCandidates(n = BATCH_OCR_DEFAULT) {
   if (state.uiBusy) return;
   const items = Array.isArray(state.batchItems) ? state.batchItems.filter((x) => x?.file && x?.report) : [];
   if (items.length === 0) return;
 
-  const cap = Math.max(1, Math.min(20, Number(n) || 8));
+  const cap = Math.max(1, Math.min(BATCH_OCR_MAX, Number(n) || BATCH_OCR_DEFAULT));
   for (const it of items) if (!it.triage) it.triage = triageSignalsForReport(it.report);
 
   const pick = items
@@ -1226,7 +1462,7 @@ async function runBatchOcrTopCandidates(n = 8) {
     .slice(0, cap);
 
   await withUiLock(`Batch OCR (${pick.length})…`, async () => {
-    const lang = elements.ocrLang?.value || "eng";
+    const lang = elements.ocrLang?.value || OCR_DEFAULT_LANGUAGE;
     let failures = 0;
     for (let i = 0; i < pick.length; i += 1) {
       const it = pick[i];
@@ -1290,10 +1526,7 @@ async function runMissionPreset(preset) {
     if (p === "share_search") {
       // Reduce popup chaos: open ONE tab (Lens) + render launchpad for the rest.
       const engines = ["lens", "bing", "tineye", "yandex", "google_images"];
-      const token = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-      const waitUrl = `/wait.html?token=${encodeURIComponent(token)}&engine=lens&label=${encodeURIComponent("Mission · Lens")}`;
-      window.open(waitUrl, "_blank");
-      publishWaitState(token, "lens", { status: "uploading" });
+      const jobId = openWaitJob("lens", "Mission · Lens");
 
       if (!state.shareEnabled) {
         state.shareEnabled = true;
@@ -1303,13 +1536,13 @@ async function runMissionPreset(preset) {
 
       setStatusLine("Upload: … · Lens: …");
       const url = await ensurePublicUrl({ purpose: "lens" });
-      publishWaitState(token, "lens", { url });
+      publishWaitState(jobId, { url });
 
       const targets = engines.map((e) => reverseSearchUrl(e, url));
       const run = {
         ts: Date.now(),
         url,
-        token,
+        token: jobId,
         artifact: state.publicUrlArtifact || "original",
         targets: {
           lens: targets[0],
@@ -1325,6 +1558,7 @@ async function runMissionPreset(preset) {
       state.lastEngineRun = run;
       saveLastRun(run);
       renderEngineLaunchpad(run);
+      logAction("launchpad_prepared", `targets=${Object.keys(run.targets || {}).length} artifact=${run.artifact}`);
 
       state.session = loadSession();
       state.session.engines_opened += 1;
@@ -1341,7 +1575,7 @@ async function refreshHostStats() {
   if (!elements.hostStatsOut) return;
   try {
     const controller = new AbortController();
-    const t = window.setTimeout(() => controller.abort(), 2000);
+    const t = window.setTimeout(() => controller.abort(), HOST_STATS_REFRESH_TIMEOUT_MS);
     const res = await fetch("/api/upload-stats", { cache: "no-store", signal: controller.signal });
     window.clearTimeout(t);
     if (!res.ok) throw new Error("no server");
@@ -1353,22 +1587,27 @@ async function refreshHostStats() {
         const ok = Number(v?.ok || 0);
         const fail = Number(v?.fail || 0);
         const avgMs = Number(v?.avgMs || 0);
-        const n = Math.max(1, ok + fail);
-        const fr = fail / n;
-        const badge = fr >= 0.4 ? "HOT" : fr >= 0.2 ? "WARN" : "OK";
-        return { host, ok, fail, avgMs, fr, badge };
+        const attempts = ok + fail;
+        return { host, ok, fail, avgMs, attempts };
       })
-      .sort((a, b) => a.fr - b.fr || a.avgMs - b.avgMs);
+      .filter((row) => row.attempts > 0)
+      .sort((a, b) => b.attempts - a.attempts || a.avgMs - b.avgMs);
 
     const session = state.session || loadSession();
+    const sessionAttempts = session.uploads_ok + session.uploads_fail;
+    if (!rows.length && sessionAttempts === 0) {
+      elements.hostStatsOut.hidden = true;
+      return;
+    }
     const lines = [
-      `Session: engines ${session.engines_opened} · uploads ${session.uploads_ok}/${session.uploads_ok + session.uploads_fail} · last ${session.last_host || "—"} ${fmtMs(session.last_ms)}`,
-      rows.length ? `Hosts: ${rows.map((r) => `${r.host} ${r.badge} ok${r.ok}/f${r.fail} avg${fmtMs(r.avgMs)}`).join(" · ")}` : "Hosts: —",
+      `Upload stats (session-only diagnostic): engines ${session.engines_opened} · uploads ok ${session.uploads_ok} · fail ${session.uploads_fail} · last ${session.last_host || "—"} ${fmtMs(session.last_ms)}`,
+      rows.length ? `Hosts: ${rows.map((r) => `${r.host} ok ${r.ok} · fail ${r.fail} · avg ${fmtMs(r.avgMs)}`).join(" · ")}` : "Hosts: no completed upload samples yet",
     ];
 
     elements.hostStatsOut.textContent = lines.join("\n");
     elements.hostStatsOut.hidden = false;
-  } catch {
+  } catch (error) {
+    reportNonFatalError("host-stats.refresh", error, { harmless: true, dedupeMs: 5000 });
     elements.hostStatsOut.hidden = true;
   }
 }
@@ -1380,7 +1619,7 @@ async function uploadViaLocalProxy(file, purpose = "") {
   // Prefer local proxy to avoid CORS limitations in browsers when posting to third-party hosts.
   const ab = await file.arrayBuffer();
   const controller = new AbortController();
-  const t = window.setTimeout(() => controller.abort(), 45_000);
+  const t = window.setTimeout(() => controller.abort(), UPLOAD_PROXY_TIMEOUT_MS);
   let res;
   try {
     res = await fetch("/api/upload", {
@@ -1393,23 +1632,19 @@ async function uploadViaLocalProxy(file, purpose = "") {
       body: ab,
       signal: controller.signal,
     });
-  } catch {
+  } catch (error) {
     window.clearTimeout(t);
     state.session = loadSession();
     state.session.uploads_fail += 1;
     saveSession();
     void refreshHostStats();
+    reportNonFatalError("upload.proxy.fetch", error, { detail: { purpose }, dedupeMs: 5000 });
     throw new Error("Local upload endpoint unreachable. Start `node server.js` and reload.");
   }
   window.clearTimeout(t);
 
   const txt = (await res.text()).trim();
-  let parsed = null;
-  try {
-    parsed = txt ? JSON.parse(txt) : null;
-  } catch {
-    parsed = null;
-  }
+  const parsed = txt ? safeJsonParse(txt, null, "upload.proxy.parse", { harmless: true, detail: { status: res.status } }) : null;
 
   if (!res.ok) {
     state.session = loadSession();
@@ -1484,11 +1719,12 @@ async function ensurePublicUrl({ purpose = "" } = {}) {
     // Quick preflight so we don't open a bunch of dead-end tabs.
     try {
       const controller = new AbortController();
-      const t = window.setTimeout(() => controller.abort(), 2500);
+      const t = window.setTimeout(() => controller.abort(), UPLOAD_PREFLIGHT_TIMEOUT_MS);
       const r = await fetch("/api/ping", { cache: "no-store", signal: controller.signal });
       window.clearTimeout(t);
       if (!r.ok) throw new Error("ping failed");
-    } catch {
+    } catch (error) {
+      reportNonFatalError("upload.preflight", error, { harmless: true, dedupeMs: 5000 });
       throw new Error("Local server not running. Start `node server.js` and reload.");
     }
 
@@ -1508,7 +1744,8 @@ async function ensurePublicUrl({ purpose = "" } = {}) {
         if (state.cleanBlob) {
           try {
             await computeCleanSignalsFromBlob(state.cleanBlob);
-          } catch {
+          } catch (error) {
+            reportNonFatalError("clean-signals.compute", error, { harmless: true, dedupeMs: 5000 });
             state.cleanSignals = null;
             renderCleanSignals();
           }
@@ -1536,6 +1773,7 @@ async function ensurePublicUrl({ purpose = "" } = {}) {
     elements.btnCopyPublicUrl.disabled = false;
     if (elements.btnRetryUpload) elements.btnRetryUpload.disabled = false;
     setShareStatus("Shared");
+    logAction("upload_ready", `host=${state.uploadMeta?.host || "unknown"} artifact=${artifactWanted}`);
     return url;
   } catch (e) {
     const msg = e?.message || "Upload failed";
@@ -1557,7 +1795,7 @@ async function handleQuickJump(engine) {
 
   if (!state.shareEnabled) {
     const ok = window.confirm(
-      "To open reverse-search provider pages from one click, this will upload your image to a temporary file host to generate a public URL. Enable one-click mode?",
+      "To open reverse-search provider pages from one click, this will upload your image to a temporary file host to generate a public URL. Allow the upload?",
     );
     if (!ok) {
       openUrl(reverseSearchUploadPage(engine));
@@ -1569,7 +1807,7 @@ async function handleQuickJump(engine) {
   }
 
   // Popup blockers: open a wait tab immediately, then upload.
-  const token = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const jobId = newWaitJobId();
   const label =
     engine === "lens"
       ? "Lens"
@@ -1580,45 +1818,43 @@ async function handleQuickJump(engine) {
           : engine === "yandex"
             ? "Yandex"
             : "Google Images";
-  const waitUrl = `/wait.html?token=${encodeURIComponent(token)}&engine=${encodeURIComponent(engine)}&label=${encodeURIComponent(label)}`;
-  window.open(waitUrl, "_blank");
+  const waitUrl = `/wait.html?job=${encodeURIComponent(jobId)}&engine=${encodeURIComponent(engine)}&label=${encodeURIComponent(label)}`;
+  openUrl(waitUrl);
   state.session = loadSession();
   state.session.engines_opened += 1;
   saveSession();
   void refreshHostStats();
-  publishWaitState(token, engine, { status: "uploading" });
+  publishWaitState(jobId, { engine, label, status: "uploading" });
 
   await withUiLock("Uploading…", async () => {
     try {
       const url = await ensurePublicUrl({ purpose: engine === "lens" ? "lens" : "" });
-      publishWaitState(token, engine, { url });
+      publishWaitState(jobId, { url });
       setStatus("Ready");
     } catch (e) {
       const msg = e?.message || "unknown error";
       setShareStatus("Upload failed");
       elements.publicUrlOut.textContent = `Upload failed: ${msg}`;
-      publishWaitState(token, engine, { err: msg });
+      publishWaitState(jobId, { err: msg });
       openUrl(reverseSearchUploadPage(engine));
     }
   });
 }
 
-async function handleSearchAll() {
+async function handleSearchAll({ autoEnableShare = false, openLens = true } = {}) {
   if (!state.file) return;
   if (state.uiBusy) return;
 
-  // Less chaos: open ONE tab (Lens) + render launchpad for the rest.
   const engines = ["lens", "bing", "tineye", "yandex", "google_images"];
-  const token = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const waitUrl = `/wait.html?token=${encodeURIComponent(token)}&engine=lens&label=${encodeURIComponent("Lens")}`;
-  window.open(waitUrl, "_blank");
-  publishWaitState(token, "lens", { status: "uploading" });
+  const jobId = openLens ? openWaitJob("lens", "Lens") : "";
 
   if (!state.shareEnabled) {
-    const ok = window.confirm(
-      "To prepare provider links from one upload, this will upload your image to a temporary file host to generate a public URL. Enable one-click mode?",
-    );
-    if (!ok) return;
+    if (!autoEnableShare) {
+      const ok = window.confirm(
+        "To prepare provider links from one upload, this will upload your image to a temporary file host to generate a public URL. Allow the upload?",
+      );
+      if (!ok) return;
+    }
     state.shareEnabled = true;
     elements.chkEnableShare.checked = true;
     setShareControlsEnabled(true);
@@ -1626,13 +1862,13 @@ async function handleSearchAll() {
 
   await withUiLock("Preparing engine links…", async () => {
     const url = await ensurePublicUrl({ purpose: "lens" });
-    publishWaitState(token, "lens", { url });
+    if (jobId) publishWaitState(jobId, { url });
 
     const targets = engines.map((e) => reverseSearchUrl(e, url));
     const run = {
       ts: Date.now(),
       url,
-      token,
+      token: jobId,
       artifact: state.publicUrlArtifact || "original",
       targets: {
         lens: targets[0],
@@ -1642,15 +1878,16 @@ async function handleSearchAll() {
         google_images: targets[4],
       },
       chosen: { lens: true, bing: true, tineye: true, yandex: true, google_images: true },
-      opened: { lens: true },
+      opened: openLens ? { lens: true } : {},
       blocked: {},
     };
     state.lastEngineRun = run;
     saveLastRun(run);
     renderEngineLaunchpad(run);
+    logAction("launchpad_prepared", `targets=${Object.keys(run.targets || {}).length} artifact=${run.artifact}`);
 
     state.session = loadSession();
-    state.session.engines_opened += 1;
+    if (openLens) state.session.engines_opened += 1;
     saveSession();
     void refreshHostStats();
 
@@ -1660,7 +1897,7 @@ async function handleSearchAll() {
     setShareStatus("Upload failed");
     const msg = e?.message || "unknown error";
     elements.publicUrlOut.textContent = `Upload failed: ${msg}`;
-    publishWaitState(token, "lens", { err: msg });
+    if (jobId) publishWaitState(jobId, { err: msg });
   });
 }
 
@@ -1774,7 +2011,7 @@ async function generateMutationFiles() {
   ];
 }
 
-function clusterByDhash(items, threshold = 10) {
+function clusterByDhash(items, threshold = DHASH_MUTATION_CLUSTER_THRESHOLD) {
   const clusters = [];
   for (const it of items) {
     const dh = it?.dhash || "";
@@ -1950,44 +2187,36 @@ function escapeAttr(s) {
 }
 
 function buildPivotSearchUrlsFromEntities(ent) {
+  const google = (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`;
   const urls = new Set();
   const add = (u) => {
     if (!u) return;
     urls.add(u);
   };
-
-  const google = (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`;
-
-  const domains = [];
-  for (const u of (ent?.urls || []).slice(0, 10)) {
-    try {
-      const parsed = new URL(u);
-      const host = (parsed.hostname || "").replace(/^www\./i, "");
-      if (host) domains.push(host);
-    } catch {
-      // ignore
-    }
-  }
-
-  for (const d of Array.from(new Set(domains)).slice(0, 6)) {
-    add(google(`site:${d}`));
-    add(google(`"${d}" repost`));
-  }
-
+  for (const u of (ent?.urls || []).slice(0, 5)) add(u);
   for (const e of (ent?.emails || []).slice(0, 6)) add(google(`"${e}"`));
   for (const p of (ent?.phones || []).slice(0, 4)) add(google(`"${p}"`));
-
   for (const hRaw of (ent?.handles || []).slice(0, 8)) {
     const h = String(hRaw || "").replace(/^@/, "").trim();
     if (!h) continue;
     add(google(`@${h}`));
-    // Lightweight platform-aware pivot (premium can do more; MVP keeps it capped).
-    add(google(`"${h}" (site:instagram.com OR site:tiktok.com OR site:x.com OR site:youtube.com)`));
+    add(`https://www.instagram.com/${encodeURIComponent(h)}/`);
+    add(`https://www.tiktok.com/@${encodeURIComponent(h)}`);
+    add(`https://x.com/${encodeURIComponent(h)}`);
   }
-
-  // Also pivot on the actual URLs found (open the first few directly).
-  for (const u of (ent?.urls || []).slice(0, 5)) add(u);
-
+  for (const u of (ent?.urls || []).slice(0, 10)) {
+    try {
+      const parsed = new URL(u);
+      const host = (parsed.hostname || "").replace(/^www\./i, "");
+      if (!host) continue;
+      add(google(`site:${host}`));
+      add(`https://www.whois.com/whois/${encodeURIComponent(host)}`);
+      add(`https://dns.google/resolve?name=${encodeURIComponent(host)}&type=A`);
+      add(`https://crt.sh/?q=${encodeURIComponent(host)}`);
+    } catch (error) {
+      reportNonFatalError("pivot.domains.parse", error, { harmless: true, detail: { value: u }, dedupeMs: 5000 });
+    }
+  }
   return Array.from(urls);
 }
 
@@ -1997,12 +2226,14 @@ function buildMarkdownReport(report) {
   const clean = r.clean_copy || null;
   const gps = r.gps;
   const kf = r.key_fields || {};
+  const capturedAt = kf.captured_at || null;
   const sr = r.source_reliability || {};
   const entities = kf.ocr_entities || {};
 
   const lines = [];
   lines.push(`# OSINT Report`);
   lines.push(`Generated: ${r.generated_at || "—"}`);
+  lines.push(`Schema: ${r.schema_version || EXPORT_SCHEMA_VERSION} · App: ${r.app_version || APP_VERSION}`);
   lines.push("");
   lines.push(`## File`);
   lines.push(`- Name: \`${file.name || "—"}\``);
@@ -2021,15 +2252,21 @@ function buildMarkdownReport(report) {
   }
   lines.push("");
   lines.push(`## Key Fields`);
-  lines.push(`- Captured: ${kf.captured ? `\`${kf.captured}\`` : "—"}`);
+  lines.push(`- Captured: ${capturedAt?.display ? `\`${capturedAt.display}\`` : kf.captured ? `\`${kf.captured}\`` : "—"}`);
+  if (capturedAt?.raw) lines.push(`- Captured raw: \`${capturedAt.raw}\``);
+  if (capturedAt?.source_field) lines.push(`- Capture source: \`${capturedAt.source_field}\``);
+  if (capturedAt?.timezone_note) lines.push(`- Capture timezone note: ${capturedAt.timezone_note}`);
   lines.push(`- Camera: ${kf.camera ? `\`${kf.camera}\`` : "—"}`);
   lines.push(`- Software: ${kf.software ? `\`${kf.software}\`` : "—"}`);
   lines.push(`- GPS: ${gps ? `\`${fmtCoord(gps.lat)}, ${fmtCoord(gps.lon)}\`` : "—"}`);
   lines.push("");
   lines.push(`## Insights`);
-  lines.push(`- Repost heuristic: ${r.insights?.repost_heuristic != null ? `**${r.insights.repost_heuristic}/100**` : "—"}`);
-  if (Array.isArray(r.insights?.repost_reasons) && r.insights.repost_reasons.length) {
-    lines.push(`- Heuristic reasons: ${r.insights.repost_reasons.map((x) => `\`${String(x)}\``).join(" · ")}`);
+  const suspicionScore = r.insights?.metadata_suspicion_score ?? r.insights?.repost_heuristic ?? null;
+  const suspicionBand = r.insights?.metadata_suspicion_band || formatMetadataSuspicionBand(Number(suspicionScore));
+  lines.push(`- Metadata suspicion: ${suspicionBand !== "—" ? `**${suspicionBand}**` : "—"}`);
+  const suspicionInputs = r.insights?.metadata_suspicion_inputs || r.insights?.repost_reasons;
+  if (Array.isArray(suspicionInputs) && suspicionInputs.length) {
+    lines.push(`- Suspicion inputs: ${suspicionInputs.map((x) => `\`${String(x)}\``).join(" · ")}`);
   }
   if (r.insights?.attribution_hints) lines.push(`- Attribution hints: ${String(r.insights.attribution_hints)}`);
   lines.push("");
@@ -2037,6 +2274,8 @@ function buildMarkdownReport(report) {
   lines.push(`- URL: ${r.public_url ? `${r.public_url}` : "—"}`);
   lines.push(`- Upload artifact: \`${r.public_upload_artifact || "—"}\``);
   lines.push(`- Share safe: \`${r.share_safe ? "on" : "off"}\``);
+  lines.push(`- Upload host: \`${r.upload?.host || "—"}\``);
+  if (r.export_metadata?.runtime_config_fingerprint) lines.push(`- Runtime fingerprint: \`${r.export_metadata.runtime_config_fingerprint}\``);
   lines.push("");
   lines.push(`## OCR Pivots`);
   const u = Array.isArray(entities.urls) ? entities.urls.slice(0, 8) : [];
@@ -2054,6 +2293,20 @@ function buildMarkdownReport(report) {
   lines.push(`- Who: ${sr.who_provided ? `\`${sr.who_provided}\`` : "—"}`);
   lines.push(`- Original filename: ${sr.original_filename ? `\`${sr.original_filename}\`` : "—"}`);
   lines.push(`- Analyst confidence (manual): \`${sr.analyst_confidence || "unverified"}\``);
+  lines.push(`- Manual notes: ${sr.manual_notes ? `\`${sr.manual_notes}\`` : "—"}`);
+  lines.push("");
+  lines.push(`## Launchpad`);
+  const targets = r.launchpad?.targets || {};
+  const targetList = Object.entries(targets)
+    .filter(([, value]) => value)
+    .map(([key, value]) => `\`${key}\`: ${value}`);
+  lines.push(`- Targets: ${targetList.length ? targetList.join(" · ") : "—"}`);
+  lines.push(`- OCR mode: \`${r.ocr?.mode || "—"}\``);
+  lines.push(`- OCR language: \`${r.ocr?.selected_model || "—"}\``);
+  lines.push("");
+  lines.push(`## Action Log`);
+  const actionLog = Array.isArray(r.session_action_log) ? r.session_action_log : [];
+  lines.push(actionLog.length ? actionLog.map((row) => `- ${row.ts || "—"} · ${row.event || "event"}${row.detail ? ` · ${row.detail}` : ""}`).join("\n") : "- —");
   lines.push("");
   lines.push(`---`);
   lines.push("");
@@ -2141,14 +2394,197 @@ function fmtCoord(n) {
   return n.toFixed(6);
 }
 
+function parseExifDateValue(rawValue) {
+  if (rawValue === null || rawValue === undefined) return null;
+  const sourceType = rawValue instanceof Date ? "date" : typeof rawValue;
+  const raw = rawValue instanceof Date ? rawValue.toISOString() : String(rawValue).trim();
+  if (!raw) return null;
+  if (rawValue instanceof Date) {
+    return {
+      raw,
+      normalized: raw.replace(/\.000Z$/, "Z"),
+      normalized_utc: raw,
+      has_timezone: false,
+      timezone_note: "EXIF parser returned a Date object; the original EXIF timezone is still ambiguous unless a source offset is documented elsewhere.",
+      source_type: sourceType,
+    };
+  }
+  const exifLike = raw.match(/^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
+  if (exifLike) {
+    const [, year, month, day, hour, minute, second] = exifLike;
+    const normalized = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
+    return {
+      raw,
+      normalized,
+      normalized_utc: null,
+      has_timezone: false,
+      timezone_note: "Timezone not present in EXIF field; treat this as a local/unknown capture time until corroborated.",
+      source_type: sourceType,
+    };
+  }
+
+  const hasTimezone = /(?:Z|[+-]\d{2}:\d{2})$/i.test(raw);
+  const parsedMs = Date.parse(raw);
+  if (!Number.isFinite(parsedMs)) {
+    return {
+      raw,
+      normalized: raw,
+      normalized_utc: null,
+      has_timezone: false,
+      timezone_note: "Could not normalize this EXIF date value safely.",
+      source_type: sourceType,
+    };
+  }
+
+  const parsed = new Date(parsedMs);
+  return {
+    raw,
+    normalized: hasTimezone ? raw : parsed.toISOString().replace(/\.000Z$/, ""),
+    normalized_utc: hasTimezone ? parsed.toISOString() : null,
+    has_timezone: hasTimezone,
+    timezone_note: hasTimezone
+      ? "Timezone present in the parsed EXIF value."
+      : "Timezone not present in EXIF field; parser normalization may not reflect the original local capture timezone.",
+    source_type: sourceType,
+  };
+}
+
+function normalizeCapturedAt(exifObj) {
+  const candidates = [
+    { field: "DateTimeOriginal", value: exifObj?.DateTimeOriginal },
+    { field: "CreateDate", value: exifObj?.CreateDate },
+    { field: "ModifyDate", value: exifObj?.ModifyDate },
+    { field: "DateTimeDigitized", value: exifObj?.DateTimeDigitized },
+    { field: "datetime", value: exifObj?.datetime },
+  ];
+  const found = candidates.find((entry) => entry.value != null);
+  if (!found) return null;
+  const parsed = parseExifDateValue(found.value);
+  if (!parsed) return null;
+  return {
+    source_field: found.field,
+    raw: parsed.raw,
+    normalized: parsed.normalized,
+    normalized_utc: parsed.normalized_utc,
+    has_timezone: parsed.has_timezone,
+    timezone_note: parsed.timezone_note,
+    source_type: parsed.source_type,
+    display: parsed.normalized
+      ? `${parsed.normalized}${parsed.has_timezone ? "" : " (timezone unknown)"}`
+      : `${parsed.raw}${parsed.has_timezone ? "" : " (timezone unknown)"}`,
+  };
+}
+
+function buildExportMetadata({ ocrMode = state.lastOcrMode || "not_run", ocrLanguage = elements.ocrLang?.value || OCR_DEFAULT_LANGUAGE, uploadMeta = state.uploadMeta ? { ...state.uploadMeta } : null } = {}) {
+  return {
+    schema_version: EXPORT_SCHEMA_VERSION,
+    app_version: APP_VERSION,
+    runtime_config_fingerprint: EXPORT_RUNTIME_CONFIG_FINGERPRINT,
+    runtime_config_source: EXPORT_RUNTIME_CONFIG_SOURCE,
+    ocr_mode: ocrMode,
+    ocr_language: ocrLanguage,
+    heuristic_config: {
+      metadata_suspicion_bands: { ...METADATA_SUSPICION_BANDS },
+      dhash: {
+        batch_cluster_threshold: DHASH_BATCH_CLUSTER_THRESHOLD,
+        mutation_cluster_threshold: DHASH_MUTATION_CLUSTER_THRESHOLD,
+      },
+    },
+    upload_host_metadata: {
+      preferred_host_order: SERVER_CONFIG.upload?.hosts || [],
+      preferred_hosts_by_purpose: SERVER_CONFIG.upload?.preferredHostsByPurpose || {},
+      selected_host: uploadMeta?.host || null,
+      selected_host_latency_ms: uploadMeta?.ms || null,
+      attempt_count: Array.isArray(uploadMeta?.attempts) ? uploadMeta.attempts.length : null,
+    },
+  };
+}
+
+function renderDoctorReport(report) {
+  const el = elements.doctorOut;
+  if (!el) return;
+  if (!report) {
+    el.textContent = "—";
+    return;
+  }
+  const lines = [];
+  lines.push(`App: ${report.app_version || APP_VERSION} · schema ${report.schema_version || EXPORT_SCHEMA_VERSION}`);
+  lines.push(`Ping: ${report.server?.ping_ok ? "OK" : "FAIL"}${report.server?.node_version ? ` · Node ${report.server.node_version}` : ""}`);
+  lines.push(`Popup: ${report.popup?.ok ? "OK" : "BLOCKED"} · Storage: ${report.storage?.ok ? "OK" : "FAIL"}`);
+  lines.push(`Libraries: ${report.libs?.summary || "unknown"}`);
+  if (Array.isArray(report.server?.upload_reachability) && report.server.upload_reachability.length) {
+    lines.push(`Upload reachability:`);
+    for (const row of report.server.upload_reachability) {
+      lines.push(`- ${row.host}: ${row.reachable ? "OK" : "FAIL"}${row.status_code ? ` (${row.status_code})` : ""}${row.error ? ` · ${row.error}` : ""}`);
+    }
+  }
+  el.textContent = lines.join("\n");
+}
+
+async function runDoctorChecks() {
+  const libs = {
+    exifr: Boolean(window.exifr),
+    sha256: Boolean(window.sha256),
+    sparkMd5: Boolean(window.SparkMD5),
+    ocrPipeline: Boolean(window.OCR_PIPELINE),
+  };
+  let storage = { ok: false, error: "" };
+  try {
+    localStorage.setItem("__bluelens_doctor__", "1");
+    localStorage.removeItem("__bluelens_doctor__");
+    storage = { ok: true, error: "" };
+  } catch (error) {
+    storage = { ok: false, error: error?.message || "storage unavailable" };
+  }
+
+  let popup = { ok: false, error: "blocked" };
+  try {
+    const w = window.open("about:blank", "_blank", "noopener,noreferrer");
+    popup = w ? { ok: true, error: "" } : { ok: false, error: "blocked" };
+    w?.close?.();
+  } catch (error) {
+    popup = { ok: false, error: error?.message || "blocked" };
+  }
+
+  let server = { ping_ok: false, node_version: null, upload_reachability: [], error: "" };
+  try {
+    const [pingRes, doctorRes] = await Promise.all([
+      fetch("/api/ping", { cache: "no-store" }),
+      fetch("/api/doctor", { cache: "no-store" }),
+    ]);
+    const parsed = await doctorRes.json();
+    if (!pingRes.ok) throw new Error(`ping ${pingRes.status}`);
+    if (!doctorRes.ok || !parsed?.ok) throw new Error(parsed?.message || `doctor ${doctorRes.status}`);
+    server = {
+      ping_ok: true,
+      node_version: parsed.node_version || null,
+      upload_reachability: Array.isArray(parsed.upload_reachability) ? parsed.upload_reachability : [],
+      error: "",
+    };
+  } catch (error) {
+    server = { ping_ok: false, node_version: null, upload_reachability: [], error: error?.message || "doctor unavailable" };
+  }
+
+  state.doctorReport = {
+    schema_version: EXPORT_SCHEMA_VERSION,
+    app_version: APP_VERSION,
+    libs: {
+      ...libs,
+      summary: Object.entries(libs)
+        .map(([name, ok]) => `${name}:${ok ? "ok" : "fail"}`)
+        .join(" · "),
+    },
+    storage,
+    popup,
+    server,
+  };
+  state.localServerOnline = Boolean(server.ping_ok);
+  renderOnboardingStrip();
+  renderDoctorReport(state.doctorReport);
+}
+
 function updateKeyFields(exifObj) {
-  const captured =
-    exifObj?.DateTimeOriginal ||
-    exifObj?.CreateDate ||
-    exifObj?.ModifyDate ||
-    exifObj?.DateTimeDigitized ||
-    exifObj?.datetime ||
-    null;
+  const captured = normalizeCapturedAt(exifObj);
 
   const make = exifObj?.Make || "";
   const model = exifObj?.Model || "";
@@ -2169,8 +2605,9 @@ function updateKeyFields(exifObj) {
 
   const gps = getGps(exifObj);
   state.gps = gps;
+  state.captureTimeInfo = captured;
 
-  elements.kfCaptured.textContent = captured ? String(captured) : "—";
+  elements.kfCaptured.textContent = captured?.display || "—";
   elements.kfCamera.textContent = camera || "—";
   elements.kfSoftware.textContent = software || "—";
   elements.kfGps.textContent = gps ? `${fmtCoord(gps.lat)}, ${fmtCoord(gps.lon)}` : "—";
@@ -2205,70 +2642,72 @@ function extractHandlesAndDomains(text) {
   return { handles: [...handles].slice(0, 8), domains: [...domains].slice(0, 8) };
 }
 
-function computeRepostScore({ exifObj, file, width, height, ocrText }) {
-  const reasons = [];
+function formatMetadataSuspicionBand(score) {
+  if (!Number.isFinite(score)) return "—";
+  if (score >= METADATA_SUSPICION_BANDS.high) return "High";
+  if (score >= METADATA_SUSPICION_BANDS.elevated) return "Elevated";
+  if (score >= METADATA_SUSPICION_BANDS.mixed) return "Mixed";
+  return "Low";
+}
+
+function computeMetadataSuspicionScore({ exifObj, file, width, height, ocrText }) {
+  const inputs = [];
   let score = 50;
+  const addInput = (delta, label) => {
+    score += delta;
+    inputs.push(`${delta >= 0 ? "+" : ""}${delta} ${label}`);
+  };
 
   const hasExif = Boolean(exifObj && Object.keys(exifObj).length > 0);
   if (!hasExif) {
-    score += 18;
-    reasons.push("No EXIF/metadata found");
+    addInput(18, "No EXIF/metadata found");
   }
 
   const gps = getGps(exifObj);
   if (gps) {
-    score -= 20;
-    reasons.push("GPS present (often original capture)");
+    addInput(-20, "GPS present (often original capture)");
   }
 
   const make = (exifObj?.Make || "").trim();
   const model = (exifObj?.Model || "").trim();
   if (make || model) {
-    score -= 12;
-    reasons.push("Camera make/model present");
+    addInput(-12, "Camera make/model present");
   }
 
   const captured = exifObj?.DateTimeOriginal || exifObj?.CreateDate || exifObj?.DateTimeDigitized;
   if (captured) {
-    score -= 8;
-    reasons.push("Capture timestamp present");
+    addInput(-8, "Capture timestamp present");
   }
 
   const software = (exifObj?.Software || exifObj?.ProcessingSoftware || exifObj?.CreatorTool || "").trim();
   const platforms = detectPlatformFromSoftware(software);
   if (software) {
-    score += 10;
-    reasons.push(`Software tag: ${software}`);
+    addInput(10, `Software tag: ${software}`);
   }
   if (platforms.length > 0) {
-    score += 22;
-    reasons.push(`Platform/app hint: ${platforms.join(", ")}`);
+    addInput(22, `Platform/app hint: ${platforms.join(", ")}`);
   }
 
   if (file?.type === "image/jpeg" && file?.size && file.size < 450_000) {
-    score += 10;
-    reasons.push("Small JPEG (common repost/compress)");
+    addInput(10, "Small JPEG (common repost/compress)");
   }
 
   if (Number.isFinite(width) && Number.isFinite(height)) {
     const mp = (width * height) / 1_000_000;
     if (mp < 1.0) {
-      score += 12;
-      reasons.push("Low resolution (common repost)");
+      addInput(12, "Low resolution (common repost)");
     } else if (mp > 10) {
-      score -= 6;
-      reasons.push("Very high resolution (more likely original)");
+      addInput(-6, "Very high resolution (more likely original)");
     }
   }
 
   const { handles, domains } = extractHandlesAndDomains(ocrText);
   if (handles.length > 0 || domains.length > 0) {
-    score += 10;
-    reasons.push("OCR contains handles/domains (likely shared graphic)");
+    addInput(10, "OCR contains handles/domains (likely shared graphic)");
   }
 
   score = Math.max(0, Math.min(100, Math.round(score)));
-  return { score, reasons };
+  return { score, band: formatMetadataSuspicionBand(score), inputs };
 }
 
 function computeAttributionHints(exifObj, ocrText) {
@@ -2295,11 +2734,11 @@ function computeAttributionHints(exifObj, ocrText) {
 
 function updateConsoleInsights({ exifObj, file, width, height, ocrText }) {
   elements.attrHints.textContent = computeAttributionHints(exifObj, ocrText);
-  const { score, reasons } = computeRepostScore({ exifObj, file, width, height, ocrText });
-  elements.repostScore.textContent = `${score}/100`;
+  const { score, band, inputs } = computeMetadataSuspicionScore({ exifObj, file, width, height, ocrText });
+  elements.repostScore.textContent = band;
 
   if (elements.repostReasons) {
-    const top = Array.isArray(reasons) ? reasons.slice(0, 3) : [];
+    const top = Array.isArray(inputs) ? (state.operatorMode ? inputs : inputs.slice(0, 4)) : [];
     if (top.length === 0) {
       elements.repostReasons.hidden = true;
       elements.repostReasons.innerHTML = "";
@@ -2310,7 +2749,7 @@ function updateConsoleInsights({ exifObj, file, width, height, ocrText }) {
         .join("");
     }
   }
-  return { score, reasons };
+  return { score, band, inputs };
 }
 
 function stringifyExif(exifObj, pretty = true) {
@@ -2447,82 +2886,13 @@ function downloadBlob(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 2_000);
 }
 
-const CASEBOARD_STORAGE_KEY = "caseboard:v1";
-const CASEBOARD_ACTIVE_KEY = "caseboard:activeCaseId";
-const CASEBOARD_MAX_EVENTS = 80;
-
-function safeJsonParse(txt, fallback) {
+function safeJsonParse(txt, fallback, scope = "", { harmless = true, detail = null } = {}) {
   try {
     return JSON.parse(txt);
-  } catch {
+  } catch (error) {
+    if (scope) reportNonFatalError(scope, error, { harmless, detail });
     return fallback;
   }
-}
-
-function loadCaseboard() {
-  const fallback = { version: 1, cases: [] };
-  let obj = fallback;
-  try {
-    obj = safeJsonParse(localStorage.getItem(CASEBOARD_STORAGE_KEY) || "", fallback);
-  } catch {
-    obj = fallback;
-  }
-  if (!obj || typeof obj !== "object") return fallback;
-  if (!Array.isArray(obj.cases)) obj.cases = [];
-  obj.version = 1;
-  return obj;
-}
-
-function saveCaseboard(obj) {
-  try {
-    localStorage.setItem(CASEBOARD_STORAGE_KEY, JSON.stringify(obj));
-  } catch {
-    // ignore (storage full / blocked)
-  }
-}
-
-function getActiveCaseId() {
-  try {
-    return localStorage.getItem(CASEBOARD_ACTIVE_KEY) || "";
-  } catch {
-    return "";
-  }
-}
-
-function setActiveCaseId(id) {
-  try {
-    localStorage.setItem(CASEBOARD_ACTIVE_KEY, id || "");
-  } catch {
-    // ignore
-  }
-}
-
-function newCaseId() {
-  try {
-    return crypto?.randomUUID ? crypto.randomUUID() : `case_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-  } catch {
-    return `case_${Date.now()}_${Math.random().toString(16).slice(2)}`;
-  }
-}
-
-function fmtTs(ts) {
-  try {
-    const d = new Date(ts);
-    if (Number.isNaN(d.getTime())) return "—";
-    return d.toLocaleString(undefined, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-  } catch {
-    return "—";
-  }
-}
-
-async function sha256HexUtf8(str) {
-  const enc = new TextEncoder();
-  const buf = enc.encode(String(str || ""));
-  const dig = await crypto.subtle.digest("SHA-256", buf);
-  const bytes = new Uint8Array(dig);
-  let out = "";
-  for (const b of bytes) out += b.toString(16).padStart(2, "0");
-  return out;
 }
 
 async function makeThumbnailDataUrl(file, maxEdge = 240) {
@@ -2574,196 +2944,15 @@ function extractPivotsFromReport(report) {
   return Array.from(new Set(pivots)).slice(0, 8);
 }
 
-function renderCaseSelect(caseboard, activeId) {
-  if (!elements.caseSelect) return;
-  const cases = [...(caseboard?.cases || [])].sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0));
-  elements.caseSelect.innerHTML = "";
-  for (const c of cases) {
-    const opt = document.createElement("option");
-    opt.value = c.id;
-    opt.textContent = `${c.name || c.id} · ${c.events?.length || 0}`;
-    elements.caseSelect.appendChild(opt);
-  }
-  elements.caseSelect.disabled = state.uiBusy ? true : cases.length === 0;
-  if (activeId && cases.some((c) => c.id === activeId)) elements.caseSelect.value = activeId;
-  else if (cases[0]) elements.caseSelect.value = cases[0].id;
-}
-
-function renderActiveCase(caseboard, activeId) {
-  if (!elements.caseOut) return;
-  const c = (caseboard?.cases || []).find((x) => x.id === activeId) || null;
-  const hasCase = Boolean(c);
-  if (!hasCase) {
-    elements.caseOut.textContent = "—";
-    if (elements.btnExportCase) elements.btnExportCase.disabled = true;
-    if (elements.btnDeleteCase) elements.btnDeleteCase.disabled = true;
-    if (elements.btnLoadCase) elements.btnLoadCase.disabled = true;
-    return;
-  }
-
-  const events = Array.isArray(c.events) ? c.events : [];
-  const last = events[events.length - 1] || null;
-  const pivots = last?.pivots || [];
-  const lines = [
-    `Active: ${c.name || c.id}`,
-    `Events: ${events.length} · Updated: ${fmtTs(c.updated_at)}`,
-    last ? `Last: ${fmtTs(last.ts)} · ${last.file_name || "image"}` : "Last: —",
-    pivots.length ? `Pivots: ${pivots.join(" · ")}` : "Pivots: —",
-    last?.hash ? `Chain: ${String(last.hash).slice(0, 16)}…` : "Chain: —",
-  ];
-
-  elements.caseOut.textContent = lines.join("\n");
-  if (elements.btnExportCase) elements.btnExportCase.disabled = state.uiBusy ? true : false;
-  if (elements.btnDeleteCase) elements.btnDeleteCase.disabled = state.uiBusy ? true : false;
-  if (elements.btnLoadCase) elements.btnLoadCase.disabled = state.uiBusy ? true : false;
-}
-
-async function saveCurrentToCaseboard({ createIfMissing = true } = {}) {
-  if (!state.file) throw new Error("No file loaded");
-  const caseboard = loadCaseboard();
-  let activeId = getActiveCaseId();
-
-  if (!activeId && createIfMissing) {
-    const nameRaw = (elements.caseName?.value || "").trim();
-    const name = nameRaw || `Case-${new Date().toISOString().slice(0, 10)}`;
-    activeId = newCaseId();
-    caseboard.cases.push({ id: activeId, name, created_at: Date.now(), updated_at: Date.now(), events: [] });
-    setActiveCaseId(activeId);
-  }
-
-  const c = caseboard.cases.find((x) => x.id === activeId) || null;
-  if (!c) throw new Error("No active case selected");
-  if (!Array.isArray(c.events)) c.events = [];
-
-  const report = buildOsintReport();
-  const pivots = extractPivotsFromReport(report);
-  const note = (elements.caseNote?.value || "").trim();
-  const thumb = await makeThumbnailDataUrl(state.file);
-
-  const prevHash = c.events.length ? c.events[c.events.length - 1]?.hash || "" : "";
-  const core = {
-    ts: Date.now(),
-    type: "image_report",
-    file_name: state.file?.name || null,
-    note: note || null,
-    pivots,
-    report,
-    thumb,
-    prev_hash: prevHash || null,
-  };
-  const hash = await sha256HexUtf8(`${prevHash}\n${JSON.stringify(core)}`);
-  const ev = { id: newCaseId(), ...core, hash };
-
-  c.events.push(ev);
-  if (c.events.length > CASEBOARD_MAX_EVENTS) c.events.splice(0, c.events.length - CASEBOARD_MAX_EVENTS);
-  c.updated_at = Date.now();
-
-  saveCaseboard(caseboard);
-  setActiveCaseId(activeId);
-  renderCaseSelect(caseboard, activeId);
-  renderActiveCase(caseboard, activeId);
-  if (elements.btnSaveCase) elements.btnSaveCase.disabled = state.uiBusy ? true : false;
-}
-
-function exportActiveCase() {
-  const caseboard = loadCaseboard();
-  const activeId = getActiveCaseId();
-  const c = caseboard.cases.find((x) => x.id === activeId) || null;
-  if (!c) return;
-  const payload = {
-    version: 1,
-    exported_at: new Date().toISOString(),
-    case: c,
-  };
-  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const name = (c.name || "case").replace(/[^\w.-]+/g, "_").slice(0, 80);
-  downloadBlob(blob, `${name}_caseboard.json`);
-}
-
-function deleteActiveCase() {
-  const caseboard = loadCaseboard();
-  const activeId = getActiveCaseId();
-  const idx = caseboard.cases.findIndex((x) => x.id === activeId);
-  if (idx === -1) return;
-  caseboard.cases.splice(idx, 1);
-  saveCaseboard(caseboard);
-  setActiveCaseId(caseboard.cases[0]?.id || "");
-  renderCaseSelect(caseboard, getActiveCaseId());
-  renderActiveCase(caseboard, getActiveCaseId());
-}
-
-function setupCaseboard() {
-  if (!elements.caseOut || !elements.btnSaveCase || !elements.btnNewCase || !elements.caseSelect) return;
-
-  const refresh = () => {
-    const cb = loadCaseboard();
-    const activeId = getActiveCaseId();
-    renderCaseSelect(cb, activeId);
-    const selectedId = elements.caseSelect.value || activeId;
-    renderActiveCase(cb, selectedId || activeId);
-
-    if (elements.btnNewCase) elements.btnNewCase.disabled = state.uiBusy ? true : false;
-    if (elements.btnSaveCase) elements.btnSaveCase.disabled = state.uiBusy ? true : !Boolean(state.file);
-    if (elements.btnLoadCase) elements.btnLoadCase.disabled = state.uiBusy ? true : elements.caseSelect.disabled;
-    if (elements.btnExportCase) elements.btnExportCase.disabled = state.uiBusy ? true : elements.caseSelect.disabled;
-    if (elements.btnDeleteCase) elements.btnDeleteCase.disabled = state.uiBusy ? true : elements.caseSelect.disabled;
-  };
-
-  refresh();
-
-  elements.btnNewCase.addEventListener("click", () => {
-    if (state.uiBusy) return;
-    const cb = loadCaseboard();
-    const nameRaw = (elements.caseName?.value || "").trim();
-    const name = nameRaw || `Case-${new Date().toISOString().slice(0, 10)}`;
-    const id = newCaseId();
-    cb.cases.push({ id, name, created_at: Date.now(), updated_at: Date.now(), events: [] });
-    saveCaseboard(cb);
-    setActiveCaseId(id);
-    refresh();
-  });
-
-  elements.btnSaveCase.addEventListener("click", () => {
-    void withUiLock("Saving…", async () => {
-      await saveCurrentToCaseboard({ createIfMissing: true });
-      setStatus("Saved");
-    }).catch((e) => {
-      const msg = e?.message || "Save failed";
-      if (elements.caseOut) elements.caseOut.textContent = `Save failed: ${msg}`;
-    });
-  });
-
-  if (elements.btnLoadCase) {
-    elements.btnLoadCase.addEventListener("click", () => {
-      if (state.uiBusy) return;
-      const id = elements.caseSelect.value || "";
-      if (!id) return;
-      setActiveCaseId(id);
-      refresh();
-    });
-  }
-
-  if (elements.btnExportCase) elements.btnExportCase.addEventListener("click", () => exportActiveCase());
-  if (elements.btnDeleteCase) {
-    elements.btnDeleteCase.addEventListener("click", () => {
-      if (state.uiBusy) return;
-      const ok = window.confirm("Delete this case from local Caseboard? This cannot be undone.");
-      if (!ok) return;
-      deleteActiveCase();
-      refresh();
-    });
-  }
-
-  elements.caseSelect.addEventListener("change", () => refresh());
-
-  // Keep UI in sync when a new file loads / resets.
-  document.addEventListener("osint:file-changed", () => refresh());
-}
-
 function buildOsintReport() {
+  const keyFields = extractKeyFieldsObj(state.exif);
+  const exportMetadata = buildExportMetadata();
   return {
+    schema_version: EXPORT_SCHEMA_VERSION,
+    app_version: APP_VERSION,
     generated_at: new Date().toISOString(),
-    source_reliability: { ...state.caseInfo },
+    export_metadata: exportMetadata,
+    source_reliability: { ...state.sourceInfo },
     file: state.file
       ? {
           name: state.file.name || null,
@@ -2777,21 +2966,40 @@ function buildOsintReport() {
     public_url: state.publicUrl || null,
     public_upload_artifact: state.publicUrl ? state.publicUrlArtifact || "original" : null,
     share_safe: Boolean(state.shareSafe),
+    upload: state.uploadMeta ? { ...state.uploadMeta } : null,
     gps: state.gps ? { lat: state.gps.lat, lon: state.gps.lon } : null,
     insights: {
-      repost_heuristic: state.insights.repost_score,
-      repost_reasons: state.insights.repost_reasons || [],
+      metadata_suspicion_score: state.insights.metadata_suspicion_score,
+      metadata_suspicion_band: state.insights.metadata_suspicion_band,
+      metadata_suspicion_inputs: state.insights.metadata_suspicion_inputs || [],
+      repost_heuristic: state.insights.metadata_suspicion_score,
+      repost_reasons: state.insights.metadata_suspicion_inputs || [],
       attribution_hints: elements.attrHints?.textContent || null,
     },
     key_fields: {
-      captured: elements.kfCaptured?.textContent || null,
-      camera: elements.kfCamera?.textContent || null,
-      software: elements.kfSoftware?.textContent || null,
+      captured: keyFields.captured || elements.kfCaptured?.textContent || null,
+      captured_at: keyFields.captured_at || state.captureTimeInfo || null,
+      camera: keyFields.camera || elements.kfCamera?.textContent || null,
+      software: keyFields.software || elements.kfSoftware?.textContent || null,
       ocr_entities: state.ocrText ? OCR_PIPELINE?.extractEntities?.(state.ocrText) || null : null,
       ocr_entity_confidence: state.entityConfidence && Object.keys(state.entityConfidence).length ? { ...state.entityConfidence } : null,
     },
     exif: state.exif || null,
     ocr_text: state.ocrText || null,
+    ocr: {
+      mode: state.lastOcrMode || "not_run",
+      selected_model: elements.ocrLang?.value || OCR_DEFAULT_LANGUAGE,
+    },
+    launchpad: state.lastEngineRun
+      ? {
+          ts: state.lastEngineRun.ts || null,
+          artifact: state.lastEngineRun.artifact || null,
+          targets: state.lastEngineRun.targets ? { ...state.lastEngineRun.targets } : null,
+          opened: state.lastEngineRun.opened ? { ...state.lastEngineRun.opened } : null,
+          blocked: state.lastEngineRun.blocked ? { ...state.lastEngineRun.blocked } : null,
+        }
+      : null,
+    session_action_log: Array.isArray(state.actionLog) ? state.actionLog.slice() : [],
     mutation_lab: state.mutations && state.mutations.length > 0 ? state.mutations : null,
     compare: state.compare?.dhash
       ? {
@@ -2804,20 +3012,15 @@ function buildOsintReport() {
 }
 
 function extractKeyFieldsObj(exifObj) {
-  const captured =
-    exifObj?.DateTimeOriginal ||
-    exifObj?.CreateDate ||
-    exifObj?.ModifyDate ||
-    exifObj?.DateTimeDigitized ||
-    exifObj?.datetime ||
-    null;
+  const captured = normalizeCapturedAt(exifObj);
   const make = (exifObj?.Make || "").trim();
   const model = (exifObj?.Model || "").trim();
   const camera = `${make} ${model}`.trim() || null;
   const software = (exifObj?.Software || exifObj?.ProcessingSoftware || exifObj?.CreatorTool || "").trim() || null;
   const gps = getGps(exifObj);
   return {
-    captured: captured ? String(captured) : null,
+    captured: captured?.display || null,
+    captured_at: captured,
     camera,
     software,
     gps: gps ? { lat: gps.lat, lon: gps.lon } : null,
@@ -2838,20 +3041,26 @@ async function buildReportForFileHeadless(file) {
 
   const key = extractKeyFieldsObj(exifObj);
   const hints = computeAttributionHints(exifObj, "");
-  const { score, reasons } = computeRepostScore({ exifObj, file, width, height, ocrText: "" });
+  const { score, band, inputs } = computeMetadataSuspicionScore({ exifObj, file, width, height, ocrText: "" });
 
   return {
+    schema_version: EXPORT_SCHEMA_VERSION,
+    app_version: APP_VERSION,
     generated_at: new Date().toISOString(),
+    export_metadata: buildExportMetadata({ ocrMode: "not_run", ocrLanguage: OCR_DEFAULT_LANGUAGE, uploadMeta: null }),
     file: { name: file.name || null, type: file.type || null, size_bytes: file.size || null },
     dimensions: `${width} × ${height}`,
     hashes: { sha256: hashes.sha, md5: hashes.md5, dhash: dh },
     gps: key.gps,
     insights: {
+      metadata_suspicion_score: score,
+      metadata_suspicion_band: band,
+      metadata_suspicion_inputs: inputs,
       repost_heuristic: score,
-      repost_reasons: reasons,
+      repost_reasons: inputs,
       attribution_hints: hints,
     },
-    key_fields: { captured: key.captured, camera: key.camera, software: key.software },
+    key_fields: { captured: key.captured, captured_at: key.captured_at, camera: key.camera, software: key.software },
     exif: exifObj || null,
   };
 }
@@ -2886,7 +3095,8 @@ async function runBatchFiles(files) {
         thumb = null;
       }
       state.batchItems.push({ id, file: f, report: r, triage: null, clusterId: 0, thumb });
-      lines.push(`  OK · heuristic ${r.insights.repost_heuristic}/100`);
+      const suspicion = r.insights?.metadata_suspicion_band || formatMetadataSuspicionBand(Number(r.insights?.metadata_suspicion_score ?? r.insights?.repost_heuristic));
+      lines.push(`  OK · suspicion ${suspicion}`);
     } catch (e) {
       lines.push(`  FAIL · ${e?.message || "unknown error"}`);
     }
@@ -2902,8 +3112,73 @@ async function runBatchFiles(files) {
 }
 
 function downloadJson(obj, filename) {
-  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  const payload = Array.isArray(obj)
+    ? obj.map((item) =>
+        item && typeof item === "object" && !item.schema_version
+          ? {
+              ...item,
+              schema_version: EXPORT_SCHEMA_VERSION,
+              app_version: APP_VERSION,
+              export_metadata: buildExportMetadata(),
+            }
+          : item,
+      )
+    : obj && typeof obj === "object" && !obj.schema_version
+      ? {
+          ...obj,
+          schema_version: EXPORT_SCHEMA_VERSION,
+          app_version: APP_VERSION,
+          export_metadata: buildExportMetadata(),
+        }
+      : obj;
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   downloadBlob(blob, filename);
+}
+
+async function downloadEvidencePack() {
+  if (!state.file) throw new Error("Cannot create evidence pack: no image file is currently loaded");
+  const report = buildOsintReport();
+  const ts = new Date().toISOString().replace(/[:.]/g, "-");
+  const baseName = (state.file.name || "image").replace(/\.[^/.]+$/, "") || "image";
+  const manifest = {
+    schema_version: report.schema_version || EXPORT_SCHEMA_VERSION,
+    app_version: report.app_version || APP_VERSION,
+    generated_at: report.generated_at,
+    export_metadata: report.export_metadata || buildExportMetadata(),
+    package: {
+      format: "bluelens-evidence-pack-v1",
+      original_filename: state.file.name || null,
+      clean_filename: state.cleanSignals?.name || null,
+    },
+    file_hashes: report.hashes,
+    clean_copy_hashes: report.clean_copy || null,
+    ocr: report.ocr,
+    upload: report.upload,
+    launchpad: report.launchpad,
+    source_reliability: report.source_reliability,
+    session_action_log: report.session_action_log,
+  };
+  const mtime = Math.floor(new Date(report.generated_at || Date.now()).getTime() / 1000);
+  const notes = [
+    `Manual notes: ${report.source_reliability?.manual_notes || "—"}`,
+    `Analyst confidence: ${report.source_reliability?.analyst_confidence || "unverified"}`,
+    `OCR mode: ${report.ocr?.mode || "not_run"}`,
+    `OCR language: ${report.ocr?.selected_model || OCR_DEFAULT_LANGUAGE}`,
+    `Upload host: ${report.upload?.host || "—"}`,
+    `Capture time: ${report.key_fields?.captured_at?.display || report.key_fields?.captured || "—"}`,
+  ].join("\n");
+  const entries = [
+    { name: "manifest.json", data: toUtf8Bytes(JSON.stringify(manifest, null, 2)), mtime },
+    { name: "report.json", data: toUtf8Bytes(JSON.stringify(report, null, 2)), mtime },
+    { name: "report.md", data: toUtf8Bytes(buildMarkdownReport(report)), mtime },
+    { name: "notes.txt", data: toUtf8Bytes(notes), mtime },
+    { name: state.file.name || `${baseName}.bin`, data: await fileToBytes(state.file), mtime },
+  ];
+  if (state.cleanBlob) {
+    const cleanFile = cleanFileFromBlob(state.cleanBlob);
+    if (cleanFile) entries.push({ name: cleanFile.name || `${baseName}_clean.jpg`, data: await fileToBytes(cleanFile), mtime });
+  }
+  downloadBlob(createTar(entries), `${baseName}_evidence_pack_${ts}.tar`);
 }
 
 const scriptCache = new Map();
@@ -2933,6 +3208,18 @@ function setOcrStatus(label) {
   elements.ocrPill.classList.toggle("pill-muted", label === "Idle" || label === "Ready");
 }
 
+function getOcrLanguageLabel(code) {
+  return OCR_LANGUAGE_OPTIONS.find((opt) => opt.value === code)?.label || code;
+}
+
+function populateOcrLanguageOptions() {
+  if (!elements.ocrLang) return;
+  const current = elements.ocrLang.value || OCR_DEFAULT_LANGUAGE;
+  elements.ocrLang.innerHTML = OCR_LANGUAGE_OPTIONS.map((opt) => `<option value="${escapeAttr(opt.value)}">${escapeHtml(opt.label)}</option>`).join("");
+  const fallback = OCR_LANGUAGE_OPTIONS.some((opt) => opt.value === current) ? current : OCR_DEFAULT_LANGUAGE;
+  elements.ocrLang.value = fallback;
+}
+
 const ocrWorkerState = {
   worker: null,
   lang: null,
@@ -2940,7 +3227,8 @@ const ocrWorkerState = {
 };
 
 async function getOcrWorker(lang) {
-  if (ocrWorkerState.worker && ocrWorkerState.lang === lang) return ocrWorkerState.worker;
+  const normalizedLang = lang || OCR_DEFAULT_LANGUAGE;
+  if (ocrWorkerState.worker && ocrWorkerState.lang === normalizedLang) return ocrWorkerState.worker;
   if (ocrWorkerState.creating) return await ocrWorkerState.creating;
 
   ocrWorkerState.creating = (async () => {
@@ -2956,7 +3244,7 @@ async function getOcrWorker(lang) {
       ocrWorkerState.lang = null;
     }
 
-    const worker = await Tesseract.createWorker(lang, 1, {
+    const worker = await Tesseract.createWorker(normalizedLang, 1, {
       logger: (m) => {
         if (!m || !m.status) return;
         const pct = typeof m.progress === "number" ? ` ${(m.progress * 100).toFixed(0)}%` : "";
@@ -2976,7 +3264,7 @@ async function getOcrWorker(lang) {
     }
 
     ocrWorkerState.worker = worker;
-    ocrWorkerState.lang = lang;
+    ocrWorkerState.lang = normalizedLang;
     return worker;
   })().finally(() => {
     ocrWorkerState.creating = null;
@@ -3004,12 +3292,12 @@ function renderOcrEntities(text) {
   wrap.innerHTML = "";
   if (elements.btnPivotSearch) elements.btnPivotSearch.disabled = false;
 
-  const group = (title) => {
+  const group = (title, source) => {
     const g = document.createElement("div");
     g.className = "pivot-group";
     const head = document.createElement("div");
     head.className = "pivot-head";
-    head.textContent = title;
+    head.textContent = source ? `${title} — ${source}` : title;
     g.appendChild(head);
     wrap.appendChild(g);
     return g;
@@ -3036,6 +3324,13 @@ function renderOcrEntities(text) {
     parent.appendChild(b);
   };
 
+  const addInfoChip = (parent, label) => {
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.textContent = label;
+    parent.appendChild(chip);
+  };
+
   const addConfidence = (parent, key) => {
     const sel = document.createElement("select");
     sel.className = "select chip-select";
@@ -3045,7 +3340,7 @@ function renderOcrEntities(text) {
       `<option value="likely">~</option>` +
       `<option value="confirmed">✓</option>`;
     sel.addEventListener("change", () => {
-      state.caseInfo = state.caseInfo || {};
+      state.sourceInfo = state.sourceInfo || {};
       state.entityConfidence = state.entityConfidence || {};
       state.entityConfidence[key] = sel.value;
     });
@@ -3053,15 +3348,20 @@ function renderOcrEntities(text) {
   };
 
   const google = (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+  const note = document.createElement("div");
+  note.className = "pivot-head";
+  note.textContent = "Manual pivots only — these are templated follow-ups from OCR hits, not investigative scoring.";
+  wrap.appendChild(note);
 
   if (ent.handles.length) {
-    const g = group("Handles");
+    const g = group("Handles", "Source: direct OCR hit · Confidence: direct text");
     for (const raw of ent.handles.slice(0, 6)) {
       const h = OCR_PIPELINE?.normalizeHandle?.(raw) || raw.replace(/^@/, "");
       if (!h) continue;
       const row = document.createElement("div");
       row.className = "pivot-row";
       addCopyChip(row, `@${h}`, `@${h}`);
+      addInfoChip(row, "Manual follow-up");
       addLinkChip(row, "IG", `https://www.instagram.com/${encodeURIComponent(h)}/`, { title: "Open Instagram profile" });
       addLinkChip(row, "TikTok", `https://www.tiktok.com/@${encodeURIComponent(h)}`, { title: "Open TikTok profile" });
       addLinkChip(row, "X", `https://x.com/${encodeURIComponent(h)}`, { title: "Open X profile" });
@@ -3072,7 +3372,7 @@ function renderOcrEntities(text) {
   }
 
   if (ent.urls.length) {
-    const g = group("URLs / Domains");
+    const g = group("URLs / Domains", "Source: direct OCR hit · Confidence: direct text");
     for (const u of ent.urls.slice(0, 6)) {
       const d = OCR_PIPELINE?.normalizeDomain?.(u);
       const row = document.createElement("div");
@@ -3080,6 +3380,7 @@ function renderOcrEntities(text) {
       const short = String(u).replace(/^https?:\/\//i, "").slice(0, 44);
       addLinkChip(row, short, u, { title: "Open URL" });
       if (d) {
+        addInfoChip(row, "Derived domain follow-up");
         addLinkChip(row, "WHOIS", `https://www.whois.com/whois/${encodeURIComponent(d)}`, { title: "WHOIS lookup" });
         addLinkChip(row, "DNS", `https://dns.google/resolve?name=${encodeURIComponent(d)}&type=A`, { title: "DNS over HTTPS (Google)" });
         addLinkChip(row, "CRT", `https://crt.sh/?q=${encodeURIComponent(d)}`, { title: "Certificate transparency" });
@@ -3093,11 +3394,12 @@ function renderOcrEntities(text) {
   }
 
   if (ent.emails.length) {
-    const g = group("Emails");
+    const g = group("Emails", "Source: direct OCR hit · Confidence: direct text");
     for (const e of ent.emails.slice(0, 6)) {
       const row = document.createElement("div");
       row.className = "pivot-row";
       addCopyChip(row, e, e);
+      addInfoChip(row, "Manual search");
       addLinkChip(row, "Search", google(`"${e}"`), { title: "Search email" });
       addLinkChip(row, "Breach?", google(`"${e}" breach`), { title: "Search breach mentions" });
       addConfidence(row, `email:${e.toLowerCase()}`);
@@ -3106,13 +3408,14 @@ function renderOcrEntities(text) {
   }
 
   if (ent.phones.length) {
-    const g = group("Phones");
+    const g = group("Phones", "Source: direct OCR hit · Confidence: direct text");
     for (const p of ent.phones.slice(0, 6)) {
       const n = OCR_PIPELINE?.normalizePhone?.(p);
       const row = document.createElement("div");
       row.className = "pivot-row";
       const label = n?.e164 ? `${n.e164}${n.country_hint ? ` (${n.country_hint})` : ""}` : p;
       addCopyChip(row, label, n?.e164 || p);
+      addInfoChip(row, "Manual search");
       const q = n?.e164 || n?.digits || p;
       addLinkChip(row, "Search", google(`"${q}"`), { title: "Search phone" });
       addConfidence(row, `phone:${String(q).replace(/\s+/g, "")}`);
@@ -3121,59 +3424,31 @@ function renderOcrEntities(text) {
   }
 }
 
-function detectLangHint(text) {
+function detectScriptHint(text) {
   const t = String(text || "");
   if (!t) return null;
-
-  const counts = { eng: 0, spa: 0, fra: 0, deu: 0 };
-
-  const add = (lang, n) => {
-    counts[lang] += n;
-  };
-
-  // Spanish
-  add("spa", (t.match(/[ñÑ]/g) || []).length * 6);
-  add("spa", (t.match(/[¡¿]/g) || []).length * 8);
-  add("spa", (t.match(/[áéíóúÁÉÍÓÚ]/g) || []).length * 2);
-
-  // French
-  add("fra", (t.match(/[àâæçéèêëîïôœùûüÿÀÂÆÇÉÈÊËÎÏÔŒÙÛÜŸ]/g) || []).length * 3);
-  add("fra", (t.match(/\b(c'est|l'|d'|qu')/gi) || []).length * 3);
-
-  // German
-  add("deu", (t.match(/[äöüÄÖÜ]/g) || []).length * 4);
-  add("deu", (t.match(/[ß]/g) || []).length * 10);
-
-  // English baseline: reward plain ASCII letters.
-  add("eng", (t.match(/[A-Za-z]/g) || []).length / 30);
-
-  const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  const top = entries[0];
-  if (!top || top[1] < 6) return null;
-
-  return top[0];
+  const ranked = OCR_SCRIPT_HINTS
+    .map((script) => ({ ...script, score: (t.match(script.test) || []).length }))
+    .filter((script) => script.score > 0)
+    .sort((a, b) => b.score - a.score);
+  const top = ranked[0];
+  if (!top) return null;
+  if (top.label !== "Latin" && top.score < 2) return null;
+  if (top.label === "Latin" && top.score < 8) return null;
+  return top;
 }
 
 function renderOcrLangHint(text) {
   const el = elements.ocrLangHint;
   if (!el) return;
-  const hint = detectLangHint(text);
+  const hint = detectScriptHint(text);
   if (!hint) {
     el.hidden = true;
     return;
   }
-  const label = hint === "spa" ? "Spanish" : hint === "fra" ? "French" : hint === "deu" ? "German" : "English";
+  const labels = hint.models.slice(0, 3).map((code) => getOcrLanguageLabel(code)).join(" / ");
   el.hidden = false;
-  el.textContent = `Hint: ${label}`;
-
-  // If user hasn't explicitly changed the selector, gently set it.
-  if (!state.ocrLangTouched) {
-    try {
-      elements.ocrLang.value = hint;
-    } catch {
-      // ignore
-    }
-  }
+  el.textContent = `Weak script hint: ${hint.label} → try ${labels}`;
 }
 
 async function runOcrForCurrent({ mode = "deep" } = {}) {
@@ -3181,6 +3456,7 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
   if (state.ocrRunning) throw new Error("OCR already running");
 
   state.ocrRunning = true;
+  state.lastOcrMode = mode === "fast" ? "fast" : "deep";
   elements.btnRunOcr.disabled = true;
   elements.btnCopyOcr.disabled = true;
   elements.ocrOut.textContent = "Loading OCR…";
@@ -3194,7 +3470,7 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
     if (mode === "fast") {
       let enhanced = null;
       try {
-        enhanced = await OCR_PIPELINE.preprocessOtsu(state.objectUrl, { maxDim: 1200 });
+        enhanced = await OCR_PIPELINE.preprocessOtsu(state.objectUrl, { maxDim: OCR_FAST_PREPROCESS_MAX_DIM });
       } catch {
         enhanced = null;
       }
@@ -3327,6 +3603,7 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
     elements.btnCopyOcr.disabled = !finalText;
     setOcrStatus("Ready");
     if (finalText) pulseRadar("ocr");
+    logAction("ocr_run", `${state.lastOcrMode} · ${finalText ? "text" : "no_text"}`);
 
     // Refresh hints with OCR-derived entities.
     try {
@@ -3338,15 +3615,16 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
         const m = (elements.metaDim.textContent || "").match(/(\d+)\s*×\s*(\d+)/);
         return m ? Number(m[2]) : null;
       })();
-      const { score: s, reasons } = updateConsoleInsights({
+      const { score: s, band, inputs } = updateConsoleInsights({
         exifObj: state.exif,
         file: state.file,
         width: imgW,
         height: imgH,
         ocrText: finalText,
       });
-      state.insights.repost_score = s;
-      state.insights.repost_reasons = reasons;
+      state.insights.metadata_suspicion_score = s;
+      state.insights.metadata_suspicion_band = band;
+      state.insights.metadata_suspicion_inputs = inputs;
     } catch {
       // ignore
     }
@@ -3397,15 +3675,16 @@ async function analyzeFile(file) {
     updateKeyFields(exifObj);
     elements.exifOut.textContent = stringifyExif(exifObj, state.prettyExif);
 
-    const { score, reasons } = updateConsoleInsights({
+    const { score, band, inputs } = updateConsoleInsights({
       exifObj,
       file,
       width: img.naturalWidth || img.width,
       height: img.naturalHeight || img.height,
       ocrText: state.ocrText,
     });
-    state.insights.repost_score = score;
-    state.insights.repost_reasons = reasons;
+    state.insights.metadata_suspicion_score = score;
+    state.insights.metadata_suspicion_band = band;
+    state.insights.metadata_suspicion_inputs = inputs;
 
     state.cleanBlob = await encodeCleanCopy(img, file.type);
     if (state.cleanBlob) {
@@ -3425,7 +3704,7 @@ async function analyzeFile(file) {
 
     if (!elements.srcOrig.value) {
       elements.srcOrig.value = file.name || "";
-      state.caseInfo.original_filename = elements.srcOrig.value;
+      state.sourceInfo.original_filename = elements.srcOrig.value;
     }
 
     setStatus("Ready");
@@ -3436,20 +3715,78 @@ async function analyzeFile(file) {
   } catch {
     // ignore
   }
+
+  window.__osintActivateTab?.("search");
+  if (elements.btnEvidencePack) elements.btnEvidencePack.disabled = false;
+  logAction("image_loaded", `${file.name || "image"} · local review ready`);
+  setStatusLine("Local review ready. Uploads start only when you choose a launch action.");
+  renderOnboardingStrip();
 }
 
 function clearCompare() {
   if (state.compare?.objectUrl) URL.revokeObjectURL(state.compare.objectUrl);
-  state.compare = { file: null, objectUrl: null, dhash: "" };
+  state.compare = { file: null, objectUrl: null, dhash: "", diffScore: null };
   elements.compareInput.value = "";
   elements.compareImg.removeAttribute("src");
   elements.compareImg.style.display = "none";
   elements.compareEmpty.style.display = "grid";
+  if (elements.compareDiffCanvas) {
+    const ctx = elements.compareDiffCanvas.getContext("2d");
+    ctx?.clearRect(0, 0, elements.compareDiffCanvas.width || 0, elements.compareDiffCanvas.height || 0);
+    elements.compareDiffCanvas.style.display = "none";
+  }
+  if (elements.compareDiffEmpty) elements.compareDiffEmpty.style.display = "grid";
   elements.cmpA.textContent = state.signals.dhash || "—";
   elements.cmpB.textContent = "—";
   elements.cmpDist.textContent = "—";
   elements.cmpVerdict.textContent = "—";
+  if (elements.cmpExplain) {
+    elements.cmpExplain.textContent =
+      "dHash is a 64-bit perceptual heuristic. Lower Hamming distance means the thumbnails look closer, not that the files are proven to be the same image.";
+  }
   elements.btnClearCompare.disabled = true;
+}
+
+function renderCompareDiff(baseImg, compareImg, size = COMPARE_DIFF_SIZE) {
+  if (!elements.compareDiffCanvas) return null;
+  const canvas = elements.compareDiffCanvas;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  canvas.width = size;
+  canvas.height = size;
+  ctx.clearRect(0, 0, size, size);
+
+  compareDiffScratchA.width = size;
+  compareDiffScratchA.height = size;
+  compareDiffScratchB.width = size;
+  compareDiffScratchB.height = size;
+  const ctxA = compareDiffScratchA.getContext("2d", { willReadFrequently: true });
+  const ctxB = compareDiffScratchB.getContext("2d", { willReadFrequently: true });
+  if (!ctxA || !ctxB) return null;
+
+  ctxA.drawImage(baseImg, 0, 0, size, size);
+  ctxB.drawImage(compareImg, 0, 0, size, size);
+  const imgA = ctxA.getImageData(0, 0, size, size);
+  const imgB = ctxB.getImageData(0, 0, size, size);
+  const out = ctx.createImageData(size, size);
+
+  let total = 0;
+  for (let i = 0; i < imgA.data.length; i += 4) {
+    const dr = Math.abs(imgA.data[i] - imgB.data[i]);
+    const dg = Math.abs(imgA.data[i + 1] - imgB.data[i + 1]);
+    const db = Math.abs(imgA.data[i + 2] - imgB.data[i + 2]);
+    const diff = Math.round((dr + dg + db) / 3);
+    total += diff;
+    out.data[i] = diff;
+    out.data[i + 1] = Math.max(0, 255 - diff);
+    out.data[i + 2] = 255 - Math.round(diff / 2);
+    out.data[i + 3] = 255;
+  }
+
+  ctx.putImageData(out, 0, 0);
+  canvas.style.display = "block";
+  if (elements.compareDiffEmpty) elements.compareDiffEmpty.style.display = "none";
+  return Math.round(total / (size * size));
 }
 
 async function analyzeCompareFile(file) {
@@ -3459,9 +3796,12 @@ async function analyzeCompareFile(file) {
     state.compare.file = file;
 
     let standalone;
+    let baseStandalone;
     try {
+      baseStandalone = await loadImageStandalone(state.file);
       standalone = await loadImageStandalone(file);
     } catch {
+      if (baseStandalone?.url) URL.revokeObjectURL(baseStandalone.url);
       elements.cmpVerdict.textContent = "Could not decode comparison image.";
       return;
     }
@@ -3475,6 +3815,11 @@ async function analyzeCompareFile(file) {
 
     const dh = computeDHash(standalone.img);
     state.compare.dhash = dh;
+    try {
+      state.compare.diffScore = renderCompareDiff(baseStandalone.img, standalone.img);
+    } finally {
+      URL.revokeObjectURL(baseStandalone.url);
+    }
 
     elements.cmpA.textContent = state.signals.dhash || "—";
     elements.cmpB.textContent = dh || "—";
@@ -3483,16 +3828,22 @@ async function analyzeCompareFile(file) {
     if (dist === null) {
       elements.cmpDist.textContent = "—";
       elements.cmpVerdict.textContent = "Could not compare.";
+      if (elements.cmpExplain) {
+        elements.cmpExplain.textContent = "BlueLens could not derive a valid dHash distance from one of the images.";
+      }
       return;
     }
 
-    elements.cmpDist.textContent = String(dist);
-    let verdict = "Different";
-    if (dist === 0) verdict = "Perceptual match";
-    else if (dist <= 6) verdict = "Likely same image";
-    else if (dist <= 12) verdict = "Very similar";
-    else if (dist <= 20) verdict = "Similar";
+    elements.cmpDist.textContent = `${dist} / 64 · lower is closer`;
+    let verdict = "No near-duplicate signal from dHash alone";
+    if (dist <= 12) verdict = "Possible near-duplicate";
+    else if (dist <= 20) verdict = "Possible near-duplicate (weak dHash signal)";
     elements.cmpVerdict.textContent = verdict;
+    if (elements.cmpExplain) {
+      const diffText = Number.isFinite(state.compare.diffScore) ? ` Thumbnail diff intensity: ${state.compare.diffScore}/255.` : "";
+      elements.cmpExplain.textContent =
+        `dHash compares tiny perceptual thumbnails; 0 means identical hashes and larger numbers mean less visual agreement.${diffText} Treat this as a screening signal, not proof that two files are the same image.`;
+    }
     elements.btnClearCompare.disabled = false;
     setStatus("Ready");
   });
@@ -3568,8 +3919,9 @@ function setupDnD() {
           const ext = blob.type === "image/jpeg" ? "jpg" : blob.type === "image/webp" ? "webp" : "png";
           const name = `drop_${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
           await analyzeFile(new File([blob], name, { type: blob.type || "image/png" }));
-        } catch {
-          // ignore
+        } catch (error) {
+          reportNonFatalError("drop.data-url.ingest", error, { detail: { source: "data-url" }, dedupeMs: 5000 });
+          elements.exifOut.textContent = "Could not ingest the dropped image data. Save the image locally and choose the file instead.";
         }
         return;
       }
@@ -3586,7 +3938,8 @@ function setupDnD() {
         const ext = blob.type === "image/jpeg" ? "jpg" : blob.type === "image/webp" ? "webp" : "png";
         const name = `drop_${new Date().toISOString().replace(/[:.]/g, "-")}.${ext}`;
         await analyzeFile(new File([blob], name, { type: blob.type || "image/png" }));
-      } catch {
+      } catch (error) {
+        reportNonFatalError("drop.remote-url.ingest", error, { detail: { url }, dedupeMs: 5000 });
         elements.exifOut.textContent =
           "Could not ingest dragged image URL (likely CORS). Save the image locally and drop the file, or copy-paste the image.";
       } finally {
@@ -3619,8 +3972,8 @@ function setupActions() {
         try {
           await ensurePublicUrl();
           setStatus("Ready");
-        } catch {
-          // ensurePublicUrl already updated UI
+        } catch (error) {
+          reportNonFatalError("upload.retry", error, { harmless: true, dedupeMs: 5000 });
         }
       });
     });
@@ -3628,22 +3981,13 @@ function setupActions() {
 
   // Share-safe mode: use clean copy for uploads.
   if (elements.chkShareSafe) {
-    let saved = "0";
-    try {
-      saved = localStorage.getItem("ui:shareSafe") || "0";
-    } catch {
-      saved = "0";
-    }
+    const saved = readStorage(STORAGE_SHARE_SAFE_KEY, "0", "share-safe.read");
     state.shareSafe = saved === "1";
     elements.chkShareSafe.checked = state.shareSafe;
 
     elements.chkShareSafe.addEventListener("change", () => {
       state.shareSafe = Boolean(elements.chkShareSafe.checked);
-      try {
-        localStorage.setItem("ui:shareSafe", state.shareSafe ? "1" : "0");
-      } catch {
-        // ignore
-      }
+      writeStorage(STORAGE_SHARE_SAFE_KEY, state.shareSafe ? "1" : "0", "share-safe.write");
       // Changing artifacts invalidates the previously shared URL.
       if (state.shareEnabled) {
         state.publicUrl = "";
@@ -3656,22 +4000,21 @@ function setupActions() {
     });
   }
 
-  const syncCase = () => {
-    state.caseInfo.where_obtained = elements.srcWhere.value || "";
-    state.caseInfo.when_obtained = elements.srcWhen.value || "";
-    state.caseInfo.who_provided = elements.srcWho.value || "";
-    state.caseInfo.original_filename = elements.srcOrig.value || "";
-    if (elements.confLevel) state.caseInfo.analyst_confidence = elements.confLevel.value || "unverified";
+  const syncSourceInfo = () => {
+    state.sourceInfo.where_obtained = elements.srcWhere.value || "";
+    state.sourceInfo.when_obtained = elements.srcWhen.value || "";
+    state.sourceInfo.who_provided = elements.srcWho.value || "";
+    state.sourceInfo.original_filename = elements.srcOrig.value || "";
+    state.sourceInfo.manual_notes = elements.manualNotes?.value || "";
+    state.manualNotes = state.sourceInfo.manual_notes;
+    if (elements.confLevel) state.sourceInfo.analyst_confidence = elements.confLevel.value || "unverified";
   };
-  elements.srcWhere.addEventListener("input", syncCase);
-  elements.srcWhen.addEventListener("input", syncCase);
-  elements.srcWho.addEventListener("input", syncCase);
-  elements.srcOrig.addEventListener("input", syncCase);
-  elements.confLevel?.addEventListener("change", syncCase);
-
-  elements.ocrLang?.addEventListener("change", () => {
-    state.ocrLangTouched = true;
-  });
+  elements.srcWhere.addEventListener("input", syncSourceInfo);
+  elements.srcWhen.addEventListener("input", syncSourceInfo);
+  elements.srcWho.addEventListener("input", syncSourceInfo);
+  elements.srcOrig.addEventListener("input", syncSourceInfo);
+  elements.manualNotes?.addEventListener("input", syncSourceInfo);
+  elements.confLevel?.addEventListener("change", syncSourceInfo);
 
   elements.chkEnableShare.addEventListener("change", () => {
     state.shareEnabled = Boolean(elements.chkEnableShare.checked);
@@ -3696,13 +4039,28 @@ function setupActions() {
     const report = buildOsintReport();
     if (e?.shiftKey) {
       await copyText(JSON.stringify(report, null, 2));
+      logAction("report_copied", "json");
       setStatus("Copied (JSON)");
       return;
     }
 
     const md = buildMarkdownReport(report);
     await copyText(md);
+    logAction("report_copied", "markdown");
     setStatus("Copied (MD)");
+  });
+
+  elements.btnEvidencePack?.addEventListener("click", async () => {
+    if (!state.file) return;
+    await downloadEvidencePack();
+    logAction("evidence_pack_downloaded", state.file.name || "image");
+    setStatus("Evidence Pack ready");
+  });
+
+  elements.btnRunDoctor?.addEventListener("click", async () => {
+    if (elements.doctorOut) elements.doctorOut.textContent = "Running doctor…";
+    await runDoctorChecks();
+    setStatus("Doctor updated");
   });
 
   elements.btnPivotSearch?.addEventListener("click", () => {
@@ -3713,8 +4071,9 @@ function setupActions() {
     if (targets.length === 0) return;
 
     // Popup blockers: open synchronously, no awaits here.
-    for (const u of targets) window.open(u, "_blank", "noopener,noreferrer");
-    setStatus(`Pivoted (${targets.length})`);
+    for (const u of targets) openUrl(u);
+    logAction("manual_pivots_opened", String(targets.length));
+    setStatus(`Manual pivots (${targets.length})`);
   });
 
   elements.btnRunPass.addEventListener("click", async () => {
@@ -3736,15 +4095,16 @@ function setupActions() {
         return m ? Number(m[2]) : null;
       })();
 
-      const { score, reasons } = updateConsoleInsights({
+      const { score, band, inputs } = updateConsoleInsights({
         exifObj: state.exif,
         file: state.file,
         width: imgW,
         height: imgH,
         ocrText: state.ocrText,
       });
-      state.insights.repost_score = score;
-      state.insights.repost_reasons = reasons;
+      state.insights.metadata_suspicion_score = score;
+      state.insights.metadata_suspicion_band = band;
+      state.insights.metadata_suspicion_inputs = inputs;
 
       setStatus("Ready");
     });
@@ -3762,7 +4122,7 @@ function setupActions() {
     await withUiLock("Mutating…", async () => {
       if (!state.shareEnabled) {
         const ok = window.confirm(
-          "Mutation Lab needs one-click mode (uploads variants to generate public URLs). Enable it?",
+          "Mutation Lab needs automatic uploads (uploads variants to generate public URLs). Allow it?",
         );
         if (!ok) return;
         state.shareEnabled = true;
@@ -3798,17 +4158,15 @@ function setupActions() {
         }
       }
 
-      const clusters = clusterByDhash(muts.filter((m) => m.dhash), 10);
+      const clusters = clusterByDhash(muts.filter((m) => m.dhash), DHASH_MUTATION_CLUSTER_THRESHOLD);
       for (let ci = 0; ci < clusters.length; ci += 1) {
         for (const m of clusters[ci].items) m.cluster = ci + 1;
       }
 
-      const tokens = muts.map((_, i) => `${Date.now()}-${Math.random().toString(16).slice(2)}-${i}`);
+      const jobIds = [];
       for (let i = 0; i < muts.length; i += 1) {
         const label = `Lens · ${muts[i].label}`;
-        const waitUrl = `/wait.html?token=${encodeURIComponent(tokens[i])}&engine=lens&label=${encodeURIComponent(label)}`;
-        window.open(waitUrl, "_blank");
-        publishWaitState(tokens[i], "lens", { status: "uploading" });
+        jobIds.push(openWaitJob("lens", label));
       }
       state.session = loadSession();
       state.session.engines_opened += muts.length;
@@ -3835,10 +4193,10 @@ function setupActions() {
           working[i].url = url;
           working[i].status = "ok";
           state.mutations.push({ ...working[i] });
-          publishWaitState(tokens[i], "lens", { url });
+          publishWaitState(jobIds[i], { url });
         } catch (e) {
           const msg = e?.message || "upload failed";
-          publishWaitState(tokens[i], "lens", { err: msg });
+          publishWaitState(jobIds[i], { err: msg });
           working[i].status = "fail";
           working[i].url = "";
         }
@@ -3970,6 +4328,7 @@ function setupActions() {
     if (!state.batchReports || state.batchReports.length === 0) return;
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
     downloadJson(state.batchReports, `osint_reports_${ts}.json`);
+    logAction("batch_export_downloaded", `${state.batchReports.length} reports`);
   });
 
   elements.btnChooseCompare.addEventListener("click", () => {
@@ -4000,12 +4359,17 @@ async function checkLocalServerHint() {
   // Non-blocking hint: uploads/search need the local server.
   try {
     const controller = new AbortController();
-    const t = window.setTimeout(() => controller.abort(), 900);
+    const t = window.setTimeout(() => controller.abort(), LOCAL_SERVER_HINT_TIMEOUT_MS);
     const res = await fetch("/api/ping", { cache: "no-store", signal: controller.signal });
     window.clearTimeout(t);
     if (!res.ok) throw new Error("ping");
-  } catch {
-    setStatusLine("Local server offline — start `bluelens-start.cmd` (or `node server.js`) for Upload + Launchpad.");
+    state.localServerOnline = true;
+    renderOnboardingStrip();
+  } catch (error) {
+    reportNonFatalError("server-hint.ping", error, { harmless: true, dedupeMs: 5000 });
+    state.localServerOnline = false;
+    renderOnboardingStrip();
+    setStatusLine(LOCAL_SERVER_HINT_MESSAGE);
   }
 }
 
@@ -4015,72 +4379,120 @@ function setFxVars(scanline, chromatic) {
   if (typeof chromatic === "number") root.style.setProperty("--chromatic", String(chromatic));
 }
 
-function setupFx() {
-  const scanline = Number(localStorage.getItem("fx:scanline") || "0.18");
-  const chromatic = Number(localStorage.getItem("fx:chromatic") || "0.70");
-  const hudEnabled = localStorage.getItem("fx:hud") === "1";
+function setFxControlsEnabled(enabled) {
+  if (elements.scanlineSlider) elements.scanlineSlider.disabled = !enabled;
+  if (elements.chromaticSlider) elements.chromaticSlider.disabled = !enabled;
+  if (elements.btnOverclock) elements.btnOverclock.disabled = !enabled;
+  if (elements.chkChrome) elements.chkChrome.disabled = !enabled;
+  if (elements.chkHud) elements.chkHud.disabled = !enabled;
+}
 
-  if (elements.scanlineSlider) elements.scanlineSlider.value = String(Math.max(0, Math.min(0.35, scanline)));
-  if (elements.chromaticSlider) elements.chromaticSlider.value = String(Math.max(0, Math.min(1.2, chromatic)));
-  if (elements.chkHud) elements.chkHud.checked = hudEnabled;
+function resetHudLayout() {
+  document.querySelectorAll(".hud.floating").forEach((c) => {
+    c.classList.remove("floating");
+    c.style.removeProperty("left");
+    c.style.removeProperty("top");
+    c.style.removeProperty("width");
+  });
+}
 
+function applyChromeSkin() {
+  document.body.classList.toggle("skin-chrome", Boolean(state.chromeSkinWanted && isFunModeEnabled()));
+}
+
+function applyHudMode() {
+  const on = Boolean(state.hudWanted && isFunModeEnabled());
+  document.body.classList.toggle("hud-mode", on);
+  if (!on) {
+    resetHudLayout();
+    return;
+  }
+  document.querySelectorAll(".hud").forEach((card) => {
+    const key = card.getAttribute("data-hud-key");
+    if (!key) return;
+    const raw = readStorage(`hud:${key}`, "", `hud.${key}.read`);
+    if (!raw) return;
+    const p = safeJsonParse(raw, null, `hud.${key}.parse`, { harmless: true });
+    if (!p) return;
+    if (typeof p.left !== "number" || typeof p.top !== "number") return;
+    if (typeof p.width !== "number") return;
+    card.classList.add("floating");
+    card.style.left = `${p.left}px`;
+    card.style.top = `${p.top}px`;
+    card.style.width = `${p.width}px`;
+  });
+}
+
+function applyFunMode(enabled, { persist = true } = {}) {
+  state.funMode = Boolean(enabled);
+  document.body.classList.toggle("fun-mode", state.funMode);
+  const scanline = state.funMode ? Number(elements.scanlineSlider?.value || FX_SCANLINE_FUN_DEFAULT) : FX_SCANLINE_DEFAULT;
+  const chromatic = state.funMode ? Number(elements.chromaticSlider?.value || FX_CHROMATIC_FUN_DEFAULT) : FX_CHROMATIC_DEFAULT;
   setFxVars(scanline, chromatic);
-  document.body.classList.toggle("hud-mode", hudEnabled);
+  setFxControlsEnabled(state.funMode);
+  applyHudMode();
+  applyChromeSkin();
+  if (persist) writeStorage(STORAGE_FX_FUN_MODE_KEY, state.funMode ? "1" : "0", "fx.fun-mode.write");
+}
 
+function setupFx() {
+  const funMode = readStorage(STORAGE_FX_FUN_MODE_KEY, FX_FUN_MODE_DEFAULT ? "1" : "0", "fx.fun-mode.read") === "1";
+  const operatorMode = readStorage(STORAGE_OPERATOR_MODE_KEY, "1", "ui.operator-mode.read") === "1";
+  const scanline = Number(readStorage(STORAGE_FX_SCANLINE_KEY, String(FX_SCANLINE_FUN_DEFAULT), "fx.scanline.read"));
+  const chromatic = Number(readStorage(STORAGE_FX_CHROMATIC_KEY, String(FX_CHROMATIC_FUN_DEFAULT), "fx.chromatic.read"));
+  state.hudWanted = readStorage(STORAGE_FX_HUD_KEY, FX_HUD_DEFAULT ? "1" : "0", "fx.hud.read") === "1";
+  state.chromeSkinWanted = readStorage(STORAGE_SKIN_CHROME_KEY, FX_CHROME_DEFAULT ? "1" : "0", "fx.chrome.read") === "1";
+
+  if (elements.chkFunMode) elements.chkFunMode.checked = funMode;
+  if (elements.chkOperatorMode) elements.chkOperatorMode.checked = operatorMode;
+  if (elements.scanlineSlider)
+    elements.scanlineSlider.value = String(Math.max(0, Math.min(FX_SCANLINE_MAX, Number.isFinite(scanline) ? scanline : FX_SCANLINE_FUN_DEFAULT)));
+  if (elements.chromaticSlider)
+    elements.chromaticSlider.value = String(Math.max(0, Math.min(FX_CHROMATIC_MAX, Number.isFinite(chromatic) ? chromatic : FX_CHROMATIC_FUN_DEFAULT)));
+  if (elements.chkHud) elements.chkHud.checked = state.hudWanted;
+  if (elements.chkChrome) elements.chkChrome.checked = state.chromeSkinWanted;
+
+  applyFunMode(funMode, { persist: false });
+  applyOperatorMode(operatorMode, { persist: false });
+
+  elements.chkFunMode?.addEventListener("change", () => {
+    applyFunMode(Boolean(elements.chkFunMode.checked));
+  });
+  elements.chkOperatorMode?.addEventListener("change", () => {
+    applyOperatorMode(Boolean(elements.chkOperatorMode.checked));
+  });
   elements.scanlineSlider?.addEventListener("input", () => {
     const v = Number(elements.scanlineSlider.value);
-    setFxVars(v, null);
-    localStorage.setItem("fx:scanline", String(v));
+    writeStorage(STORAGE_FX_SCANLINE_KEY, String(v), "fx.scanline.write");
+    if (isFunModeEnabled()) setFxVars(v, null);
   });
 
   elements.chromaticSlider?.addEventListener("input", () => {
     const v = Number(elements.chromaticSlider.value);
-    setFxVars(null, v);
-    localStorage.setItem("fx:chromatic", String(v));
+    writeStorage(STORAGE_FX_CHROMATIC_KEY, String(v), "fx.chromatic.write");
+    if (isFunModeEnabled()) setFxVars(null, v);
   });
 
   elements.btnOverclock?.addEventListener("click", () => {
-    const s = 0.28;
-    const c = 1.05;
+    const s = FX_OVERCLOCK_SCANLINE;
+    const c = FX_OVERCLOCK_CHROMATIC;
     if (elements.scanlineSlider) elements.scanlineSlider.value = String(s);
     if (elements.chromaticSlider) elements.chromaticSlider.value = String(c);
-    setFxVars(s, c);
-    localStorage.setItem("fx:scanline", String(s));
-    localStorage.setItem("fx:chromatic", String(c));
+    writeStorage(STORAGE_FX_SCANLINE_KEY, String(s), "fx.scanline.write");
+    writeStorage(STORAGE_FX_CHROMATIC_KEY, String(c), "fx.chromatic.write");
+    if (!isFunModeEnabled() && elements.chkFunMode) elements.chkFunMode.checked = true;
+    applyFunMode(true);
   });
 
   elements.chkHud?.addEventListener("change", () => {
-    const on = Boolean(elements.chkHud.checked);
-    localStorage.setItem("fx:hud", on ? "1" : "0");
-    document.body.classList.toggle("hud-mode", on);
-    if (!on) {
-      // Snap everything back into layout
-      document.querySelectorAll(".hud.floating").forEach((c) => {
-        c.classList.remove("floating");
-        c.style.removeProperty("left");
-        c.style.removeProperty("top");
-        c.style.removeProperty("width");
-      });
-    } else {
-      // Restore saved positions
-      document.querySelectorAll(".hud").forEach((card) => {
-        const key = card.getAttribute("data-hud-key");
-        if (!key) return;
-        const raw = localStorage.getItem(`hud:${key}`);
-        if (!raw) return;
-        try {
-          const p = JSON.parse(raw);
-          if (typeof p.left !== "number" || typeof p.top !== "number") return;
-          if (typeof p.width !== "number") return;
-          card.classList.add("floating");
-          card.style.left = `${p.left}px`;
-          card.style.top = `${p.top}px`;
-          card.style.width = `${p.width}px`;
-        } catch {
-          // ignore
-        }
-      });
-    }
+    state.hudWanted = Boolean(elements.chkHud.checked);
+    writeStorage(STORAGE_FX_HUD_KEY, state.hudWanted ? "1" : "0", "fx.hud.write");
+    applyHudMode();
+  });
+  elements.chkChrome?.addEventListener("change", () => {
+    state.chromeSkinWanted = Boolean(elements.chkChrome.checked);
+    writeStorage(STORAGE_SKIN_CHROME_KEY, state.chromeSkinWanted ? "1" : "0", "fx.chrome.write");
+    applyChromeSkin();
   });
 }
 
@@ -4108,7 +4520,7 @@ function setupHudDrag() {
     const top = Number.parseFloat(card.style.top);
     const width = Number.parseFloat(card.style.width);
     if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(width)) return;
-    localStorage.setItem(`hud:${key}`, JSON.stringify({ left, top, width }));
+    writeStorage(`hud:${key}`, JSON.stringify({ left, top, width }), `hud.${key}.write`);
   };
 
   document.addEventListener("pointerdown", (e) => {
@@ -4157,7 +4569,6 @@ function setupTabs() {
     for (const p of panels) {
       p.classList.toggle("active", p.getAttribute("data-panel") === name);
     }
-    localStorage.setItem("ui:tab", name);
   };
 
   window.__osintActivateTab = activate;
@@ -4166,13 +4577,13 @@ function setupTabs() {
     t.addEventListener("click", () => activate(t.getAttribute("data-tab")));
   }
 
-  const saved = localStorage.getItem("ui:tab");
-  if (saved && tabs.some((t) => t.getAttribute("data-tab") === saved)) activate(saved);
+  activate("search");
 }
 
 function setupCursorBubbles() {
   let last = 0;
   window.addEventListener("pointermove", (e) => {
+    if (!isFunModeEnabled()) return;
     const now = performance.now();
     if (now - last < 140) return;
     last = now;
@@ -4214,6 +4625,7 @@ function setupHoloTilt() {
   };
 
   card.addEventListener("pointermove", (e) => {
+    if (!isFunModeEnabled()) return;
     lastX = e.clientX;
     lastY = e.clientY;
     if (raf) return;
@@ -4232,6 +4644,7 @@ function setupButtonRipples() {
   document.addEventListener(
     "pointerdown",
     (e) => {
+      if (!isFunModeEnabled()) return;
       const btn = e.target?.closest?.(".btn");
       if (!btn) return;
       if (btn.disabled) return;
@@ -4252,27 +4665,7 @@ function setupButtonRipples() {
 }
 
 function setupChromeSkin() {
-  if (!elements.chkChrome) return;
-  const apply = (on) => {
-    document.body.classList.toggle("skin-chrome", Boolean(on));
-    try {
-      localStorage.setItem("ui:skinChrome", on ? "1" : "0");
-    } catch {
-      // ignore
-    }
-  };
-
-  let saved = "0";
-  try {
-    saved = localStorage.getItem("ui:skinChrome") || "0";
-  } catch {
-    saved = "0";
-  }
-  const on = saved === "1";
-  elements.chkChrome.checked = on;
-  apply(on);
-
-  elements.chkChrome.addEventListener("change", () => apply(elements.chkChrome.checked));
+  applyChromeSkin();
 }
 
 function setupCommandPalette() {
@@ -4286,8 +4679,6 @@ function setupCommandPalette() {
     { name: "OSINT Pass", meta: "OCR + signals", keys: ["pass", "ocr", "signals", "attribution"], run: () => elements.btnRunPass?.click() },
     { name: "Copy Report", meta: "JSON to clipboard", keys: ["copy", "report", "json"], run: () => elements.btnCopyReport?.click() },
     { name: "Copy Public URL", meta: "If shared", keys: ["copy", "url", "public"], run: () => elements.btnCopyPublicUrl?.click() },
-    { name: "Save to Caseboard", meta: "Append event", keys: ["save", "case", "caseboard"], run: () => elements.btnSaveCase?.click() },
-    { name: "Export Case", meta: "JSON bundle", keys: ["export", "case"], run: () => elements.btnExportCase?.click() },
     { name: "Tab: Search", meta: "Console", keys: ["tab", "search"], run: () => window.__osintActivateTab?.("search") },
     { name: "Tab: Signals", meta: "Hashes + EXIF", keys: ["tab", "signals", "exif", "hash"], run: () => window.__osintActivateTab?.("signals") },
     { name: "Tab: Text", meta: "OCR", keys: ["tab", "text", "ocr"], run: () => window.__osintActivateTab?.("text") },
@@ -4337,18 +4728,18 @@ function setupCommandPalette() {
     if (activeIndex >= list.length) activeIndex = Math.max(0, list.length - 1);
 
     elements.cmdkList.innerHTML = "";
-    list.forEach((a, idx) => {
+    list.forEach((action, idx) => {
       const row = document.createElement("div");
       row.className = `cmdk-item${idx === activeIndex ? " active" : ""}`;
       row.setAttribute("role", "option");
       row.setAttribute("data-idx", String(idx));
 
       const left = document.createElement("div");
-      left.textContent = a.name;
+      left.textContent = action.name;
 
       const right = document.createElement("div");
       right.className = "meta";
-      right.textContent = a.meta || "";
+      right.textContent = action.meta || "";
 
       row.appendChild(left);
       row.appendChild(right);
@@ -4357,7 +4748,7 @@ function setupCommandPalette() {
         render();
       });
       row.addEventListener("click", () => {
-        const chosen = filtered()[activeIndex];
+        const chosen = action;
         if (!chosen) return;
         setOpen(false);
         chosen.run();
@@ -4417,6 +4808,7 @@ function setupCommandPalette() {
 }
 
 function triggerGlitterStorm(intensity = 52) {
+  if (!isFunModeEnabled() || state.operatorMode) return;
   if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   const layer = document.createElement("div");
   layer.className = "glitter-storm";
@@ -4448,11 +4840,13 @@ function triggerGlitterStorm(intensity = 52) {
 
 wireReverseSearchButtons();
 setupDnD();
+populateOcrLanguageOptions();
 setupActions();
-setupCaseboard();
 reset();
+renderOnboardingStrip();
 validateLibs();
 void checkLocalServerHint();
+void runDoctorChecks();
 setupFx();
 setupHudDrag();
 setupTabs();
