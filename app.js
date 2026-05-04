@@ -3916,7 +3916,8 @@ function renderDoctorReport(report) {
 }
 
 function startDoctorSonarPolling() {
-  if (doctorSonarTimer) window.clearInterval(doctorSonarTimer);
+  if (doctorSonarTimer) return;
+  if (!document || document.visibilityState === "hidden") return;
   doctorSonarTimer = window.setInterval(() => {
     void runDoctorChecks({ quietStatus: true });
   }, DOCTOR_SONAR_POLL_MS);
@@ -3926,6 +3927,13 @@ function stopDoctorSonarPolling() {
   if (!doctorSonarTimer) return;
   window.clearInterval(doctorSonarTimer);
   doctorSonarTimer = 0;
+}
+
+function syncDoctorSonarPolling() {
+  const investigationActive = Boolean(document.querySelector('.tab.active[data-tab="investigation"]'));
+  const wantsSonar = investigationActive && state.investigation.view === "sonar" && document.visibilityState !== "hidden";
+  if (wantsSonar) startDoctorSonarPolling();
+  else stopDoctorSonarPolling();
 }
 
 async function runDoctorChecks({ quietStatus = false } = {}) {
@@ -5957,6 +5965,7 @@ function setInvestigationView(view = "graph") {
     panel.hidden = !on;
     panel.classList.toggle("active", on);
   }
+  syncDoctorSonarPolling();
 }
 
 function setupInvestigationSurface() {
@@ -6042,6 +6051,7 @@ function setupTabs() {
     for (const p of panels) {
       p.classList.toggle("active", p.getAttribute("data-panel") === name);
     }
+    syncDoctorSonarPolling();
   };
 
   window.__osintActivateTab = activate;
@@ -6321,7 +6331,6 @@ renderOnboardingStrip();
 validateLibs();
 void checkLocalServerHint();
 void runDoctorChecks();
-startDoctorSonarPolling();
 setupFx();
 setupHudDrag();
 setupTabs();
@@ -6335,6 +6344,6 @@ void refreshHostStats();
 setupEngineLaunchpad();
 setupSimpleUi();
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "hidden") stopDoctorSonarPolling();
-  else startDoctorSonarPolling();
+  syncDoctorSonarPolling();
 });
+syncDoctorSonarPolling();
