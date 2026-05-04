@@ -18,13 +18,17 @@ Ocean-themed UI for image upload + reverse-image-search workflows, with an OSINT
 
 This is a static site, but the built-in server is recommended so explicit upload + launchpad actions work reliably.
 
+BlueLens expects **Node.js 18 or newer**. The local server uses built-in platform globals such as `fetch`, `Blob`, and `FormData`, so older Node releases will fail before the app boots.
+
 ```bash
-node server.js
+npm start
 ```
 
 Open:
 
 - http://localhost:8787
+
+If you prefer the direct command, `node server.js` is equivalent on supported Node versions.
 
 ## Notes
 

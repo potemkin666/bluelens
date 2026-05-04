@@ -10,6 +10,10 @@ const stylesCss = fs.readFileSync(path.join(__dirname, "..", "styles.css"), "utf
 const waitHtml = fs.readFileSync(path.join(__dirname, "..", "wait.html"), "utf8");
 const startCmd = fs.readFileSync(path.join(__dirname, "..", "bluelens-start.cmd"), "utf8");
 const desktopIconPs1 = fs.readFileSync(path.join(__dirname, "..", "create-desktop-icon.ps1"), "utf8");
+const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+const readmeMd = fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8");
+const faviconSvgPath = path.join(__dirname, "..", "favicon.svg");
+const desktopIcoPath = path.join(__dirname, "..", "bluelens.ico");
 const oceanBgPath = path.join(__dirname, "..", "assets", "ocean-bg.jpg");
 const setupTabsBlock = appJs.match(/function setupTabs\(\) \{[\s\S]*?\n\}/)?.[0] || "";
 
@@ -30,6 +34,13 @@ test("help button points to the rendered help page", () => {
   assert.doesNotMatch(indexHtml, /href="\.\/README\.md"/);
   assert.match(helpHtml, />BlueLens Help</);
   assert.match(helpHtml, />Operator defaults</);
+});
+
+test("package startup contract declares Node 18+ and a server start script", () => {
+  assert.equal(packageJson.scripts.start, "node server.js");
+  assert.equal(packageJson.engines.node, ">=18");
+  assert.match(readmeMd, /Node\.js 18 or newer/);
+  assert.match(readmeMd, /npm start/);
 });
 
 test("search-all UI is framed as link preparation, not automatic querying", () => {
@@ -82,6 +93,19 @@ test("only the live squid background asset remains wired", () => {
   assert.equal(fs.existsSync(oceanBgPath), false);
 });
 
+test("brand identity is carried through favicon, wait page, and shortcut icon", () => {
+  assert.match(indexHtml, /rel="icon" type="image\/svg\+xml" href="\.\/favicon\.svg"/);
+  assert.match(helpHtml, /rel="icon" type="image\/svg\+xml" href="\.\/favicon\.svg"/);
+  assert.match(waitHtml, /rel="icon" type="image\/svg\+xml" href="\.\/favicon\.svg"/);
+  assert.match(indexHtml, /<img class="brand-mark" src="\.\/favicon\.svg"/);
+  assert.match(waitHtml, /<img class="mark" src="\.\/favicon\.svg"/);
+  assert.match(stylesCss, /background: center \/ contain no-repeat url\("\.\/favicon\.svg"\)/);
+  assert.match(desktopIconPs1, /bluelens\.ico/);
+  assert.match(desktopIconPs1, /IconLocation/);
+  assert.equal(fs.existsSync(faviconSvgPath), true);
+  assert.equal(fs.existsSync(desktopIcoPath), true);
+});
+
 test("search tab is always the first panel shown on load", () => {
   assert.match(setupTabsBlock, /activate\("search"\);/);
   assert.doesNotMatch(setupTabsBlock, /localStorage\.getItem\("ui:tab"\)/);
@@ -126,6 +150,10 @@ test("OCR pivots are framed as manual follow-ups", () => {
   assert.match(indexHtml, />Manual pivots</);
   assert.match(appJs, /Manual pivots only — these are templated follow-ups from OCR hits/);
   assert.match(appJs, /Manual pivots \(\$\{targets\.length\}\)/);
+  assert.match(appJs, /function runPivotStructuredTask\(/);
+  assert.match(appJs, /pivot_task_acquired/);
+  assert.match(appJs, /\/api\/metadata\?/);
+  assert.match(appJs, /\/api\/discover\?/);
 });
 
 test("metadata suspicion copy avoids faux-precise repost scoring", () => {
@@ -236,8 +264,6 @@ test("windows start script waits for ping before opening the browser", () => {
   assert.match(startCmd, /api\/ping/);
   assert.match(startCmd, /Invoke-WebRequest/);
   assert.ok(startCmd.indexOf("node server.js") < startCmd.lastIndexOf("start \"\" \"%BLUELENS_URL%\""));
-  assert.doesNotMatch(desktopIconPs1, /bluelens\.ico/);
-  assert.doesNotMatch(desktopIconPs1, /IconLocation/);
 });
 
 test("global error surface is installed before storage-backed startup work", () => {

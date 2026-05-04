@@ -407,6 +407,7 @@ const state = {
     entries: [],
     last_ingested_at: null,
   },
+  pivotTaskResults: {},
   mutations: [],
   compare: {
     file: null,
@@ -959,6 +960,190 @@ function buildBatchEntityFollowUps(cluster) {
   return [`https://www.google.com/search?q=${encodeURIComponent(`"${value}"`)}`];
 }
 
+async function fetchLocalJson(endpoint, scope = "api.fetch") {
+  const res = await fetch(endpoint, { cache: "no-store" });
+  const text = await res.text();
+  const parsed = text ? safeJsonParse(text, null, `${scope}.parse`, { harmless: true, detail: { endpoint, status: res.status } }) : null;
+  if (!res.ok) {
+    throw new Error(parsed?.message || parsed?.error || `HTTP ${res.status}`);
+  }
+  if (!parsed || typeof parsed !== "object") throw new Error("Unexpected API response");
+  return parsed;
+}
+
+function extractEmailDomain(email) {
+  const value = String(email || "").trim().toLowerCase();
+  const at = value.lastIndexOf("@");
+  return at >= 0 ? value.slice(at + 1) : "";
+}
+
+function setPivotTaskResult(entityKey, result) {
+  if (!entityKey) return;
+  state.pivotTaskResults = state.pivotTaskResults && typeof state.pivotTaskResults === "object" ? state.pivotTaskResults : {};
+  state.pivotTaskResults[entityKey] = result;
+}
+
+function renderPivotTaskResult(container, result) {
+  if (!container) return;
+  container.innerHTML = "";
+  if (!result) {
+    container.hidden = true;
+    return;
+  }
+  container.hidden = false;
+  container.className = `pivot-task-box ${result.status === "error" ? "error" : result.status === "loading" ? "loading" : "ready"}`;
+
+  const head = document.createElement("div");
+  head.className = "pivot-task-head";
+  head.textContent = result.summary || "No structured acquisition result yet.";
+  container.appendChild(head);
+
+  if (Array.isArray(result.lines)) {
+    const list = document.createElement("div");
+    list.className = "pivot-task-lines";
+    for (const line of result.lines) {
+      const row = document.createElement("div");
+      row.textContent = line;
+      list.appendChild(row);
+    }
+    container.appendChild(list);
+  }
+
+  if (Array.isArray(result.links) && result.links.length) {
+    const chips = document.createElement("div");
+    chips.className = "pivot-task-links";
+    for (const link of result.links.slice(0, 8)) {
+      const anchor = document.createElement("a");
+      anchor.className = "chip chip-link";
+      anchor.href = link.url;
+      anchor.target = "_blank";
+      anchor.rel = "noreferrer";
+      anchor.textContent = link.label;
+      chips.appendChild(anchor);
+    }
+    container.appendChild(chips);
+  }
+}
+
+async function runPivotStructuredTask({ entityType, entityKey, entityValue }) {
+  const call = async (endpoint, scope) => {
+    try {
+      return { ok: true, data: await fetchLocalJson(endpoint, scope) };
+    } catch (error) {
+      return { ok: false, error: error?.message || "request failed" };
+    }
+  };
+
+  if (entityType === "handle") {
+    const handle = String(entityValue || "").replace(/^@/, "").trim();
+    const candidates = [
+      { label: "Instagram", url: `https://www.instagram.com/${encodeURIComponent(handle)}/` },
+      { label: "TikTok", url: `https://www.tiktok.com/@${encodeURIComponent(handle)}` },
+      { label: "X", url: `https://x.com/${encodeURIComponent(handle)}` },
+    ];
+    const probes = await Promise.all(
+      candidates.map(async (candidate) => ({
+        ...candidate,
+        result: await call(`/api/metadata?url=${encodeURIComponent(candidate.url)}`, `pivot.handle.${candidate.label.toLowerCase()}`),
+      })),
+    );
+    const live = probes.filter((probe) => probe.result.ok);
+    return {
+      status: live.length ? "ready" : "error",
+      summary: live.length ? `Resolved ${live.length}/${probes.length} profile probes for @${handle}.` : `No profile metadata fetched for @${handle}.`,
+      lines: probes.map((probe) =>
+        probe.result.ok
+          ? `${probe.label}: ${(probe.result.data?.metadata?.title || probe.result.data?.final_url || probe.url).slice(0, 120)}`
+          : `${probe.label}: ${probe.result.error}`,
+      ),
+      links: probes.map((probe) => ({ label: probe.label, url: probe.url })),
+      data: probes,
+      entity_type: entityType,
+      entity_key: entityKey,
+      entity_value: entityValue,
+      fetched_at: new Date().toISOString(),
+    };
+  }
+
+  if (entityType === "domain" || entityType === "url") {
+    const target = entityType === "domain" ? `https://${String(entityValue || "").trim()}` : String(entityValue || "").trim();
+    const [page, metadata, discover, archive] = await Promise.all([
+      call(`/api/fetch?url=${encodeURIComponent(target)}`, `pivot.${entityType}.fetch`),
+      call(`/api/metadata?url=${encodeURIComponent(target)}`, `pivot.${entityType}.metadata`),
+      call(`/api/discover?url=${encodeURIComponent(target)}`, `pivot.${entityType}.discover`),
+      call(`/api/archive?url=${encodeURIComponent(target)}`, `pivot.${entityType}.archive`),
+    ]);
+    const lines = [];
+    if (page.ok) lines.push(`Fetch: ${page.data?.status || "—"} · ${(page.data?.metadata?.title || page.data?.snippet || target).slice(0, 140)}`);
+    else lines.push(`Fetch: ${page.error}`);
+    if (metadata.ok) lines.push(`Canonical: ${metadata.data?.metadata?.canonical_url || metadata.data?.final_url || target}`);
+    else lines.push(`Metadata: ${metadata.error}`);
+    if (discover.ok) lines.push(`Discovery: ${Number(discover.data?.sitemaps?.length || 0)} sitemaps · robots ${discover.data?.robots_status || "—"}`);
+    else lines.push(`Discovery: ${discover.error}`);
+    if (archive.ok) {
+      const snap = archive.data?.snapshot;
+      lines.push(`Archive: ${snap?.available ? `${snap.timestamp || "snapshot"} available` : "no snapshot reported"}`);
+    } else {
+      lines.push(`Archive: ${archive.error}`);
+    }
+    const identityLinks = metadata.ok ? metadata.data?.metadata?.identities || [] : [];
+    return {
+      status: page.ok || metadata.ok || discover.ok || archive.ok ? "ready" : "error",
+      summary: `${entityType === "domain" ? "Domain" : "URL"} acquisition captured page metadata, discovery, and archive context.`,
+      lines,
+      links: [
+        { label: "Open target", url: target },
+        ...identityLinks.slice(0, 4).map((identity) => ({ label: `${identity.platform}`, url: identity.url })),
+      ],
+      data: { page, metadata, discover, archive },
+      entity_type: entityType,
+      entity_key: entityKey,
+      entity_value: entityValue,
+      fetched_at: new Date().toISOString(),
+    };
+  }
+
+  if (entityType === "email") {
+    const domain = extractEmailDomain(entityValue);
+    if (!domain) {
+      return {
+        status: "error",
+        summary: "Email lead could not be normalized.",
+        lines: [`Input: ${entityValue}`],
+        links: [],
+        entity_type: entityType,
+        entity_key: entityKey,
+        entity_value: entityValue,
+        fetched_at: new Date().toISOString(),
+      };
+    }
+    const domainTask = await runPivotStructuredTask({ entityType: "domain", entityKey: `domain:${domain}`, entityValue: domain });
+    return {
+      ...domainTask,
+      summary: `Email lead normalized to domain ${domain} and captured ownership/discovery context.`,
+      entity_type: entityType,
+      entity_key: entityKey,
+      entity_value: entityValue,
+    };
+  }
+
+  const query = entityType === "phone" ? `"${entityValue}"` : `"${String(entityValue || "").trim()}"`;
+  return {
+    status: "ready",
+    summary: `${entityType} lead normalized for analyst follow-up.`,
+    lines: [
+      `Value: ${entityValue}`,
+      "No direct public page fetch target was derived, so BlueLens stored a scoped follow-up query instead.",
+    ],
+    links: [{ label: "Search", url: `https://www.google.com/search?q=${encodeURIComponent(query)}` }],
+    data: { query },
+    entity_type: entityType,
+    entity_key: entityKey,
+    entity_value: entityValue,
+    fetched_at: new Date().toISOString(),
+  };
+}
+
 function recordEntityConfidenceReview({ entityType, entityKey, entityValue, confidence }) {
   if (!entityKey) return;
   state.entityConfidence = state.entityConfidence || {};
@@ -1274,6 +1459,7 @@ function reset() {
   state.insights = { metadata_suspicion_score: null, metadata_suspicion_band: null, metadata_suspicion_inputs: [] };
   state.missionOutput = null;
   state.resultIntake = { raw: "", entries: [], last_ingested_at: null };
+  state.pivotTaskResults = {};
   state.mutations = [];
   if (state.compare?.objectUrl) URL.revokeObjectURL(state.compare.objectUrl);
   state.compare = { file: null, objectUrl: null, dhash: "", diffScore: null };
@@ -3031,6 +3217,7 @@ function buildPivotSearchUrlsFromEntities(ent) {
     urls.add(u);
   };
   for (const u of (ent?.urls || []).slice(0, 5)) add(u);
+  for (const u of (ent?.urls || []).slice(0, 5)) add(`https://web.archive.org/web/*/${encodeURIComponent(u)}`);
   for (const e of (ent?.emails || []).slice(0, 6)) add(google(`"${e}"`));
   for (const p of (ent?.phones || []).slice(0, 4)) add(google(`"${p}"`));
   for (const hRaw of (ent?.handles || []).slice(0, 8)) {
@@ -3050,6 +3237,7 @@ function buildPivotSearchUrlsFromEntities(ent) {
       add(`https://www.whois.com/whois/${encodeURIComponent(host)}`);
       add(`https://dns.google/resolve?name=${encodeURIComponent(host)}&type=A`);
       add(`https://crt.sh/?q=${encodeURIComponent(host)}`);
+      add(`https://web.archive.org/web/*/${encodeURIComponent(`https://${host}/*`)}`);
     } catch (error) {
       reportNonFatalError("pivot.domains.parse", error, { harmless: true, detail: { value: u }, dedupeMs: 5000 });
     }
@@ -3132,6 +3320,7 @@ function buildMarkdownReport(report) {
   lines.push(`- Handles: ${h.length ? h.map((x) => `\`${x}\``).join(" · ") : "—"}`);
   lines.push(`- Phones: ${p.length ? p.map((x) => `\`${x}\``).join(" · ") : "—"}`);
   lines.push(`- Review entry count: \`${ocrReviewEntries.length}\``);
+  lines.push(`- Structured task count: \`${r.key_fields?.ocr_entity_tasks ? Object.keys(r.key_fields.ocr_entity_tasks).length : 0}\``);
   lines.push("");
   lines.push(`### OCR Annotation History`);
   lines.push(formatReviewHistory(ocrReviewEntries));
@@ -3854,6 +4043,10 @@ function buildOsintReport() {
       ocr_entities: state.ocrText ? OCR_PIPELINE?.extractEntities?.(state.ocrText) || null : null,
       ocr_entity_confidence: state.entityConfidence && Object.keys(state.entityConfidence).length ? { ...state.entityConfidence } : null,
       ocr_entity_review_entries: buildCurrentOcrReviewEntries(),
+      ocr_entity_tasks:
+        state.pivotTaskResults && Object.keys(state.pivotTaskResults).length
+          ? JSON.parse(JSON.stringify(state.pivotTaskResults))
+          : null,
     },
     exif: state.exif || null,
     ocr_text: state.ocrText || null,
@@ -4222,6 +4415,52 @@ function renderOcrEntities(text) {
     parent.appendChild(chip);
   };
 
+  const addTaskButton = (parent, { entityType, entityKey, entityValue }) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "chip";
+    button.title = "Run structured acquisition task";
+    button.textContent = "Acquire";
+    parent.appendChild(button);
+
+    const box = document.createElement("div");
+    box.className = "pivot-task-box";
+    box.hidden = true;
+    parent.appendChild(box);
+
+    renderPivotTaskResult(box, state.pivotTaskResults?.[entityKey] || null);
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      renderPivotTaskResult(box, {
+        status: "loading",
+        summary: "Running structured acquisition…",
+        lines: [`Lead: ${entityValue}`],
+        links: [],
+      });
+      try {
+        const result = await runPivotStructuredTask({ entityType, entityKey, entityValue });
+        setPivotTaskResult(entityKey, result);
+        renderPivotTaskResult(box, result);
+        logAction("pivot_task_acquired", `${entityType}:${entityValue}`);
+      } catch (error) {
+        const failed = {
+          status: "error",
+          summary: "Structured acquisition failed.",
+          lines: [error?.message || "unknown error"],
+          links: [],
+          entity_type: entityType,
+          entity_key: entityKey,
+          entity_value: entityValue,
+          fetched_at: new Date().toISOString(),
+        };
+        setPivotTaskResult(entityKey, failed);
+        renderPivotTaskResult(box, failed);
+      } finally {
+        button.disabled = false;
+      }
+    });
+  };
+
   const addConfidence = (parent, { entityType, entityKey, entityValue }) => {
     const sel = document.createElement("select");
     sel.className = "select chip-select";
@@ -4273,6 +4512,7 @@ function renderOcrEntities(text) {
       addLinkChip(row, "Search", google(`@${h}`), { title: "Search handle" });
       addDerivedEntry({ entityType: "handle", entityKey: `handle:${h.toLowerCase()}`, entityValue: `@${h}`, note: "Direct OCR hit" });
       addConfidence(row, { entityType: "handle", entityKey: `handle:${h.toLowerCase()}`, entityValue: `@${h}` });
+      addTaskButton(row, { entityType: "handle", entityKey: `handle:${h.toLowerCase()}`, entityValue: `@${h}` });
       g.appendChild(row);
     }
   }
@@ -4293,9 +4533,11 @@ function renderOcrEntities(text) {
         addLinkChip(row, "CRT", `https://crt.sh/?q=${encodeURIComponent(d)}`, { title: "Certificate transparency" });
         addLinkChip(row, "Search", google(`site:${d}`), { title: "Search site" });
         addConfidence(row, { entityType: "domain", entityKey: `domain:${d}`, entityValue: d });
+        addTaskButton(row, { entityType: "domain", entityKey: `domain:${d}`, entityValue: d });
       } else {
         addDerivedEntry({ entityType: "url", entityKey: `url:${String(u).toLowerCase()}`, entityValue: u, note: "Direct OCR hit" });
         addLinkChip(row, "Search", google(u), { title: "Search URL" });
+        addTaskButton(row, { entityType: "url", entityKey: `url:${String(u).toLowerCase()}`, entityValue: u });
       }
       g.appendChild(row);
     }
@@ -4312,6 +4554,7 @@ function renderOcrEntities(text) {
       addLinkChip(row, "Breach?", google(`"${e}" breach`), { title: "Search breach mentions" });
       addDerivedEntry({ entityType: "email", entityKey: `email:${e.toLowerCase()}`, entityValue: e, note: "Direct OCR hit" });
       addConfidence(row, { entityType: "email", entityKey: `email:${e.toLowerCase()}`, entityValue: e });
+      addTaskButton(row, { entityType: "email", entityKey: `email:${e.toLowerCase()}`, entityValue: e });
       g.appendChild(row);
     }
   }
@@ -4329,6 +4572,7 @@ function renderOcrEntities(text) {
       addLinkChip(row, "Search", google(`"${q}"`), { title: "Search phone" });
       addDerivedEntry({ entityType: "phone", entityKey: `phone:${String(q).replace(/\s+/g, "")}`, entityValue: label, note: "Direct OCR hit" });
       addConfidence(row, { entityType: "phone", entityKey: `phone:${String(q).replace(/\s+/g, "")}`, entityValue: label });
+      addTaskButton(row, { entityType: "phone", entityKey: `phone:${String(q).replace(/\s+/g, "")}`, entityValue: label });
       g.appendChild(row);
     }
   }

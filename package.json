@@ -2,7 +2,11 @@
   "name": "ocean-osint-lens",
   "private": true,
   "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
+    "start": "node server.js",
     "test": "node --test",
     "desktop-icon": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\\\create-desktop-icon.ps1"
   }
