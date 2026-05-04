@@ -3961,7 +3961,6 @@ function setupTabs() {
     for (const p of panels) {
       p.classList.toggle("active", p.getAttribute("data-panel") === name);
     }
-    writeStorage("ui:tab", name, "tabs.write");
   };
 
   window.__osintActivateTab = activate;
@@ -4121,18 +4120,18 @@ function setupCommandPalette() {
     if (activeIndex >= list.length) activeIndex = Math.max(0, list.length - 1);
 
     elements.cmdkList.innerHTML = "";
-    list.forEach((a, idx) => {
+    list.forEach((action, idx) => {
       const row = document.createElement("div");
       row.className = `cmdk-item${idx === activeIndex ? " active" : ""}`;
       row.setAttribute("role", "option");
       row.setAttribute("data-idx", String(idx));
 
       const left = document.createElement("div");
-      left.textContent = a.name;
+      left.textContent = action.name;
 
       const right = document.createElement("div");
       right.className = "meta";
-      right.textContent = a.meta || "";
+      right.textContent = action.meta || "";
 
       row.appendChild(left);
       row.appendChild(right);
@@ -4141,7 +4140,7 @@ function setupCommandPalette() {
         render();
       });
       row.addEventListener("click", () => {
-        const chosen = a;
+        const chosen = action;
         if (!chosen) return;
         activeIndex = idx;
         setOpen(false);

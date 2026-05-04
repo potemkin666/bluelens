@@ -126,6 +126,10 @@
         const last = Number(waitDiagnostics.get(key) || 0);
         if (now - last < dedupeMs) return;
         waitDiagnostics.set(key, now);
+        if (waitDiagnostics.size > 100) {
+          const oldestKey = waitDiagnostics.keys().next().value;
+          if (oldestKey) waitDiagnostics.delete(oldestKey);
+        }
         try {
           console.info(`[BlueLens:wait.${scope}] ${msg}`);
         } catch {

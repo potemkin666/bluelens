@@ -70,7 +70,7 @@ test("uploading an image auto-prepares search links", () => {
 test("command palette copy uses fixed UTF-8 text and row clicks run the clicked action", () => {
   assert.match(indexHtml, /placeholder="Type a command…"/);
   assert.match(indexHtml, />Enter • ↑\/↓ • Esc</);
-  assert.match(appJs, /const chosen = a;/);
+  assert.match(appJs, /const chosen = action;/);
 });
 
 
