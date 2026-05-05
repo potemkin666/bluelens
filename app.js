@@ -90,6 +90,8 @@ const elements = {
   repostScore: document.getElementById("repostScore"),
   repostReasons: document.getElementById("repostReasons"),
   attrHints: document.getElementById("attrHints"),
+  aiSuspicionSummary: document.getElementById("aiSuspicionSummary"),
+  aiSuspicionOut: document.getElementById("aiSuspicionOut"),
   srcWhere: document.getElementById("srcWhere"),
   srcWhen: document.getElementById("srcWhen"),
   srcWho: document.getElementById("srcWho"),
@@ -427,6 +429,7 @@ const state = {
     metadata_suspicion_score: null,
     metadata_suspicion_band: null,
     metadata_suspicion_inputs: [],
+    ai_image_suspicion: null,
   },
   missionOutput: null,
   resultIntake: {
@@ -1814,7 +1817,7 @@ function reset() {
     analyst_confidence: "unverified",
   };
   state.sourceReviewLog = [];
-  state.insights = { metadata_suspicion_score: null, metadata_suspicion_band: null, metadata_suspicion_inputs: [] };
+  state.insights = { metadata_suspicion_score: null, metadata_suspicion_band: null, metadata_suspicion_inputs: [], ai_image_suspicion: null };
   state.missionOutput = null;
   state.resultIntake = { raw: "", entries: [], last_ingested_at: null };
   state.pivotTaskResults = {};
@@ -1835,6 +1838,8 @@ function reset() {
   elements.metaDim.textContent = "—";
   elements.repostScore.textContent = "—";
   elements.attrHints.textContent = "—";
+  if (elements.aiSuspicionSummary) elements.aiSuspicionSummary.textContent = "Checklist only — not an oracle.";
+  if (elements.aiSuspicionOut) elements.aiSuspicionOut.innerHTML = "";
   elements.sha256.textContent = "—";
   elements.md5.textContent = "—";
   elements.dhash.textContent = "—";
@@ -3651,6 +3656,10 @@ function buildMarkdownReport(report) {
     lines.push(`- Suspicion inputs: ${suspicionInputs.map((x) => `\`${String(x)}\``).join(" · ")}`);
   }
   if (r.insights?.attribution_hints) lines.push(`- Attribution hints: ${String(r.insights.attribution_hints)}`);
+  if (r.insights?.ai_image_suspicion?.summary) lines.push(`- AI-image suspicion: ${String(r.insights.ai_image_suspicion.summary)}`);
+  if (Array.isArray(r.insights?.ai_image_suspicion?.items) && r.insights.ai_image_suspicion.items.length) {
+    lines.push(`- AI checklist: ${r.insights.ai_image_suspicion.items.map((item) => `${item.label} [${item.status}]`).join(" · ")}`);
+  }
   lines.push("");
   lines.push(`## Public URL`);
   lines.push(`- URL: ${r.public_url ? `${r.public_url}` : "—"}`);
@@ -4172,9 +4181,109 @@ function computeAttributionHints(exifObj, ocrText) {
   return hints.length > 0 ? hints.join(" · ") : "—";
 }
 
+function normalizeAiSuspicionStatus(status) {
+  return status === "flag" ? "flag" : status === "clear" ? "clear" : "review";
+}
+
+function computeAiImageSuspicionChecklist({ exifObj, file, width, height, ocrText }) {
+  const text = String(ocrText || "").trim();
+  const software = (exifObj?.Software || exifObj?.ProcessingSoftware || exifObj?.CreatorTool || "").trim();
+  const softwareLower = software.toLowerCase();
+  const make = (exifObj?.Make || "").trim();
+  const model = (exifObj?.Model || "").trim();
+  const hasExif = Boolean(exifObj && Object.keys(exifObj).length > 0);
+  const captured = exifObj?.DateTimeOriginal || exifObj?.CreateDate || exifObj?.DateTimeDigitized;
+  const aiToolName = [
+    "midjourney",
+    "stable diffusion",
+    "sdxl",
+    "dall-e",
+    "firefly",
+    "flux",
+    "comfyui",
+    "automatic1111",
+    "fooocus",
+    "invokeai",
+    "novelai",
+    "leonardo",
+  ].find((tool) => softwareLower.includes(tool));
+  const hasCameraMeta = Boolean(make || model || captured || getGps(exifObj));
+
+  const tokens = text.split(/\s+/).filter(Boolean);
+  const weirdGlyphCount = (text.match(/[^\w\s.,:;!?'"@#%&()\-/_+]/g) || []).length;
+  const weirdGlyphRatio = text.length ? weirdGlyphCount / text.length : 0;
+  const repeatedRuns = /(.)\1{4,}/.test(text);
+  const noisyTokens = tokens.filter((token) => {
+    const trimmed = token.replace(/[.,:;!?'"()[\]{}]/g, "");
+    if (trimmed.length < 4) return false;
+    const letters = (trimmed.match(/[A-Za-z]/g) || []).length;
+    const digits = (trimmed.match(/\d/g) || []).length;
+    return letters > 0 && digits > 0;
+  }).length;
+
+  const squareish = Number.isFinite(width) && Number.isFinite(height) ? Math.abs(width - height) < Math.max(width, height) * 0.08 : false;
+  const hiRes = Number.isFinite(width) && Number.isFinite(height) ? (width * height) / 1_000_000 >= 2.5 : false;
+  const syntheticFriendlyFormat = /image\/(png|webp)/i.test(file?.type || "");
+
+  const items = [
+    aiToolName
+      ? { key: "metadata", label: "Metadata hints", status: "flag", detail: `Creator/software tag mentions ${aiToolName}.` }
+      : !hasExif
+        ? { key: "metadata", label: "Metadata hints", status: "review", detail: "No capture metadata present. Re-exports and synthetic images often strip EXIF." }
+        : hasCameraMeta
+          ? { key: "metadata", label: "Metadata hints", status: "clear", detail: "Camera/capture metadata is present, so there is no direct generator tag here." }
+          : { key: "metadata", label: "Metadata hints", status: "review", detail: software ? `Creator/software tag: ${software}` : "Metadata is thin; review provenance manually." },
+    !text
+      ? { key: "text", label: "Malformed text", status: "review", detail: "Run OCR or visually inspect lettering for warped glyphs, merged characters, and fake UI text." }
+      : weirdGlyphRatio > 0.14 || repeatedRuns || noisyTokens >= 3
+        ? { key: "text", label: "Malformed text", status: "flag", detail: "OCR output looks noisy enough to justify a closer lettering review." }
+        : { key: "text", label: "Malformed text", status: "clear", detail: "OCR text does not show an obvious gibberish pattern from local extraction alone." },
+    aiToolName || (!hasExif && hiRes && syntheticFriendlyFormat) || squareish
+      ? { key: "texture", label: "Synthetic texture", status: "review", detail: "Zoom into skin, sky, fabric, foliage, or walls for repeated micro-patterns and plastic smoothing." }
+      : { key: "texture", label: "Synthetic texture", status: "review", detail: "Still inspect repeated texture, oversmoothing, and edge halos manually." },
+    { key: "reflections", label: "Weird reflections", status: "review", detail: "Check glass, water, chrome, and eyes for impossible mirrored geometry." },
+    { key: "shadows", label: "Inconsistent shadows", status: "review", detail: "Check whether shadow direction, hardness, and light color stay consistent across the scene." },
+    { key: "anatomy", label: "Impossible anatomy", status: "review", detail: "Check hands, teeth, ears, jewelry, straps, and limb joins for broken structure." },
+  ];
+
+  const flagged = items.filter((item) => item.status === "flag").length;
+  const summary = flagged
+    ? `${flagged} direct cue${flagged === 1 ? "" : "s"} need closer review.`
+    : "No direct AI-only marker from local signals. Use the checklist.";
+  return {
+    summary,
+    items: items.map((item) => ({ ...item, status: normalizeAiSuspicionStatus(item.status) })),
+  };
+}
+
+function renderAiImageSuspicionPanel(payload) {
+  if (!elements.aiSuspicionOut || !elements.aiSuspicionSummary) return;
+  const data = payload && Array.isArray(payload.items) ? payload : { summary: "Checklist only — not an oracle.", items: [] };
+  elements.aiSuspicionSummary.textContent = data.summary || "Checklist only — not an oracle.";
+  if (!data.items.length) {
+    elements.aiSuspicionOut.innerHTML = "";
+    return;
+  }
+  elements.aiSuspicionOut.innerHTML = data.items
+    .map((item) => {
+      const status = normalizeAiSuspicionStatus(item.status);
+      const badge = status === "flag" ? "Flag" : status === "clear" ? "Clear" : "Review";
+      return `<div class="ai-suspicion-item">
+        <div class="ai-suspicion-head">
+          <strong>${escapeHtml(String(item.label || "Cue"))}</strong>
+          <span class="ai-suspicion-state ${status}">${badge}</span>
+        </div>
+        <div class="ai-suspicion-detail">${escapeHtml(String(item.detail || ""))}</div>
+      </div>`;
+    })
+    .join("");
+}
+
 function updateConsoleInsights({ exifObj, file, width, height, ocrText }) {
   elements.attrHints.textContent = computeAttributionHints(exifObj, ocrText);
   const { score, band, inputs } = computeMetadataSuspicionScore({ exifObj, file, width, height, ocrText });
+  const aiImageSuspicion = computeAiImageSuspicionChecklist({ exifObj, file, width, height, ocrText });
+  renderAiImageSuspicionPanel(aiImageSuspicion);
   elements.repostScore.textContent = band;
 
   if (elements.repostReasons) {
@@ -4189,7 +4298,7 @@ function updateConsoleInsights({ exifObj, file, width, height, ocrText }) {
         .join("");
     }
   }
-  return { score, band, inputs };
+  return { score, band, inputs, aiImageSuspicion };
 }
 
 function stringifyExif(exifObj, pretty = true) {
@@ -4427,6 +4536,7 @@ function buildOsintReport({ includeInvestigation = true } = {}) {
       metadata_suspicion_score: state.insights.metadata_suspicion_score,
       metadata_suspicion_band: state.insights.metadata_suspicion_band,
       metadata_suspicion_inputs: state.insights.metadata_suspicion_inputs || [],
+      ai_image_suspicion: state.insights.ai_image_suspicion ? deepClone(state.insights.ai_image_suspicion) : null,
       repost_heuristic: state.insights.metadata_suspicion_score,
       repost_reasons: state.insights.metadata_suspicion_inputs || [],
       attribution_hints: elements.attrHints?.textContent || null,
@@ -4522,6 +4632,7 @@ async function buildReportForFileHeadless(file) {
   const key = extractKeyFieldsObj(exifObj);
   const hints = computeAttributionHints(exifObj, "");
   const { score, band, inputs } = computeMetadataSuspicionScore({ exifObj, file, width, height, ocrText: "" });
+  const aiImageSuspicion = computeAiImageSuspicionChecklist({ exifObj, file, width, height, ocrText: "" });
 
   return {
     schema_version: EXPORT_SCHEMA_VERSION,
@@ -4536,6 +4647,7 @@ async function buildReportForFileHeadless(file) {
       metadata_suspicion_score: score,
       metadata_suspicion_band: band,
       metadata_suspicion_inputs: inputs,
+      ai_image_suspicion: aiImageSuspicion,
       repost_heuristic: score,
       repost_reasons: inputs,
       attribution_hints: hints,
@@ -4835,6 +4947,29 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
       elements.ocrOut.textContent = text || "No text detected.";
       renderOcrEntities(text);
       renderOcrLangHint(text);
+      try {
+        const imgW = (() => {
+          const m = (elements.metaDim.textContent || "").match(/(\d+)\s*×\s*(\d+)/);
+          return m ? Number(m[1]) : null;
+        })();
+        const imgH = (() => {
+          const m = (elements.metaDim.textContent || "").match(/(\d+)\s*×\s*(\d+)/);
+          return m ? Number(m[2]) : null;
+        })();
+        const { score: s, band, inputs, aiImageSuspicion } = updateConsoleInsights({
+          exifObj: state.exif,
+          file: state.file,
+          width: imgW,
+          height: imgH,
+          ocrText: text,
+        });
+        state.insights.metadata_suspicion_score = s;
+        state.insights.metadata_suspicion_band = band;
+        state.insights.metadata_suspicion_inputs = inputs;
+        state.insights.ai_image_suspicion = aiImageSuspicion;
+      } catch {
+        // ignore
+      }
       renderInvestigationSurface();
       elements.btnCopyOcr.disabled = !text;
       setOcrStatus("Ready");
@@ -4976,7 +5111,7 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
         const m = (elements.metaDim.textContent || "").match(/(\d+)\s*×\s*(\d+)/);
         return m ? Number(m[2]) : null;
       })();
-      const { score: s, band, inputs } = updateConsoleInsights({
+      const { score: s, band, inputs, aiImageSuspicion } = updateConsoleInsights({
         exifObj: state.exif,
         file: state.file,
         width: imgW,
@@ -4986,6 +5121,7 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
       state.insights.metadata_suspicion_score = s;
       state.insights.metadata_suspicion_band = band;
       state.insights.metadata_suspicion_inputs = inputs;
+      state.insights.ai_image_suspicion = aiImageSuspicion;
     } catch {
       // ignore
     }
@@ -5038,7 +5174,7 @@ async function analyzeFile(file) {
     updateKeyFields(exifObj);
     elements.exifOut.textContent = stringifyExif(exifObj, state.prettyExif);
 
-    const { score, band, inputs } = updateConsoleInsights({
+    const { score, band, inputs, aiImageSuspicion } = updateConsoleInsights({
       exifObj,
       file,
       width: img.naturalWidth || img.width,
@@ -5048,6 +5184,7 @@ async function analyzeFile(file) {
     state.insights.metadata_suspicion_score = score;
     state.insights.metadata_suspicion_band = band;
     state.insights.metadata_suspicion_inputs = inputs;
+    state.insights.ai_image_suspicion = aiImageSuspicion;
 
     setProgress({ label: "Preparing local review", value: 78, detail: "Building clean copy and local signals…" });
     state.cleanBlob = await encodeCleanCopy(img, file.type);
@@ -5503,7 +5640,7 @@ function setupActions() {
         return m ? Number(m[2]) : null;
       })();
 
-      const { score, band, inputs } = updateConsoleInsights({
+      const { score, band, inputs, aiImageSuspicion } = updateConsoleInsights({
         exifObj: state.exif,
         file: state.file,
         width: imgW,
@@ -5513,6 +5650,7 @@ function setupActions() {
       state.insights.metadata_suspicion_score = score;
       state.insights.metadata_suspicion_band = band;
       state.insights.metadata_suspicion_inputs = inputs;
+      state.insights.ai_image_suspicion = aiImageSuspicion;
 
       setStatus("Ready");
     });

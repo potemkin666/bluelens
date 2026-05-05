@@ -46,7 +46,7 @@ test("package startup contract declares Node 18+ and a server start script", () 
 });
 
 test("search-all UI is framed as link preparation, not automatic querying", () => {
-  assert.match(indexHtml, />\s*Upload \+ Prepare Links\s*</);
+  assert.match(indexHtml, />\s*Search All\s*</);
   assert.match(appJs, /Uploading \+ preparing links…/);
   assert.match(appJs, /Upload \+ Prepare Links/);
   assert.match(appJs, /Paste titles, snippets, and URLs back into Result Intake/);
@@ -54,8 +54,8 @@ test("search-all UI is framed as link preparation, not automatic querying", () =
 
 
 test("sharing copy matches explicit upload consent", () => {
-  assert.match(indexHtml, /Uploads stay off until you run Upload \+ Launchpad, Upload \+ Prepare Links, or an engine open action\./);
-  assert.match(indexHtml, /Upload happens only when you choose an upload action\./);
+  assert.match(indexHtml, /Uploads start only when you choose search\./);
+  assert.match(appJs, /Local review ready\. Uploads start only when you choose a launch action\./);
 });
 
 
@@ -220,7 +220,23 @@ test("reports export structured capture provenance and runtime metadata", () => 
 
 test("share provider UI is explicit about automatic host ranking", () => {
   assert.match(indexHtml, /Automatic host selection — the local proxy ranks temporary hosts/);
-  assert.match(indexHtml, />Automatic host selection \(ranked failover\)</);
+  assert.match(indexHtml, />Auto host</);
+});
+
+test("easy mode defaults to direct search actions and keeps AI suspicion in advanced review", () => {
+  assert.match(indexHtml, /id="btnQuickLens"/);
+  assert.match(indexHtml, />\s*Search Lens\s*</);
+  assert.match(indexHtml, /id="btnQuickOcr"/);
+  assert.match(indexHtml, /id="workflowAdvanced"/);
+  assert.match(indexHtml, /id="searchConsoleAdvanced"/);
+  assert.match(indexHtml, />AI-image suspicion</);
+  assert.match(indexHtml, /Checklist only — not an oracle\./);
+  assert.match(appJs, /function computeAiImageSuspicionChecklist/);
+  assert.match(appJs, /Impossible anatomy/);
+  assert.match(appJs, /Weird reflections/);
+  assert.match(appJs, /Synthetic texture/);
+  assert.match(appJs, /ai_image_suspicion/);
+  assert.match(stylesCss, /\.ai-suspicion-list/);
 });
 
 test("wait tab uses backoff and exposes reopen guidance", () => {
