@@ -243,6 +243,7 @@ const ENGINE_BUTTON_BY_KEY = {
   ascii2d: "btnOpenAscii2d",
   google_images: "btnOpenGoogleImages",
 };
+const displayEngineLabel = (engine) => ENGINE_LABEL[engine] || "Unknown Engine";
 const BATCH_TOP_LENS_DEFAULT = APP_CONFIG.batch?.topLensDefault || 5;
 const BATCH_TOP_LENS_MAX = APP_CONFIG.batch?.topLensMax || 10;
 const BATCH_OCR_DEFAULT = APP_CONFIG.batch?.ocrDefault || 8;
@@ -882,14 +883,14 @@ function renderInvestigationSwarm(model) {
         return `
           <div class="swarm-card ${escapeAttr(queue.status || disposition)}" data-swarm-engine="${escapeAttr(engine)}">
             <div class="swarm-card-head">
-              <strong>${escapeHtml(ENGINE_LABEL[engine] || engine)}</strong>
+              <strong>${escapeHtml(displayEngineLabel(engine))}</strong>
               <span>${escapeHtml(queue.status || "idle")}</span>
             </div>
             <div class="swarm-card-meta">${escapeHtml(queue.detail || "No queue detail recorded.")}</div>
             <label class="field">
               <span class="field-label">Disposition</span>
               <select class="select" data-swarm-disposition="${escapeAttr(engine)}">
-                ${["pending", "reviewed", "useful", "false_positive", "dead_end", "blocked", "retry_later"].map((value) => `<option value="${escapeAttr(value)}" ${value === disposition ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}
+                ${["pending", "reviewed", "useful", "false_positive", "dead_end", "blocked", "retry_later"].map((value) => `<option value="${escapeAttr(value)}" ${value === disposition ? "selected" : ""}>${escapeHtml(value.replace(/_/g, " "))}</option>`).join("")}
               </select>
             </label>
             <label class="field">
@@ -1156,7 +1157,7 @@ function computeNoResultAutopsy() {
   if (manualOnlyProviders.length > 0) {
     reasons.push({
       label: "Manual-only engine follow-up",
-      detail: `${manualOnlyProviders.map((engine) => ENGINE_LABEL[engine] || engine).join(", ")} does not expose a clean public URL handoff, so that lane still needs a manual upload check.`,
+      detail: `${manualOnlyProviders.map((engine) => displayEngineLabel(engine)).join(", ")} does not expose a clean public URL handoff, so that lane still needs a manual upload check.`,
     });
   }
   if (readyEngines > 0) {
@@ -3437,7 +3438,7 @@ async function handleQuickJump(engine) {
     return;
   }
 
-  const label = ENGINE_LABEL[engine] || engine;
+  const label = displayEngineLabel(engine);
   const waitJob = openWaitJob(engine, label);
   const run = createEngineRunRecord({ engines: [engine], mode: "quick_jump" });
   updateRunQueueStatus(run, engine, {

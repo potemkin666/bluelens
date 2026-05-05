@@ -320,7 +320,7 @@ test("result intake supports per-session false-positive suppression and no-resul
 
 test("readme reflects the current image-recon workflow and embeds the attached image", () => {
   assert.match(readmeMd, /bluelens-ocean-banner\.svg/);
-  assert.match(readmeMd, /a0c348b1-50b9-42fa-82dd-518edcf2ec5c/);
+  assert.match(readmeMd, /github\.com\/user-attachments\/assets\//);
   assert.match(readmeMd, /Local-first image reconnaissance/);
   assert.match(readmeMd, /No-result autopsy/);
   assert.match(readmeMd, /False-positive suppressor/);
