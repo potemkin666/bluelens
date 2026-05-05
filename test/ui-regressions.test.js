@@ -49,7 +49,8 @@ test("package startup contract declares Node 18+ and a server start script", () 
 });
 
 test("search-all UI is framed as link preparation, not automatic querying", () => {
-  assert.match(indexHtml, />\s*Search All\s*</);
+  assert.match(indexHtml, /id="btnSearchAll"[\s\S]*class="btn btn-search-cta"/);
+  assert.match(indexHtml, />\s*SEARCH\s*</);
   assert.match(appJs, /Uploading \+ preparing links…/);
   assert.match(appJs, /Upload \+ Prepare Links/);
   assert.match(appJs, /Paste titles, snippets, and URLs back into Result Intake/);
@@ -95,7 +96,8 @@ test("source reliability state no longer uses stale caseInfo naming", () => {
   assert.doesNotMatch(appJs, /caseInfo/);
 });
 
-test("only the live squid background asset remains wired", () => {
+test("landing background layers the provided artwork over the squid fallback", () => {
+  assert.match(stylesCss, /github\.com\/user-attachments\/assets\/e061975f-68eb-4d6f-b6a9-bff2785854ed/);
   assert.match(stylesCss, /assets\/squid-bg\.jpg/);
   assert.doesNotMatch(stylesCss, /assets\/ocean-bg\.jpg/);
   assert.equal(fs.existsSync(oceanBgPath), false);
@@ -247,12 +249,15 @@ test("share provider UI is explicit about automatic host ranking", () => {
   assert.match(indexHtml, />Auto host</);
 });
 
-test("easy mode defaults to direct search actions and keeps AI suspicion in advanced review", () => {
+test("easy mode keeps the search launchpad visible with a giant primary CTA", () => {
   assert.match(indexHtml, /id="btnQuickLens"/);
-  assert.match(indexHtml, />\s*Search Lens\s*</);
+  assert.match(indexHtml, />\s*Lens only\s*</);
   assert.match(indexHtml, /id="btnQuickOcr"/);
+  assert.match(indexHtml, /id="btnSearchAll"/);
+  assert.match(indexHtml, /btn-search-cta/);
   assert.match(indexHtml, /id="workflowAdvanced"/);
   assert.match(indexHtml, /id="searchConsoleAdvanced"/);
+  assert.doesNotMatch(indexHtml, /<details id="searchConsoleAdvanced"/);
   assert.match(indexHtml, />AI-image suspicion</);
   assert.match(indexHtml, /Checklist only — not an oracle\./);
   assert.match(appJs, /function computeAiImageSuspicionChecklist/);

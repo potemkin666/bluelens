@@ -75,27 +75,31 @@
 
         <div class="action-stack" aria-label="Quick actions">
           <div class="action-group action-group-primary action-group-easy">
-            <div class="field-label">Quick actions</div>
-            <div class="row row-tight quick-actions-row">
+            <div class="field-label">Main action</div>
+            <div class="search-cta-shell">
+              <button
+                id="btnSearchAll"
+                class="btn btn-search-cta"
+                type="button"
+                disabled
+                data-ico="◎"
+                title="Upload once and prepare every reverse-search engine."
+              >
+                SEARCH
+              </button>
+              <div class="search-cta-hint">Upload one image, then hit SEARCH to launch the full reverse-search board.</div>
+            </div>
+            <div class="field-label">Other actions</div>
+            <div class="row row-tight quick-actions-row quick-actions-row-secondary">
               <button
                 id="btnQuickLens"
-                class="btn"
+                class="btn btn-secondary"
                 type="button"
                 disabled
                 data-ico="⌕"
                 title="Upload once and open Lens."
               >
-                Search Lens
-              </button>
-              <button
-                id="btnSearchAll"
-                class="btn btn-secondary"
-                type="button"
-                disabled
-                data-ico="◎"
-                title="Upload once and prepare all engine links."
-              >
-                Search All
+                Lens only
               </button>
               <button
                 id="btnQuickOcr"
@@ -215,9 +219,8 @@
 
         <div class="tabpanels">
           <div class="tabpanel active" data-panel="search" role="tabpanel">
-            <details id="searchConsoleAdvanced" class="drawer hud search-console-drawer">
-              <summary title="Share settings, workflows, intake, and extra tools">Advanced</summary>
-              <div class="drawer-body search-console-stack">
+            <section id="searchConsoleAdvanced" class="search-console-panel">
+              <div class="search-console-stack">
             <div class="subcard hud" data-hud-key="search">
               <div class="subcard-head">
                 <div class="subcard-title">Share</div>
@@ -450,7 +453,7 @@
               </div>
             </details>
               </div>
-            </details>
+            </section>
           </div>
 
           <div class="tabpanel" data-panel="signals" role="tabpanel">
