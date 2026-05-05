@@ -118,6 +118,8 @@
                 <select id="missionPreset" class="select" disabled title="One mission = one run">
                   <option value="fast">Quick OCR</option>
                   <option value="deep">Deep OCR</option>
+                  <option value="document_image">Document Image</option>
+                  <option value="query_generator">Search Query Generator</option>
                   <option value="share_search">Upload + Launchpad</option>
                   <option value="handle_recon">Handle Recon</option>
                   <option value="domain_recon">Domain Recon</option>
@@ -624,12 +626,20 @@
                 </label>
                 <span id="ocrLangHint" class="pill pill-muted" hidden title="Weak script hint from observed characters">Weak script hint</span>
                 <button id="btnRunOcr" class="btn btn-secondary" type="button" disabled title="Run OCR">Run OCR</button>
+                <button id="btnRunDocumentMode" class="btn btn-secondary" type="button" disabled title="Run document-image review from OCR and layout cues">Document mode</button>
+                <button id="btnGenerateQueries" class="btn btn-secondary" type="button" disabled title="Generate smart search queries from OCR and image clues">Generate queries</button>
                 <button id="btnPivotSearch" class="btn btn-secondary" type="button" disabled title="Open manual pivot templates for OCR hits">Manual pivots</button>
                 <button id="btnCopyOcr" class="btn btn-ghost" type="button" disabled title="Copy OCR text">Copy</button>
               </div>
 
               <pre id="ocrOut" class="pre">—</pre>
               <div id="ocrEntities" class="chips" hidden aria-label="OCR extracted key fields"></div>
+              <div id="documentModeOut" class="mono mono-box mission-output-box">
+                Run document mode to structure OCR, layout, logo pivots, and document-style entity clues.
+              </div>
+              <div id="queryGeneratorOut" class="mono mono-box mission-output-box">
+                Generate queries to turn OCR text, brands, usernames, filenames, and language clues into follow-up searches.
+              </div>
             </div>
           </div>
 

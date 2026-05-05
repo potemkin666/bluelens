@@ -51,10 +51,14 @@ const elements = {
   ocrPill: document.getElementById("ocrPill"),
   ocrLang: document.getElementById("ocrLang"),
   btnRunOcr: document.getElementById("btnRunOcr"),
+  btnRunDocumentMode: document.getElementById("btnRunDocumentMode"),
+  btnGenerateQueries: document.getElementById("btnGenerateQueries"),
   btnPivotSearch: document.getElementById("btnPivotSearch"),
   btnCopyOcr: document.getElementById("btnCopyOcr"),
   ocrOut: document.getElementById("ocrOut"),
   ocrEntities: document.getElementById("ocrEntities"),
+  documentModeOut: document.getElementById("documentModeOut"),
+  queryGeneratorOut: document.getElementById("queryGeneratorOut"),
   btnChooseCompare: document.getElementById("btnChooseCompare"),
   btnClearCompare: document.getElementById("btnClearCompare"),
   compareInput: document.getElementById("compareInput"),
@@ -500,6 +504,8 @@ const state = {
   lastEngineRun: null,
   manualNotes: "",
   actionLog: [],
+  documentModeOutput: null,
+  searchQueryOutput: null,
   operatorMode: true,
   localServerOnline: null,
   popupLikely: true,
@@ -2047,6 +2053,8 @@ function setUiBusy(busy, label = "") {
     elements.copyDhash,
     elements.ocrLang,
     elements.btnRunOcr,
+    elements.btnRunDocumentMode,
+    elements.btnGenerateQueries,
     elements.btnPivotSearch,
     elements.btnCopyOcr,
     elements.btnChooseCompare,
@@ -2164,6 +2172,8 @@ function setButtonsEnabled(enabled) {
     elements.copyDhash,
     elements.ocrLang,
     elements.btnRunOcr,
+    elements.btnRunDocumentMode,
+    elements.btnGenerateQueries,
     elements.btnChooseCompare,
     elements.btnSearchAll,
     elements.btnQuickLens,
@@ -2218,6 +2228,8 @@ function reset() {
   state.batchItems = [];
   state.manualNotes = "";
   state.actionLog = [];
+  state.documentModeOutput = null;
+  state.searchQueryOutput = null;
   state.doctorReport = null;
   state.batchUi.selected = {};
   state.sourceInfo = {
@@ -2275,6 +2287,8 @@ function reset() {
     elements.ocrEntities.hidden = true;
     elements.ocrEntities.innerHTML = "";
   }
+  renderDocumentModeOutput();
+  renderSearchQueryOutput();
   if (elements.ocrLangHint) {
     elements.ocrLangHint.hidden = true;
     elements.ocrLangHint.textContent = "Weak script hint";
@@ -2282,6 +2296,8 @@ function reset() {
   if (elements.ocrLang && !elements.ocrLang.value) elements.ocrLang.value = OCR_DEFAULT_LANGUAGE;
   elements.ocrLang.disabled = true;
   elements.btnRunOcr.disabled = true;
+  if (elements.btnRunDocumentMode) elements.btnRunDocumentMode.disabled = true;
+  if (elements.btnGenerateQueries) elements.btnGenerateQueries.disabled = true;
   elements.btnCopyOcr.disabled = true;
   if (elements.btnEvidencePack) elements.btnEvidencePack.disabled = true;
   if (elements.btnPivotSearch) elements.btnPivotSearch.disabled = true;
@@ -2413,6 +2429,8 @@ function getMissionPresetLabel(preset) {
   const labels = {
     fast: "Quick OCR",
     deep: "Deep OCR",
+    document_image: "Document Image",
+    query_generator: "Search Query Generator",
     share_search: "Upload + Launchpad",
     handle_recon: "Handle Recon",
     domain_recon: "Domain Recon",
@@ -2426,6 +2444,8 @@ function getMissionPresetSummary(preset) {
   const summaries = {
     fast: "Run one local OCR pass for a quick text read.",
     deep: "Run the deeper local OCR flow with multiple preprocessing passes.",
+    document_image: "Run OCR-aware document review with layout extraction, logo lookup pivots, and entity summaries.",
+    query_generator: "Turn OCR text, brands, usernames, filenames, dimensions, and language hints into search strings.",
     share_search: "Upload once, open Lens, and prepare the other provider links.",
     handle_recon: "Extract OCR text locally, then normalize handles for follow-up.",
     domain_recon: "Extract OCR text locally, then normalize domains for follow-up.",
@@ -2433,6 +2453,244 @@ function getMissionPresetSummary(preset) {
     cross_engine_swarm: "Queue upload-backed engine targets for a wider launchpad run.",
   };
   return summaries[String(preset || "fast")] || summaries.fast;
+}
+
+function renderStructuredOutput(element, output, emptyText) {
+  if (!element) return;
+  const payload = output || null;
+  if (!payload || !Array.isArray(payload.items) || payload.items.length === 0) {
+    element.classList.remove("mission-grid");
+    element.textContent = emptyText;
+    return;
+  }
+  element.classList.add("mission-grid");
+  element.innerHTML = `
+    <div class="mission-summary">${escapeHtml(payload.summary || "")}</div>
+    ${payload.items
+      .map((item) => {
+        const lines = Array.isArray(item?.lines) ? item.lines : [];
+        const links = Array.isArray(item?.links) ? item.links : [];
+        return `
+          <div class="mission-card">
+            <div class="mission-card-head">
+              <div>${escapeHtml(item?.label || "Item")}</div>
+              <div class="mission-card-meta">${escapeHtml(item?.meta || "")}</div>
+            </div>
+            <div class="mission-card-lines">${lines.map((line) => `<div>${escapeHtml(line)}</div>`).join("")}</div>
+            ${links.length ? `<div class="mission-card-links">${links.map((link) => `<a class="chip chip-link" href="${escapeAttr(link.url)}" target="_blank" rel="noreferrer">${escapeHtml(link.label || link.url)}</a>`).join("")}</div>` : ""}
+          </div>
+        `;
+      })
+      .join("")}
+  `;
+}
+
+function renderDocumentModeOutput() {
+  renderStructuredOutput(
+    elements.documentModeOut,
+    state.documentModeOutput,
+    "Run document mode to structure OCR, layout, logo pivots, and document-style entity clues.",
+  );
+}
+
+function renderSearchQueryOutput() {
+  renderStructuredOutput(
+    elements.queryGeneratorOut,
+    state.searchQueryOutput,
+    "Generate queries to turn OCR text, brands, usernames, filenames, and language clues into follow-up searches.",
+  );
+}
+
+function setDocumentModeOutput(output) {
+  state.documentModeOutput = output || null;
+  renderDocumentModeOutput();
+}
+
+function setSearchQueryOutput(output) {
+  state.searchQueryOutput = output || null;
+  renderSearchQueryOutput();
+}
+
+function parseFilenameStem(name) {
+  const raw = String(name || "").trim().replace(/\.[^.]+$/, "");
+  return raw.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function getCurrentReconContext() {
+  return normalizeReconEntities(state.ocrText || "");
+}
+
+function summarizeDocumentLayout(text) {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const paragraphBreaks = String(text || "").split(/\n\s*\n/).filter((block) => block.trim()).length;
+  const headingCandidates = lines.filter((line) => line.length >= 4 && line.length <= 72 && (line === line.toUpperCase() || /^[A-Z][A-Za-z0-9 '&/-]{3,}$/.test(line))).slice(0, 4);
+  const kvRows = lines.filter((line) => /[:|]/.test(line) || /\b(total|date|name|address|price|receipt|invoice|menu|certificate|issued|expires)\b/i.test(line)).slice(0, 6);
+  const tableRows = lines.filter((line) => /\d/.test(line) && /[$€£¥]|(?:\s{2,}|\t)|\bqty\b|\btotal\b|\bsubtotal\b/i.test(line)).slice(0, 6);
+  return {
+    line_count: lines.length,
+    paragraph_count: paragraphBreaks,
+    heading_candidates: headingCandidates,
+    key_value_rows: kvRows,
+    tabular_rows: tableRows,
+  };
+}
+
+function inferDocumentKinds({ text = "", fileName = "", ent = {} } = {}) {
+  const raw = `${text}\n${fileName}`.toLowerCase();
+  const kinds = [];
+  const add = (label, patterns) => {
+    if (patterns.some((pattern) => pattern.test(raw))) kinds.push(label);
+  };
+  add("letter", [/\bdear\b/, /\bsincerely\b/, /\bto whom it may concern\b/]);
+  add("form", [/\bapplication\b/, /\bform\b/, /\bdate of birth\b/, /\bsignature\b/]);
+  add("id", [/\bid\b/, /\bpassport\b/, /\bdriver'?s license\b/, /\bdate of birth\b/, /\bexpires\b/]);
+  add("leaflet", [/\bleaflet\b/, /\bhandout\b/, /\bpamphlet\b/]);
+  add("pdf", [/\.pdf\b/, /\bpage \d+ of \d+\b/, /\badobe\b/]);
+  add("poster", [/\bposter\b/, /\bcoming soon\b/, /\bnow showing\b/]);
+  add("event flyer", [/\bjoin us\b/, /\brsvp\b/, /\btickets?\b/, /\bdoors open\b/, /\bfriday\b/, /\bsaturday\b/]);
+  add("protest sign", [/\bjustice\b/, /\bstrike\b/, /\bsolidarity\b/, /\bno war\b/, /\bworkers\b/, /\bmarch\b/]);
+  add("menu", [/\bmenu\b/, /\bappetizers?\b/, /\bentrée\b/, /\bdessert\b/, /\bspecials?\b/]);
+  add("receipt", [/\breceipt\b/, /\bsubtotal\b/, /\btax\b/, /\bchange\b/, /\bvisa\b/, /\bmastercard\b/]);
+  add("certificate", [/\bcertificate\b/, /\bawarded\b/, /\bcertify\b/, /\bissued on\b/]);
+  if ((ent.dates?.length || 0) >= 2 && /\baddress\b|\bphone\b|\bemail\b/i.test(raw) && !kinds.includes("form")) kinds.push("form");
+  return Array.from(new Set(kinds));
+}
+
+function collectLogoLookupCandidates({ text = "", ent = {}, domains = [], handles = [] } = {}) {
+  const candidates = [];
+  const push = (value) => {
+    const clean = String(value || "").trim();
+    if (!clean) return;
+    if (candidates.some((item) => item.toLowerCase() === clean.toLowerCase())) return;
+    candidates.push(clean);
+  };
+  for (const org of ent.organizations || []) push(org);
+  for (const domain of domains || []) push(domain.replace(/^www\./i, ""));
+  for (const handle of handles || []) push(handle.replace(/^@/, ""));
+  const lineCandidates = String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 6)
+    .flatMap((line) => line.match(/\b[A-Z][A-Za-z0-9&'.-]{2,}\b/g) || [])
+    .filter((value) => !/^(the|and|for|with|from|menu|receipt|invoice|certificate|event|official)$/i.test(value));
+  for (const lineCandidate of lineCandidates) push(lineCandidate);
+  return candidates.slice(0, 6);
+}
+
+function buildSearchLink(query) {
+  return `https://www.google.com/search?q=${encodeURIComponent(query)}`;
+}
+
+function buildDocumentImageOutput(context = getCurrentReconContext()) {
+  const { ent = {}, handles = [], domains = [] } = context || {};
+  const text = state.ocrText || "";
+  const language = getOcrLanguageLabel(elements.ocrLang?.value || OCR_DEFAULT_LANGUAGE);
+  const layout = summarizeDocumentLayout(text);
+  const kinds = inferDocumentKinds({ text, fileName: state.file?.name || "", ent });
+  const logoCandidates = collectLogoLookupCandidates({ text, ent, domains, handles });
+  const entityLines = [
+    `URLs ${ent.urls?.length || 0} · emails ${ent.emails?.length || 0} · handles ${handles.length} · phones ${context.phones?.length || 0}`,
+    `People ${ent.people?.length || 0} · organizations ${ent.organizations?.length || 0} · locations ${ent.locations?.length || 0} · dates ${ent.dates?.length || 0}`,
+    ...(ent.organizations?.slice(0, 3).length ? [`Organizations: ${ent.organizations.slice(0, 3).join(" · ")}`] : []),
+    ...(ent.locations?.slice(0, 3).length ? [`Locations: ${ent.locations.slice(0, 3).join(" · ")}`] : []),
+  ];
+  return {
+    mission: "document_image",
+    summary: kinds.length
+      ? `Document-image mode structured OCR, layout, logo pivots, and entities for ${kinds.join(", ")} review.`
+      : "Document-image mode structured OCR, layout, logo pivots, and entities for manual document review.",
+    items: [
+      {
+        label: "Document posture",
+        meta: elements.metaDim?.textContent || "document review",
+        lines: [
+          `Detected kinds: ${kinds.join(" · ") || "needs analyst review"}`,
+          `OCR model: ${language} · text lines ${layout.line_count} · paragraphs ${layout.paragraph_count}`,
+          `File: ${state.file?.name || "image"}${elements.metaDim?.textContent ? ` · ${elements.metaDim.textContent}` : ""}`,
+        ],
+      },
+      {
+        label: "Layout extraction",
+        meta: "OCR-derived structure",
+        lines: [
+          `Heading candidates: ${layout.heading_candidates.join(" · ") || "—"}`,
+          `Key-value rows: ${layout.key_value_rows.join(" · ") || "—"}`,
+          `Tabular rows: ${layout.tabular_rows.join(" · ") || "—"}`,
+        ],
+      },
+      {
+        label: "Logo lookup",
+        meta: logoCandidates.length ? `${logoCandidates.length} candidate mark${logoCandidates.length === 1 ? "" : "s"}` : "manual review",
+        lines: [
+          `Candidates: ${logoCandidates.join(" · ") || "No strong brand/logo cue extracted"}`,
+          "Use logo lookups as pivots, not proof of origin.",
+        ],
+        links: logoCandidates
+          .slice(0, 4)
+          .flatMap((candidate) => [
+            { label: `${candidate} logo`, url: buildSearchLink(`"${candidate}" logo`) },
+            { label: `${candidate} images`, url: buildSearchLink(`"${candidate}"`) },
+          ]),
+      },
+      {
+        label: "Entity extraction",
+        meta: "OCR pivots",
+        lines: entityLines,
+        links: [
+          ...(handles[0] ? [{ label: "Handle search", url: buildSearchLink(handles[0]) }] : []),
+          ...(domains[0] ? [{ label: "Domain search", url: buildSearchLink(`site:${domains[0]}`) }] : []),
+        ],
+      },
+    ],
+  };
+}
+
+function buildSearchQueryGeneratorOutput(context = getCurrentReconContext()) {
+  const { ent = {}, handles = [], domains = [] } = context || {};
+  const kinds = inferDocumentKinds({ text: state.ocrText || "", fileName: state.file?.name || "", ent });
+  const logoCandidates = collectLogoLookupCandidates({ text: state.ocrText || "", ent, domains, handles });
+  const fileStem = parseFilenameStem(state.file?.name || "");
+  const dims = elements.metaDim?.textContent || "";
+  const language = getOcrLanguageLabel(elements.ocrLang?.value || OCR_DEFAULT_LANGUAGE);
+  const topLine = String(state.ocrText || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .find((line) => line.length >= 4) || "";
+  const queries = [];
+  const seen = new Set();
+  const addQuery = (label, query, why) => {
+    const clean = String(query || "").trim();
+    if (!clean || seen.has(clean)) return;
+    seen.add(clean);
+    queries.push({
+      label,
+      meta: clean,
+      lines: [why],
+      links: [{ label: "Search", url: buildSearchLink(clean) }],
+    });
+  };
+  if (logoCandidates[0] && ent.locations?.[0]) addQuery("Brand + city", `"${logoCandidates[0]}" "${ent.locations[0]}"`, "Combine the strongest brand/logo clue with the strongest location clue.");
+  if (topLine && logoCandidates[0]) addQuery("OCR text + logo", `"${topLine.slice(0, 80)}" "${logoCandidates[0]}"`, "Bind the main OCR line to the strongest logo/brand candidate.");
+  if (kinds[0]) addQuery("Object + language", `"${kinds[0]}" "${language}"`, "Search the detected document/object type together with the OCR language.");
+  if (fileStem || dims) addQuery("File name + dimensions", `"${fileStem || "image"}" "${dims || "unknown dimensions"}"`, "Use file naming residue with the visible pixel dimensions.");
+  if (handles[0]) {
+    const platformHint = domains.find((domain) => /(instagram|tiktok|x\.com|twitter|facebook|linkedin|telegram)/i.test(domain)) || "instagram OR tiktok OR x";
+    addQuery("Visible username + platform", `"${handles[0]}" ${platformHint}`, "Pivot the visible handle against the likeliest platform hint.");
+  }
+  if (domains[0] && logoCandidates[0]) addQuery("Logo + domain", `"${logoCandidates[0]}" "${domains[0]}"`, "Pair a brand/logo clue with the strongest normalized domain.");
+  if (topLine) addQuery("Quoted OCR line", `"${topLine.slice(0, 96)}"`, "Quoted text search for the most stable visible line.");
+  return {
+    mission: "query_generator",
+    summary: queries.length
+      ? `Search query generator built ${queries.length} follow-up searches from OCR text, brands, usernames, filenames, dimensions, and language clues.`
+      : "Search query generator did not find stable enough clues yet; run OCR first or load a more legible image.",
+    items: queries,
+  };
 }
 
 function renderEngineLaunchpad(run) {
@@ -3335,6 +3593,26 @@ async function runMissionPreset(preset) {
       return;
     }
 
+    if (p === "document_image") {
+      const context = await ensureReconContext({ mode: "deep" });
+      const output = buildDocumentImageOutput(context);
+      setDocumentModeOutput(output);
+      setMissionOutput(output);
+      setStatusLine("Document mode: OCR, layout, logo pivots, and entities structured");
+      setStatus("Ready");
+      return;
+    }
+
+    if (p === "query_generator") {
+      const context = await ensureReconContext({ mode: "deep" });
+      const output = buildSearchQueryGeneratorOutput(context);
+      setSearchQueryOutput(output);
+      setMissionOutput(output);
+      setStatusLine(output.items?.length ? `Query generator: ${output.items.length} searches prepared` : "Query generator: no stable clues yet");
+      setStatus("Ready");
+      return;
+    }
+
     if (p === "share_search") {
       await prepareLaunchpad({
         openLens: true,
@@ -4073,6 +4351,8 @@ function buildMarkdownReport(report) {
   }
   if (r.result_intake?.autopsy?.summary) lines.push(`- No-result autopsy: ${String(r.result_intake.autopsy.summary)}`);
   if (r.result_intake?.contradictions?.summary) lines.push(`- Source contradictions: ${String(r.result_intake.contradictions.summary)}`);
+  if (r.document_image_mode?.summary) lines.push(`- Document-image mode: ${String(r.document_image_mode.summary)}`);
+  if (r.search_query_generator?.summary) lines.push(`- Search query generator: ${String(r.search_query_generator.summary)}`);
   lines.push("");
   lines.push(`## Public URL`);
   lines.push(`- URL: ${r.public_url ? `${r.public_url}` : "—"}`);
@@ -4134,6 +4414,14 @@ function buildMarkdownReport(report) {
   lines.push(`## Mission Output`);
   lines.push(`- Summary: ${r.mission_output?.summary ? `\`${r.mission_output.summary}\`` : "—"}`);
   lines.push(`- Item count: \`${Array.isArray(r.mission_output?.items) ? r.mission_output.items.length : 0}\``);
+  lines.push("");
+  lines.push(`## Document Image Mode`);
+  lines.push(`- Summary: ${r.document_image_mode?.summary ? `\`${r.document_image_mode.summary}\`` : "—"}`);
+  lines.push(`- Item count: \`${Array.isArray(r.document_image_mode?.items) ? r.document_image_mode.items.length : 0}\``);
+  lines.push("");
+  lines.push(`## Search Query Generator`);
+  lines.push(`- Summary: ${r.search_query_generator?.summary ? `\`${r.search_query_generator.summary}\`` : "—"}`);
+  lines.push(`- Item count: \`${Array.isArray(r.search_query_generator?.items) ? r.search_query_generator.items.length : 0}\``);
   lines.push("");
   lines.push(`## Result Intake`);
   lines.push(`- Deduped entries: \`${Array.isArray(r.result_intake?.entries) ? r.result_intake.entries.length : 0}\``);
@@ -4930,6 +5218,7 @@ function buildOsintReport({ includeInvestigation = true } = {}) {
   const keyFields = extractKeyFieldsObj(state.exif);
   const exportMetadata = buildExportMetadata();
   const upload = buildUploadLifecycleMeta();
+  const reconContext = getCurrentReconContext();
   const report = {
     schema_version: EXPORT_SCHEMA_VERSION,
     app_version: APP_VERSION,
@@ -5002,6 +5291,12 @@ function buildOsintReport({ includeInvestigation = true } = {}) {
           summary: state.missionOutput.summary || null,
           items: Array.isArray(state.missionOutput.items) ? state.missionOutput.items.slice() : null,
         }
+      : null,
+    document_image_mode: (state.documentModeOutput || state.ocrText)
+      ? deepClone(state.documentModeOutput || buildDocumentImageOutput(reconContext))
+      : null,
+    search_query_generator: (state.searchQueryOutput || state.ocrText || state.file)
+      ? deepClone(state.searchQueryOutput || buildSearchQueryGeneratorOutput(reconContext))
       : null,
     result_intake: state.resultIntake
       ? {
@@ -5479,6 +5774,8 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
         // ignore
       }
       renderInvestigationSurface();
+      if (state.documentModeOutput) setDocumentModeOutput(buildDocumentImageOutput(getCurrentReconContext()));
+      if (state.searchQueryOutput) setSearchQueryOutput(buildSearchQueryGeneratorOutput(getCurrentReconContext()));
       elements.btnCopyOcr.disabled = !text;
       setOcrStatus("Ready");
       if (text) pulseRadar("ocr");
@@ -5603,6 +5900,8 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
     renderOcrEntities(finalText);
     renderOcrLangHint(finalText);
     renderInvestigationSurface();
+    if (state.documentModeOutput) setDocumentModeOutput(buildDocumentImageOutput(getCurrentReconContext()));
+    if (state.searchQueryOutput) setSearchQueryOutput(buildSearchQueryGeneratorOutput(getCurrentReconContext()));
     elements.btnCopyOcr.disabled = !finalText;
     setOcrStatus("Ready");
     if (finalText) pulseRadar("ocr");
@@ -6306,6 +6605,30 @@ function setupActions() {
         elements.ocrOut.textContent = formatOcrError(e);
         setOcrStatus("Failed");
       }
+    });
+  });
+
+  elements.btnRunDocumentMode?.addEventListener("click", async () => {
+    if (!state.file) return;
+    await withUiLock("Document mode…", async () => {
+      const context = await ensureReconContext({ mode: "deep" });
+      const output = buildDocumentImageOutput(context);
+      setDocumentModeOutput(output);
+      setMissionOutput(output);
+      setStatusLine("Document mode: OCR, layout, logo pivots, and entities structured");
+      setStatus("Ready");
+    });
+  });
+
+  elements.btnGenerateQueries?.addEventListener("click", async () => {
+    if (!state.file) return;
+    await withUiLock("Generating queries…", async () => {
+      const context = await ensureReconContext({ mode: "deep" });
+      const output = buildSearchQueryGeneratorOutput(context);
+      setSearchQueryOutput(output);
+      setMissionOutput(output);
+      setStatusLine(output.items?.length ? `Query generator: ${output.items.length} searches prepared` : "Query generator: no stable clues yet");
+      setStatus("Ready");
     });
   });
 

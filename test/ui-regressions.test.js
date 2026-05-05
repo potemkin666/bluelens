@@ -24,6 +24,8 @@ test("mission preset selector stays reachable in the HTML", () => {
   assert.doesNotMatch(indexHtml, /<select id="missionPreset"[^>]*\shidden\b/);
   assert.match(indexHtml, />Quick OCR</);
   assert.match(indexHtml, />Deep OCR</);
+  assert.match(indexHtml, />Document Image</);
+  assert.match(indexHtml, />Search Query Generator</);
   assert.match(indexHtml, />Upload \+ Launchpad</);
   assert.match(indexHtml, />Handle Recon</);
   assert.match(indexHtml, />Domain Recon</);
@@ -167,6 +169,10 @@ test("OCR UI uses manual models and weak script hints", () => {
 
 test("OCR pivots are framed as manual follow-ups", () => {
   assert.match(indexHtml, />Manual pivots</);
+  assert.match(indexHtml, />Document mode</);
+  assert.match(indexHtml, />Generate queries</);
+  assert.match(indexHtml, /id="documentModeOut"/);
+  assert.match(indexHtml, /id="queryGeneratorOut"/);
   assert.match(ocrEntitiesUiJs, /Manual pivots only — these are templated follow-ups from OCR hits/);
   assert.match(appJs, /Manual pivots \(\$\{targets\.length\}\)/);
   assert.match(appJs, /function runPivotStructuredTask\(/);
@@ -176,6 +182,22 @@ test("OCR pivots are framed as manual follow-ups", () => {
   assert.match(appJs, /People: /);
   assert.match(appJs, /Organizations: /);
   assert.match(appJs, /Locations: /);
+});
+
+test("document-image mode and query generator build OCR-driven review output", () => {
+  assert.match(appJs, /function summarizeDocumentLayout\(/);
+  assert.match(appJs, /function buildDocumentImageOutput\(/);
+  assert.match(appJs, /function buildSearchQueryGeneratorOutput\(/);
+  assert.match(appJs, /Detected kinds:/);
+  assert.match(appJs, /Heading candidates:/);
+  assert.match(appJs, /Candidates: /);
+  assert.match(appJs, /Brand \+ city/);
+  assert.match(appJs, /OCR text \+ logo/);
+  assert.match(appJs, /Object \+ language/);
+  assert.match(appJs, /File name \+ dimensions/);
+  assert.match(appJs, /Visible username \+ platform/);
+  assert.match(appJs, /document_image_mode:/);
+  assert.match(appJs, /search_query_generator:/);
 });
 
 test("metadata suspicion copy avoids faux-precise repost scoring", () => {
