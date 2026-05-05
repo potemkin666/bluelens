@@ -4233,12 +4233,14 @@ function computeAiImageSuspicionChecklist({ exifObj, file, width, height, ocrTex
     return letters > 0 && digits > 0;
   }).length;
 
-  const squareish = Number.isFinite(width) && Number.isFinite(height)
-    ? Math.abs(width - height) < Math.max(width, height) * AI_SQUAREISH_ASPECT_DELTA
+  const squareish = Number.isFinite(width) && Number.isFinite(height) && height > 0
+    ? Math.abs(width / height - 1) < AI_SQUAREISH_ASPECT_DELTA
     : false;
   const hiRes = Number.isFinite(width) && Number.isFinite(height) ? (width * height) / 1_000_000 >= AI_SYNTHETIC_TEXTURE_HIRES_MP : false;
   const syntheticFriendlyFormat = /image\/(png|webp)/i.test(file?.type || "");
 
+  // These detail strings may include EXIF/OCR-derived values; renderAiImageSuspicionPanel escapes them before
+  // inserting into HTML so the checklist can safely surface untrusted metadata.
   const items = [
     aiToolName
       ? { key: "metadata", label: "Metadata hints", status: "flag", detail: `Creator/software tag mentions ${aiToolName}.` }
