@@ -259,6 +259,15 @@ const METADATA_SUSPICION_BANDS = {
 const UTF8_ENCODER = new TextEncoder();
 const TAR_HEADER_SIZE = 512;
 const TAR_END_PADDING = 1024;
+// Treat near-square crops as a weak review cue only. An 8% delta still catches common 1:1-ish AI art/export canvases
+// without sweeping in most normal landscape/portrait photos.
+const AI_SQUAREISH_ASPECT_DELTA = 0.08;
+// OCR-only malformed-text heuristics stay conservative: a 14% weird-glyph ratio or 3 noisy mixed alnum tokens
+// is enough to warrant manual review, but not strong enough to act as a verdict.
+const AI_OCR_WEIRD_GLYPH_RATIO = 0.14;
+const AI_OCR_NOISY_TOKEN_MIN = 3;
+// Exclude normal word chars, whitespace, and common punctuation so OCR output can surface unusual glyph soup.
+const AI_OCR_WEIRD_GLYPH_RE = /[^\w\s.,:;!?'"@#%&()\-/_+]/g;
 const OCR_SCRIPT_HINTS = [
   { label: "Arabic", test: /[\u0600-\u06FF]/g, models: ["ara"] },
   { label: "Hebrew", test: /[\u0590-\u05FF]/g, models: ["heb"] },
@@ -4210,7 +4219,7 @@ function computeAiImageSuspicionChecklist({ exifObj, file, width, height, ocrTex
   const hasCameraMeta = Boolean(make || model || captured || getGps(exifObj));
 
   const tokens = text.split(/\s+/).filter(Boolean);
-  const weirdGlyphCount = (text.match(/[^\w\s.,:;!?'"@#%&()\-/_+]/g) || []).length;
+  const weirdGlyphCount = (text.match(AI_OCR_WEIRD_GLYPH_RE) || []).length;
   const weirdGlyphRatio = text.length ? weirdGlyphCount / text.length : 0;
   const repeatedRuns = /(.)\1{4,}/.test(text);
   const noisyTokens = tokens.filter((token) => {
@@ -4221,7 +4230,9 @@ function computeAiImageSuspicionChecklist({ exifObj, file, width, height, ocrTex
     return letters > 0 && digits > 0;
   }).length;
 
-  const squareish = Number.isFinite(width) && Number.isFinite(height) ? Math.abs(width - height) < Math.max(width, height) * 0.08 : false;
+  const squareish = Number.isFinite(width) && Number.isFinite(height)
+    ? Math.abs(width - height) < Math.max(width, height) * AI_SQUAREISH_ASPECT_DELTA
+    : false;
   const hiRes = Number.isFinite(width) && Number.isFinite(height) ? (width * height) / 1_000_000 >= 2.5 : false;
   const syntheticFriendlyFormat = /image\/(png|webp)/i.test(file?.type || "");
 
@@ -4235,7 +4246,7 @@ function computeAiImageSuspicionChecklist({ exifObj, file, width, height, ocrTex
           : { key: "metadata", label: "Metadata hints", status: "review", detail: software ? `Creator/software tag: ${software}` : "Metadata is thin; review provenance manually." },
     !text
       ? { key: "text", label: "Malformed text", status: "review", detail: "Run OCR or visually inspect lettering for warped glyphs, merged characters, and fake UI text." }
-      : weirdGlyphRatio > 0.14 || repeatedRuns || noisyTokens >= 3
+      : weirdGlyphRatio > AI_OCR_WEIRD_GLYPH_RATIO || repeatedRuns || noisyTokens >= AI_OCR_NOISY_TOKEN_MIN
         ? { key: "text", label: "Malformed text", status: "flag", detail: "OCR output looks noisy enough to justify a closer lettering review." }
         : { key: "text", label: "Malformed text", status: "clear", detail: "OCR text does not show an obvious gibberish pattern from local extraction alone." },
     aiToolName || (!hasExif && hiRes && syntheticFriendlyFormat) || squareish
