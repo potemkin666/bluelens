@@ -1,0 +1,32 @@
+<svg width="1200" height="320" viewBox="0 0 1200 320" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">BlueLens ocean banner</title>
+  <desc id="desc">Gradient blue ocean-styled BlueLens banner for the repository README.</desc>
+  <defs>
+    <linearGradient id="bg" x1="86" y1="28" x2="1112" y2="292" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#031225"/>
+      <stop offset="0.46" stop-color="#08325F"/>
+      <stop offset="1" stop-color="#0A5B8E"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="231" y1="62" x2="909" y2="218" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F4FCFF"/>
+      <stop offset="0.22" stop-color="#C9F3FF"/>
+      <stop offset="0.54" stop-color="#7BDBFF"/>
+      <stop offset="1" stop-color="#2F8DFF"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="150" y1="210" x2="1020" y2="270" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8BEAFF" stop-opacity="0.78"/>
+      <stop offset="1" stop-color="#1D7CFF" stop-opacity="0.22"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16"/>
+    </filter>
+  </defs>
+  <rect x="12" y="12" width="1176" height="296" rx="32" fill="url(#bg)"/>
+  <path d="M69 247C210 199 316 286 447 247C589 205 708 149 845 183C951 209 1020 243 1131 214" stroke="url(#wave)" stroke-width="10" stroke-linecap="round"/>
+  <path d="M88 108C166 122 207 64 290 77C374 89 418 143 501 152C586 161 657 99 748 98C839 97 879 147 954 152C1030 158 1064 127 1112 108" stroke="#8BEAFF" stroke-opacity="0.26" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="1045" cy="89" r="74" fill="#5DCEFF" fill-opacity="0.17" filter="url(#soft)"/>
+  <circle cx="175" cy="244" r="84" fill="#1A7CFF" fill-opacity="0.14" filter="url(#soft)"/>
+  <text x="72" y="146" fill="url(#ink)" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="86" font-weight="800" letter-spacing="4">BLUELENS</text>
+  <text x="75" y="196" fill="#DFFAFF" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="21" font-weight="600" letter-spacing="3.2">LOCAL-FIRST IMAGE RECONNAISSANCE</text>
+  <text x="76" y="238" fill="#A7EFFF" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="16" font-weight="500" letter-spacing="1.4">UPLOAD ONCE · OPEN MANY ENGINES · EXPLAIN NO-RESULTS · SUPPRESS FALSE POSITIVES</text>
+</svg>

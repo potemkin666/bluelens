@@ -443,7 +443,10 @@ async function collectDoctorCdnReachability() {
 
 async function collectDoctorEngineAvailability() {
   return await collectReachabilityRows(
-    ["lens", "bing", "tineye", "yandex", "google_images"].map((engine) => ({ engine, url: reverseSearchUploadPage(engine) })),
+    ["lens", "bing", "yandex", "tineye", "pinterest", "saucenao", "iqdb", "baidu", "ascii2d", "google_images"].map((engine) => ({
+      engine,
+      url: reverseSearchUploadPage(engine),
+    })),
   );
 }
 

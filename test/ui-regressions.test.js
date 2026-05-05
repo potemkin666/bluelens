@@ -12,6 +12,7 @@ const startCmd = fs.readFileSync(path.join(__dirname, "..", "bluelens-start.cmd"
 const desktopIconPs1 = fs.readFileSync(path.join(__dirname, "..", "create-desktop-icon.ps1"), "utf8");
 const launchpadCoreJs = fs.readFileSync(path.join(__dirname, "..", "launchpad-core.js"), "utf8");
 const ocrEntitiesUiJs = fs.readFileSync(path.join(__dirname, "..", "ocr-entities-ui.js"), "utf8");
+const bluelensHelpersJs = fs.readFileSync(path.join(__dirname, "..", "bluelens-helpers.js"), "utf8");
 const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
 const readmeMd = fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8");
 const faviconSvgPath = path.join(__dirname, "..", "favicon.svg");
@@ -24,6 +25,8 @@ test("mission preset selector stays reachable in the HTML", () => {
   assert.doesNotMatch(indexHtml, /<select id="missionPreset"[^>]*\shidden\b/);
   assert.match(indexHtml, />Quick OCR</);
   assert.match(indexHtml, />Deep OCR</);
+  assert.match(indexHtml, />Document Image</);
+  assert.match(indexHtml, />Search Query Generator</);
   assert.match(indexHtml, />Upload \+ Launchpad</);
   assert.match(indexHtml, />Handle Recon</);
   assert.match(indexHtml, />Domain Recon</);
@@ -46,16 +49,17 @@ test("package startup contract declares Node 18+ and a server start script", () 
 });
 
 test("search-all UI is framed as link preparation, not automatic querying", () => {
-  assert.match(indexHtml, />\s*Upload \+ Prepare Links\s*</);
+  assert.match(indexHtml, />\s*Search All\s*</);
   assert.match(appJs, /Uploading \+ preparing links…/);
   assert.match(appJs, /Upload \+ Prepare Links/);
   assert.match(appJs, /Paste titles, snippets, and URLs back into Result Intake/);
+  assert.match(appJs, /Prepared \$\{ENGINE_ORDER\.length\} engine targets from one upload/);
 });
 
 
 test("sharing copy matches explicit upload consent", () => {
-  assert.match(indexHtml, /Uploads stay off until you run Upload \+ Launchpad, Upload \+ Prepare Links, or an engine open action\./);
-  assert.match(indexHtml, /upload only on demand/i);
+  assert.match(indexHtml, /Uploads start only when you choose search\./);
+  assert.match(appJs, /Local review ready\. Uploads start only when you choose a launch action\./);
 });
 
 
@@ -66,15 +70,16 @@ test("primary and secondary actions stay in a static order", () => {
 });
 
 test("landing UI stays focused on image search", () => {
-  assert.match(indexHtml, /Know what runs before you click it\./);
-  assert.match(indexHtml, /Load image<\/strong> — BlueLens inspects it locally first\./);
-  assert.match(indexHtml, /Run local tools<\/strong> — hashes, EXIF, OCR, and compare stay on this device\./);
+  assert.doesNotMatch(indexHtml, /Inspect images locally, extract context, and launch reverse-search providers\./);
+  assert.doesNotMatch(indexHtml, /Know what runs before you click it\./);
+  assert.doesNotMatch(indexHtml, /Load image<\/strong> — BlueLens inspects it locally first\./);
+  assert.doesNotMatch(indexHtml, /Run local tools<\/strong> — hashes, EXIF, OCR, and compare stay on this device\./);
   assert.doesNotMatch(indexHtml, /Search-first workflow/);
   assert.doesNotMatch(indexHtml, /Local file signals/);
 });
 
-test("upload control appears before the landing promo block", () => {
-  assert.ok(indexHtml.indexOf('id="dropzone"') < indexHtml.indexOf('class="focus-shell"'));
+test("landing UI no longer renders the promo block", () => {
+  assert.doesNotMatch(indexHtml, /class="focus-shell"/);
 });
 
 test("caseboard UI is removed from the landing workflow", () => {
@@ -165,6 +170,10 @@ test("OCR UI uses manual models and weak script hints", () => {
 
 test("OCR pivots are framed as manual follow-ups", () => {
   assert.match(indexHtml, />Manual pivots</);
+  assert.match(indexHtml, />Document mode</);
+  assert.match(indexHtml, />Generate queries</);
+  assert.match(indexHtml, /id="documentModeOut"/);
+  assert.match(indexHtml, /id="queryGeneratorOut"/);
   assert.match(ocrEntitiesUiJs, /Manual pivots only — these are templated follow-ups from OCR hits/);
   assert.match(appJs, /Manual pivots \(\$\{targets\.length\}\)/);
   assert.match(appJs, /function runPivotStructuredTask\(/);
@@ -174,6 +183,22 @@ test("OCR pivots are framed as manual follow-ups", () => {
   assert.match(appJs, /People: /);
   assert.match(appJs, /Organizations: /);
   assert.match(appJs, /Locations: /);
+});
+
+test("document-image mode and query generator build OCR-driven review output", () => {
+  assert.match(appJs, /function summarizeDocumentLayout\(/);
+  assert.match(appJs, /function buildDocumentImageOutput\(/);
+  assert.match(appJs, /function buildSearchQueryGeneratorOutput\(/);
+  assert.match(appJs, /Detected kinds:/);
+  assert.match(appJs, /Heading candidates:/);
+  assert.match(appJs, /Candidates: /);
+  assert.match(bluelensHelpersJs, /Brand \+ city/);
+  assert.match(bluelensHelpersJs, /OCR text \+ logo/);
+  assert.match(bluelensHelpersJs, /Object \+ language/);
+  assert.match(bluelensHelpersJs, /File name \+ dimensions/);
+  assert.match(bluelensHelpersJs, /Visible username \+ platform/);
+  assert.match(appJs, /document_image_mode:/);
+  assert.match(appJs, /search_query_generator:/);
 });
 
 test("metadata suspicion copy avoids faux-precise repost scoring", () => {
@@ -219,7 +244,23 @@ test("reports export structured capture provenance and runtime metadata", () => 
 
 test("share provider UI is explicit about automatic host ranking", () => {
   assert.match(indexHtml, /Automatic host selection — the local proxy ranks temporary hosts/);
-  assert.match(indexHtml, />Automatic host selection \(ranked failover\)</);
+  assert.match(indexHtml, />Auto host</);
+});
+
+test("easy mode defaults to direct search actions and keeps AI suspicion in advanced review", () => {
+  assert.match(indexHtml, /id="btnQuickLens"/);
+  assert.match(indexHtml, />\s*Search Lens\s*</);
+  assert.match(indexHtml, /id="btnQuickOcr"/);
+  assert.match(indexHtml, /id="workflowAdvanced"/);
+  assert.match(indexHtml, /id="searchConsoleAdvanced"/);
+  assert.match(indexHtml, />AI-image suspicion</);
+  assert.match(indexHtml, /Checklist only — not an oracle\./);
+  assert.match(appJs, /function computeAiImageSuspicionChecklist/);
+  assert.match(appJs, /Impossible anatomy/);
+  assert.match(appJs, /Weird reflections/);
+  assert.match(appJs, /Synthetic texture/);
+  assert.match(appJs, /ai_image_suspicion/);
+  assert.match(stylesCss, /\.ai-suspicion-list/);
 });
 
 test("wait tab uses backoff and exposes reopen guidance", () => {
@@ -242,7 +283,6 @@ test("batch OCR failures are surfaced instead of silently ignored", () => {
 });
 
 test("onboarding and evidence-pack UI expose operator caveats and export path", () => {
-  assert.match(indexHtml, /id="onboardingStrip"/);
   assert.match(indexHtml, /id="progressPanel"/);
   assert.match(indexHtml, /id="missionExplain"/);
   assert.match(indexHtml, /id="btnEvidencePack"/);
@@ -252,15 +292,20 @@ test("onboarding and evidence-pack UI expose operator caveats and export path", 
   assert.match(indexHtml, /id="resultIntakeInput"/);
   assert.match(indexHtml, /id="btnIngestResults"/);
   assert.match(indexHtml, /id="resultIntakeSummary"/);
+  assert.match(indexHtml, /id="noResultAutopsyOut"/);
+  assert.match(indexHtml, /id="sourceContradictionOut"/);
   assert.match(indexHtml, /id="manualNotes"/);
   assert.match(indexHtml, /id="actionLogOut"/);
   assert.match(appJs, /function downloadEvidencePack\(\)/);
   assert.match(appJs, /async function runDoctorChecks\(/);
   assert.match(appJs, /function ingestResults\(raw\)/);
+  assert.match(appJs, /function computeNoResultAutopsy\(/);
+  assert.match(appJs, /function buildSourceContradictionModel\(/);
+  assert.match(appJs, /function setResultSuppressed\(/);
   assert.match(appJs, /function renderMissionOutput\(\)/);
-  assert.match(indexHtml, /Quick start: 1\) load image/);
+  assert.doesNotMatch(indexHtml, /Quick start: 1\) load image/);
   assert.match(appJs, /function renderProgress\(\)/);
-  assert.match(appJs, /Loaded locally first\./);
+  assert.match(appJs, /Load an image to start\./);
   assert.match(helpHtml, />Doctor</);
 });
 
@@ -275,11 +320,53 @@ test("launchpad now renders queue-aware swarm cockpit state", () => {
   assert.match(waitHtml, /Uploading… \(check main tab\)\./);
 });
 
+test("engine relay covers broad web and art-focused providers", () => {
+  assert.match(indexHtml, /id="btnOpenPinterest"/);
+  assert.match(indexHtml, /id="btnOpenSauceNAO"/);
+  assert.match(indexHtml, /id="btnOpenIQDB"/);
+  assert.match(indexHtml, /id="btnOpenBaidu"/);
+  assert.match(indexHtml, /id="btnOpenAscii2d"/);
+  assert.match(appJs, /const ENGINE_ORDER = APP_CONFIG\.engines\?\.order \|\| \["lens", "bing", "yandex", "tineye", "pinterest", "saucenao", "iqdb", "baidu", "ascii2d", "google_images"\]/);
+  assert.match(appJs, /ENGINE_BUTTON_BY_KEY/);
+  assert.match(readmeMd, /SauceNAO/);
+  assert.match(readmeMd, /IQDB/);
+  assert.match(readmeMd, /ASCII2D/);
+});
+
+test("result intake supports per-session false-positive suppression and no-result autopsy", () => {
+  assert.match(appJs, /data-result-suppress/);
+  assert.match(appJs, /data-result-restore/);
+  assert.match(appJs, /Match suppressed for this session/);
+  assert.match(appJs, /Private image \/ not indexed/);
+  assert.match(appJs, /Manual-only engine follow-up/);
+  assert.match(appJs, /Likely original/);
+  assert.match(appJs, /Likely repost/);
+  assert.match(appJs, /Source label:/);
+  assert.match(appJs, /Contradictory source dates detected/);
+  assert.match(stylesCss, /\.result-suppressed/);
+  assert.match(stylesCss, /\.autopsy-card/);
+  assert.match(stylesCss, /\.contradiction-card/);
+});
+
+test("readme reflects the current image-recon workflow and embeds the attached image", () => {
+  assert.match(readmeMd, /bluelens-ocean-banner\.svg/);
+  assert.match(readmeMd, /github\.com\/user-attachments\/assets\//);
+  assert.match(readmeMd, /Local-first image reconnaissance/);
+  assert.match(readmeMd, /No-result autopsy/);
+  assert.match(readmeMd, /False-positive suppressor/);
+  assert.match(readmeMd, /Source contradiction panel/);
+  assert.match(readmeMd, /Likely original \/ repost labeling/);
+  assert.match(readmeMd, /github\.com\/user-attachments\/assets\/[^"\s)]+/);
+});
+
 test("batch dashboard exposes aggregated entity follow-up controls", () => {
   assert.match(appJs, /function getBatchEntityClusters\(/);
   assert.match(appJs, /data-batch-entity-open/);
   assert.match(appJs, /data-batch-entity-mission/);
   assert.match(stylesCss, /\.entity-cluster-summary/);
+  assert.match(indexHtml, /id="btnDownloadBatchCsv"/);
+  assert.match(appJs, /function buildBatchSummaryRows\(/);
+  assert.match(appJs, /downloadCsvRows\(buildBatchSummaryRows\(state\.batchItems\)/);
 });
 
 test("result intake accepts loose pipe delimiters and tracks blocked wait tabs honestly", () => {

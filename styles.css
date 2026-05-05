@@ -1636,6 +1636,24 @@ body.skin-chrome .tab.active {
   margin-top: 8px;
 }
 
+.mission-card-actions {
+  justify-content: flex-end;
+}
+
+.result-suppressed {
+  opacity: 0.78;
+  border-style: dashed;
+}
+
+.autopsy-card {
+  border-color: rgba(255, 209, 102, 0.28);
+}
+
+.contradiction-card {
+  border-color: rgba(255, 183, 140, 0.30);
+  background: rgba(255, 183, 140, 0.06);
+}
+
 .chip-select {
   margin-top: 0;
   padding: 8px 10px;
@@ -2407,12 +2425,131 @@ body.hud-mode .hud .card-title-row {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.action-group-easy {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.04)),
+    linear-gradient(180deg, rgba(11, 38, 77, 0.24), rgba(6, 22, 48, 0.12));
+}
+
+.quick-actions-row .btn {
+  flex: 1 1 160px;
+}
+
+.action-group-advanced {
+  padding: 0;
+  overflow: hidden;
+}
+
+.action-group-advanced > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 14px;
+  font-weight: 700;
+}
+
+.action-group-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+.action-group-advanced > summary::after {
+  content: "▾";
+  float: right;
+  opacity: 0.8;
+}
+
+.action-group-advanced[open] > summary::after {
+  content: "▴";
+}
+
+.action-advanced-body {
+  padding: 0 14px 14px;
+  border-top: 1px solid rgba(198, 244, 255, 0.14);
+}
+
 .action-explain {
   min-height: 18px;
 }
 
 .action-group .hint {
   margin-top: 8px;
+}
+
+.kv-art {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.table-art {
+  width: 100%;
+  min-height: 120px;
+  border-radius: 12px;
+  border: 1px solid rgba(198, 244, 255, 0.22);
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.search-console-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.ai-suspicion-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-suspicion-item {
+  padding: 10px 12px;
+  border: 1px solid rgba(198, 244, 255, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.ai-suspicion-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ai-suspicion-detail {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.ai-suspicion-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 62px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(198, 244, 255, 0.2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.ai-suspicion-state.flag {
+  border-color: rgba(255, 209, 102, 0.45);
+  background: rgba(255, 209, 102, 0.12);
+  color: rgba(255, 225, 138, 0.96);
+}
+
+.ai-suspicion-state.review {
+  border-color: rgba(189, 245, 255, 0.28);
+  background: rgba(189, 245, 255, 0.08);
+  color: rgba(230, 251, 255, 0.92);
+}
+
+.ai-suspicion-state.clear {
+  border-color: rgba(143, 232, 255, 0.34);
+  background: rgba(143, 232, 255, 0.10);
+  color: rgba(183, 245, 255, 0.96);
 }
 
 .help-page {

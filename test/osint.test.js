@@ -14,12 +14,30 @@ test("reverseSearchUrl builds expected engine URLs", () => {
     reverseSearchUrl("tineye", url),
     `https://tineye.com/search?url=${encodeURIComponent(url)}`,
   );
+  assert.equal(
+    reverseSearchUrl("saucenao", url),
+    `https://saucenao.com/search.php?url=${encodeURIComponent(url)}`,
+  );
+  assert.equal(
+    reverseSearchUrl("iqdb", url),
+    `https://iqdb.org/?url=${encodeURIComponent(url)}`,
+  );
+  assert.equal(
+    reverseSearchUrl("baidu", url),
+    `https://image.baidu.com/n/pc_search?queryImageUrl=${encodeURIComponent(url)}`,
+  );
+  assert.equal(
+    reverseSearchUrl("ascii2d", url),
+    `https://ascii2d.net/search/url/${encodeURIComponent(url)}`,
+  );
   assert.equal(reverseSearchUrl("nope", url), "");
 });
 
 test("reverseSearchUploadPage returns engine upload pages", () => {
   assert.equal(reverseSearchUploadPage("lens"), "https://lens.google.com/upload");
   assert.equal(reverseSearchUploadPage("bing"), "https://www.bing.com/visualsearch");
+  assert.equal(reverseSearchUploadPage("saucenao"), "https://saucenao.com/");
+  assert.equal(reverseSearchUploadPage("ascii2d"), "https://ascii2d.net/");
   assert.equal(reverseSearchUploadPage("nope"), "about:blank");
 });
 
