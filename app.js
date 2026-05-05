@@ -76,6 +76,8 @@ const elements = {
   hostStatsOut: document.getElementById("hostStatsOut"),
   sharePill: document.getElementById("sharePill"),
   btnSearchAll: document.getElementById("btnSearchAll"),
+  btnQuickLens: document.getElementById("btnQuickLens"),
+  btnQuickOcr: document.getElementById("btnQuickOcr"),
   btnRunPass: document.getElementById("btnRunPass"),
   btnCopyReport: document.getElementById("btnCopyReport"),
   btnEvidencePack: document.getElementById("btnEvidencePack"),
@@ -1651,6 +1653,8 @@ function setUiBusy(busy, label = "") {
     elements.shareProvider,
     elements.btnCopyPublicUrl,
     elements.btnSearchAll,
+    elements.btnQuickLens,
+    elements.btnQuickOcr,
     elements.btnRunPass,
     elements.btnCopyReport,
     elements.btnEvidencePack,
@@ -1752,6 +1756,8 @@ function setButtonsEnabled(enabled) {
     elements.btnRunOcr,
     elements.btnChooseCompare,
     elements.btnSearchAll,
+    elements.btnQuickLens,
+    elements.btnQuickOcr,
     elements.btnRunPass,
     elements.btnCopyReport,
     elements.missionPreset,
@@ -3264,6 +3270,8 @@ async function handleSearchAll({ autoEnableShare = false, openLens = true } = {}
 
 function wireReverseSearchButtons() {
   elements.btnSearchAll.addEventListener("click", () => void handleSearchAll());
+  elements.btnQuickLens?.addEventListener("click", () => void handleQuickJump("lens"));
+  elements.btnQuickOcr?.addEventListener("click", () => void runMissionPreset("fast"));
   elements.btnOpenLens.addEventListener("click", () => void handleQuickJump("lens"));
   elements.btnOpenBing.addEventListener("click", () => void handleQuickJump("bing"));
   elements.btnOpenTineye.addEventListener("click", () => void handleQuickJump("tineye"));

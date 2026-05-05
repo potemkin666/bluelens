@@ -73,70 +73,96 @@
           </button>
         </div>
 
-        <div class="action-stack" aria-label="Primary and secondary actions">
-          <div class="action-group action-group-primary">
-            <div class="field-label">Step 2: Run one workflow</div>
-            <div id="missionRow" class="row row-tight">
-              <select id="missionPreset" class="select" disabled title="One mission = one run">
-                <option value="fast">Quick OCR</option>
-                <option value="deep">Deep OCR</option>
-                <option value="share_search">Upload + Launchpad</option>
-                <option value="handle_recon">Handle Recon</option>
-                <option value="domain_recon">Domain Recon</option>
-                <option value="metadata_pass">Metadata Pass</option>
-                <option value="cross_engine_swarm">Cross-Engine Swarm</option>
-              </select>
-              <button id="btnRunMission" class="btn" type="button" disabled title="Run the selected workflow">Run selected</button>
-            </div>
-            <div id="missionExplain" class="hint action-explain">Load an image first, then run one workflow.</div>
-          </div>
-
-          <div class="action-group action-group-secondary">
-            <div class="field-label">Step 3: optional follow-up tools</div>
-            <div id="manualRow" class="row row-tight">
+        <div class="action-stack" aria-label="Quick actions">
+          <div class="action-group action-group-primary action-group-easy">
+            <div class="field-label">Quick actions</div>
+            <div class="row row-tight quick-actions-row">
+              <button
+                id="btnQuickLens"
+                class="btn"
+                type="button"
+                disabled
+                data-ico="⌕"
+                title="Upload once and open Lens."
+              >
+                Search Lens
+              </button>
               <button
                 id="btnSearchAll"
                 class="btn btn-secondary"
                 type="button"
                 disabled
-                data-ico="⌕"
-                title="Uploads once, opens Lens, and prepares manual links for the other providers."
+                data-ico="◎"
+                title="Upload once and prepare all engine links."
               >
-                Upload + Prepare Links
+                Search All
               </button>
               <button
-                id="btnRunPass"
+                id="btnQuickOcr"
                 class="btn btn-secondary"
                 type="button"
                 disabled
                 data-ico="⚡"
-                title="Runs OCR and refreshes attribution and metadata-suspicion cues."
+                title="Run the fast local OCR pass."
               >
-                Refresh Local Analysis
-              </button>
-              <button
-                id="btnCopyReport"
-                class="btn btn-ghost"
-                type="button"
-                disabled
-                data-ico="⎘"
-                title="Copies a human-readable report (Markdown + embedded JSON). Shift-click for JSON only."
-              >
-                Copy Report
-              </button>
-              <button
-                id="btnEvidencePack"
-                class="btn btn-ghost"
-                type="button"
-                disabled
-                data-ico="🧾"
-                title="Download a reproducible evidence package with manifest, hashes, notes, and artifacts."
-              >
-                Evidence Pack
+                Run OCR
               </button>
             </div>
-            <div class="hint">Use these after local review is ready. Upload happens only when you choose an upload action.</div>
           </div>
+
+          <details id="workflowAdvanced" class="action-group action-group-advanced">
+            <summary title="Workflows, exports, and extra tools">Advanced</summary>
+            <div class="action-advanced-body">
+              <div class="field-label">Workflows</div>
+              <div id="missionRow" class="row row-tight">
+                <select id="missionPreset" class="select" disabled title="One mission = one run">
+                  <option value="fast">Quick OCR</option>
+                  <option value="deep">Deep OCR</option>
+                  <option value="share_search">Upload + Launchpad</option>
+                  <option value="handle_recon">Handle Recon</option>
+                  <option value="domain_recon">Domain Recon</option>
+                  <option value="metadata_pass">Metadata Pass</option>
+                  <option value="cross_engine_swarm">Cross-Engine Swarm</option>
+                </select>
+                <button id="btnRunMission" class="btn" type="button" disabled title="Run the selected workflow">Run selected</button>
+              </div>
+              <div id="missionExplain" class="hint action-explain">Load an image first, then run one workflow.</div>
+
+              <div class="field-label">Extras</div>
+              <div id="manualRow" class="row row-tight">
+                <button
+                  id="btnRunPass"
+                  class="btn btn-secondary"
+                  type="button"
+                  disabled
+                  data-ico="⚡"
+                  title="Runs OCR and refreshes attribution and metadata-suspicion cues."
+                >
+                  Refresh Local
+                </button>
+                <button
+                  id="btnCopyReport"
+                  class="btn btn-ghost"
+                  type="button"
+                  disabled
+                  data-ico="⎘"
+                  title="Copies a human-readable report (Markdown + embedded JSON). Shift-click for JSON only."
+                >
+                  Copy Report
+                </button>
+                <button
+                  id="btnEvidencePack"
+                  class="btn btn-ghost"
+                  type="button"
+                  disabled
+                  data-ico="🧾"
+                  title="Download a reproducible evidence package with manifest, hashes, notes, and artifacts."
+                >
+                  Evidence Pack
+                </button>
+              </div>
+            </div>
+          </details>
         </div>
 
         <div class="grid console-grid" aria-label="Quick facts">
@@ -165,6 +191,15 @@
             <div class="k">Attribution</div>
             <div id="attrHints" class="v">—</div>
           </div>
+          <div class="kv kv-art">
+            <div class="k">Reference</div>
+            <img
+              class="table-art"
+              src="https://github.com/user-attachments/assets/59733571-36f8-4cec-b18c-52e88b2fb9ea"
+              alt="BlueLens visual reference"
+              loading="lazy"
+            />
+          </div>
         </div>
 
         <div class="tabs" role="tablist" aria-label="OSINT tabs">
@@ -177,9 +212,12 @@
 
         <div class="tabpanels">
           <div class="tabpanel active" data-panel="search" role="tabpanel">
+            <details id="searchConsoleAdvanced" class="drawer hud search-console-drawer">
+              <summary title="Share settings, workflows, intake, and extra tools">Advanced</summary>
+              <div class="drawer-body search-console-stack">
             <div class="subcard hud" data-hud-key="search">
               <div class="subcard-head">
-                <div class="subcard-title">Source + Sharing</div>
+                <div class="subcard-title">Share</div>
                 <div class="pill-row">
                   <span class="pill pill-muted" id="sharePill">Not shared</span>
                   <span class="pill pill-warn" id="gpsPill" hidden>GPS present</span>
@@ -189,26 +227,26 @@
 
               <div class="grid console-grid">
                 <div class="kv">
-                  <div class="k">Where obtained</div>
+                  <div class="k">Source</div>
                   <input id="srcWhere" class="input" placeholder="URL / platform / channel" />
                 </div>
                 <div class="kv">
-                  <div class="k">When obtained</div>
+                  <div class="k">Captured</div>
                   <input id="srcWhen" class="input" type="datetime-local" />
                 </div>
                 <div class="kv">
-                  <div class="k">Who provided</div>
+                  <div class="k">Sender</div>
                   <input id="srcWho" class="input" placeholder="Name / handle / org" />
                 </div>
                 <div class="kv">
-                  <div class="k">Original filename</div>
+                  <div class="k">Original</div>
                   <input id="srcOrig" class="input" placeholder="Original name (if different)" />
                 </div>
               </div>
 
               <div class="row row-tight">
                 <label class="field" title="Manual analyst note for how much you trust your current findings">
-                  <span class="field-label">Analyst confidence (manual)</span>
+                  <span class="field-label">Confidence</span>
                   <select id="confLevel" class="select">
                     <option value="unverified">Unverified</option>
                     <option value="likely">Likely</option>
@@ -219,23 +257,23 @@
 
               <div class="mono mono-box" title="Uploading only happens after you choose a launch action">
                 <input id="chkEnableShare" type="checkbox" checked hidden />
-                Uploads stay off until you run Upload + Launchpad, Upload + Prepare Links, or an engine open action.
+                Uploads start only when you choose search.
               </div>
 
               <div class="kv">
                 <div class="k">Manual notes</div>
-                <textarea id="manualNotes" class="input textarea" rows="3" placeholder="Why this image matters, caveats, hypotheses, or handling notes"></textarea>
+                <textarea id="manualNotes" class="input textarea" rows="3" placeholder="Notes"></textarea>
               </div>
 
               <label class="toggle toggle-mini" title="Uploads the clean copy (re-encoded) instead of the original file">
                 <input id="chkShareSafe" type="checkbox" />
                 <span class="toggle-ui" aria-hidden="true"></span>
-                <span class="toggle-text">Share safe (upload clean copy)</span>
+                <span class="toggle-text">Clean upload copy</span>
               </label>
 
               <div class="row row-tight">
                 <select id="shareProvider" class="select" disabled title="Automatic host selection — the local proxy ranks temporary hosts and records which one actually accepted the upload.">
-                  <option value="0x0">Automatic host selection (ranked failover)</option>
+                  <option value="0x0">Auto host</option>
                 </select>
                 <button id="btnCopyPublicUrl" class="btn btn-ghost" type="button" disabled title="Copy public URL">
                   Copy URL
@@ -264,7 +302,7 @@
                 <span class="pill pill-muted">structured</span>
               </div>
               <div id="missionOutputOut" class="mono mono-box mission-output-box">
-                Run a recon mission to structure handles, domains, metadata, or engine swarm prep.
+                Run a workflow.
               </div>
             </div>
 
@@ -273,12 +311,11 @@
                 <div class="subcard-title">Result Intake</div>
                 <span class="pill pill-muted">dedupe queue</span>
               </div>
-              <div class="hint">Paste one result per line as <span class="mono">URL | title | snippet | engine</span> or <span class="mono">engine[TAB]URL[TAB]title[TAB]snippet</span>.</div>
               <textarea
                 id="resultIntakeInput"
                 class="input textarea"
                 rows="4"
-                placeholder="https://example.com/post | Account mirror found | Same crop and caption fragment | yandex"
+                placeholder="URL | title | snippet | engine"
               ></textarea>
               <div class="row row-tight">
                 <button id="btnIngestResults" class="btn btn-secondary" type="button" disabled title="Normalize and merge pasted findings">
@@ -292,12 +329,12 @@
                 </button>
               </div>
               <div id="resultIntakeSummary" class="mono mono-box mission-output-box">
-                No external findings ingested yet.
+                No results yet.
               </div>
             </div>
 
             <details class="drawer hud" data-hud-key="advanced">
-              <summary title="More controls and nerdy details">Advanced</summary>
+              <summary title="More tools">More tools</summary>
               <div class="drawer-body">
             <div class="subcard hud" data-hud-key="mutate">
               <div class="subcard-head">
@@ -377,6 +414,8 @@
                   </label>
                   <div class="hint">BlueLens starts in a restrained operator theme. Turn on Fun mode if you want the aquarium.</div>
                 </div>
+              </div>
+            </details>
               </div>
             </details>
           </div>
