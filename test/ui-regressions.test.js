@@ -51,6 +51,7 @@ test("package startup contract declares Node 18+ and a server start script", () 
 test("search-all UI is framed as link preparation, not automatic querying", () => {
   assert.match(indexHtml, /id="btnSearchAll"[\s\S]*class="btn btn-search-cta"/);
   assert.match(indexHtml, />\s*SEARCH\s*</);
+  assert.match(indexHtml, /Hit SEARCH to launch the full reverse-search board\./);
   assert.match(appJs, /Uploading \+ preparing links…/);
   assert.match(appJs, /Upload \+ Prepare Links/);
   assert.match(appJs, /Paste titles, snippets, and URLs back into Result Intake/);
@@ -152,6 +153,8 @@ test("preview exposes crop-and-search controls for selected regions", () => {
   assert.match(stylesCss, /\.preview\.crop-ready/);
   assert.match(appJs, /function setupCropTool\(/);
   assert.match(appJs, /function ensureCropSearchFile\(/);
+  assert.match(appJs, /const MIN_CROP_SIZE_PX = 18;/);
+  assert.match(appJs, /const CROP_JPEG_QUALITY = 0\.94;/);
   assert.match(appJs, /SEARCH now uses only the selected region/);
   assert.match(appJs, /if \(isCropActive\(\)\) return "crop";/);
   assert.match(appJs, /if \(state\.shareSafe\) return "clean";/);

@@ -332,6 +332,8 @@ const FX_FUN_MODE_DEFAULT = Boolean(FX_CONFIG.funModeDefault);
 const FX_HUD_DEFAULT = Boolean(FX_CONFIG.hudDefault);
 const FX_CHROME_DEFAULT = Boolean(FX_CONFIG.chromeDefault);
 const COMPARE_DIFF_SIZE = 96;
+const MIN_CROP_SIZE_PX = 18;
+const CROP_JPEG_QUALITY = 0.94;
 const ENGINE_SWARM_DELAY_MS = 260;
 const RUN_QUEUE_STATUS = {
   queued: "queued",
@@ -4140,7 +4142,7 @@ async function ensureCropSearchFile() {
   canvas.height = Math.max(1, height);
   const ctx = canvas.getContext("2d");
   ctx.drawImage(img, x, y, width, height, 0, 0, canvas.width, canvas.height);
-  const blob = await canvasToBlob(canvas, outType, 0.94);
+  const blob = await canvasToBlob(canvas, outType, CROP_JPEG_QUALITY);
   const baseName = (state.file.name || "image").replace(/\.[^/.]+$/, "") || "image";
   revokeCropObjectUrl();
   state.crop.objectUrl = URL.createObjectURL(blob);
@@ -4208,7 +4210,7 @@ function setupCropTool() {
     state.crop.start = null;
     const metrics = getPreviewImageMetrics();
     const rect = state.crop.rect;
-    if (!metrics || rect.width < 18 || rect.height < 18) {
+    if (!metrics || rect.width < MIN_CROP_SIZE_PX || rect.height < MIN_CROP_SIZE_PX) {
       clearCropSelection({ quiet: true });
       setCropStatus("Crop too small. Drag a larger box to search just that section.");
       return;
