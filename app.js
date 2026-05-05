@@ -2512,6 +2512,7 @@ function setSearchQueryOutput(output) {
 }
 
 function parseFilenameStem(name) {
+  if (appHelpers.parseFilenameStem) return appHelpers.parseFilenameStem(name);
   const raw = String(name || "").trim().replace(/\.[^.]+$/, "");
   return raw.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -2521,6 +2522,7 @@ function getCurrentReconContext() {
 }
 
 function summarizeDocumentLayout(text) {
+  if (appHelpers.summarizeDocumentLayout) return appHelpers.summarizeDocumentLayout(text);
   const lines = String(text || "")
     .split(/\r?\n/)
     .map((line) => line.trim())
@@ -2539,6 +2541,7 @@ function summarizeDocumentLayout(text) {
 }
 
 function inferDocumentKinds({ text = "", fileName = "", ent = {} } = {}) {
+  if (appHelpers.inferDocumentKinds) return appHelpers.inferDocumentKinds({ text, fileName, ent });
   const raw = `${text}\n${fileName}`.toLowerCase();
   const kinds = [];
   const add = (label, patterns) => {
@@ -2560,6 +2563,7 @@ function inferDocumentKinds({ text = "", fileName = "", ent = {} } = {}) {
 }
 
 function collectLogoLookupCandidates({ text = "", ent = {}, domains = [], handles = [] } = {}) {
+  if (appHelpers.collectLogoLookupCandidates) return appHelpers.collectLogoLookupCandidates({ text, ent, domains, handles });
   const candidates = [];
   const push = (value) => {
     const clean = String(value || "").trim();
@@ -2651,39 +2655,24 @@ function buildDocumentImageOutput(context = getCurrentReconContext()) {
 
 function buildSearchQueryGeneratorOutput(context = getCurrentReconContext()) {
   const { ent = {}, handles = [], domains = [] } = context || {};
-  const kinds = inferDocumentKinds({ text: state.ocrText || "", fileName: state.file?.name || "", ent });
-  const logoCandidates = collectLogoLookupCandidates({ text: state.ocrText || "", ent, domains, handles });
-  const fileStem = parseFilenameStem(state.file?.name || "");
-  const dims = elements.metaDim?.textContent || "";
   const language = getOcrLanguageLabel(elements.ocrLang?.value || OCR_DEFAULT_LANGUAGE);
-  const topLine = String(state.ocrText || "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .find((line) => line.length >= 4) || "";
-  const queries = [];
-  const seen = new Set();
-  const addQuery = (label, query, why) => {
-    const clean = String(query || "").trim();
-    if (!clean || seen.has(clean)) return;
-    seen.add(clean);
-    queries.push({
-      label,
-      meta: clean,
-      lines: [why],
-      links: [{ label: "Search", url: buildSearchLink(clean) }],
-    });
-  };
-  if (logoCandidates[0] && ent.locations?.[0]) addQuery("Brand + city", `"${logoCandidates[0]}" "${ent.locations[0]}"`, "Combine the strongest brand/logo clue with the strongest location clue.");
-  if (topLine && logoCandidates[0]) addQuery("OCR text + logo", `"${topLine.slice(0, 80)}" "${logoCandidates[0]}"`, "Bind the main OCR line to the strongest logo/brand candidate.");
-  if (kinds[0]) addQuery("Object + language", `"${kinds[0]}" "${language}"`, "Search the detected document/object type together with the OCR language.");
-  if (fileStem || dims) addQuery("File name + dimensions", `"${fileStem || "image"}" "${dims || "unknown dimensions"}"`, "Use file naming residue with the visible pixel dimensions.");
-  if (handles[0]) {
-    const platformHint = domains.find((domain) => /(instagram|tiktok|x\.com|twitter|facebook|linkedin|telegram)/i.test(domain)) || "instagram OR tiktok OR x";
-    addQuery("Visible username + platform", `"${handles[0]}" ${platformHint}`, "Pivot the visible handle against the likeliest platform hint.");
-  }
-  if (domains[0] && logoCandidates[0]) addQuery("Logo + domain", `"${logoCandidates[0]}" "${domains[0]}"`, "Pair a brand/logo clue with the strongest normalized domain.");
-  if (topLine) addQuery("Quoted OCR line", `"${topLine.slice(0, 96)}"`, "Quoted text search for the most stable visible line.");
+  const querySpecs = appHelpers.buildSearchQuerySpecs
+    ? appHelpers.buildSearchQuerySpecs({
+        text: state.ocrText || "",
+        fileName: state.file?.name || "",
+        dimensions: elements.metaDim?.textContent || "",
+        language,
+        ent,
+        handles,
+        domains,
+      })
+    : [];
+  const queries = querySpecs.map((spec) => ({
+    label: spec.label,
+    meta: spec.query,
+    lines: [spec.why],
+    links: [{ label: "Search", url: buildSearchLink(spec.query) }],
+  }));
   return {
     mission: "query_generator",
     summary: queries.length

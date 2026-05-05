@@ -12,6 +12,7 @@ const startCmd = fs.readFileSync(path.join(__dirname, "..", "bluelens-start.cmd"
 const desktopIconPs1 = fs.readFileSync(path.join(__dirname, "..", "create-desktop-icon.ps1"), "utf8");
 const launchpadCoreJs = fs.readFileSync(path.join(__dirname, "..", "launchpad-core.js"), "utf8");
 const ocrEntitiesUiJs = fs.readFileSync(path.join(__dirname, "..", "ocr-entities-ui.js"), "utf8");
+const bluelensHelpersJs = fs.readFileSync(path.join(__dirname, "..", "bluelens-helpers.js"), "utf8");
 const packageJson = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
 const readmeMd = fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8");
 const faviconSvgPath = path.join(__dirname, "..", "favicon.svg");
@@ -191,11 +192,11 @@ test("document-image mode and query generator build OCR-driven review output", (
   assert.match(appJs, /Detected kinds:/);
   assert.match(appJs, /Heading candidates:/);
   assert.match(appJs, /Candidates: /);
-  assert.match(appJs, /Brand \+ city/);
-  assert.match(appJs, /OCR text \+ logo/);
-  assert.match(appJs, /Object \+ language/);
-  assert.match(appJs, /File name \+ dimensions/);
-  assert.match(appJs, /Visible username \+ platform/);
+  assert.match(bluelensHelpersJs, /Brand \+ city/);
+  assert.match(bluelensHelpersJs, /OCR text \+ logo/);
+  assert.match(bluelensHelpersJs, /Object \+ language/);
+  assert.match(bluelensHelpersJs, /File name \+ dimensions/);
+  assert.match(bluelensHelpersJs, /Visible username \+ platform/);
   assert.match(appJs, /document_image_mode:/);
   assert.match(appJs, /search_query_generator:/);
 });

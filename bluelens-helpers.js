@@ -85,6 +85,108 @@
     return Array.from(new Set(pivots)).slice(0, 8);
   }
 
+  function summarizeDocumentLayout(text) {
+    const lines = String(text || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const paragraphBreaks = String(text || "").split(/\n\s*\n/).filter((block) => block.trim()).length;
+    const headingCandidates = lines
+      .filter((line) => line.length >= 4 && line.length <= 72 && (line === line.toUpperCase() || /^[A-Z][A-Za-z0-9 '&/-]{3,}$/.test(line)))
+      .slice(0, 4);
+    const keyValueRows = lines
+      .filter((line) => /[:|]/.test(line) || /\b(total|date|name|address|price|receipt|invoice|menu|certificate|issued|expires)\b/i.test(line))
+      .slice(0, 6);
+    const tabularRows = lines
+      .filter((line) => /\d/.test(line) && /[$€£¥]|(?:\s{2,}|\t)|\bqty\b|\btotal\b|\bsubtotal\b/i.test(line))
+      .slice(0, 6);
+    return {
+      line_count: lines.length,
+      paragraph_count: paragraphBreaks,
+      heading_candidates: headingCandidates,
+      key_value_rows: keyValueRows,
+      tabular_rows: tabularRows,
+    };
+  }
+
+  function inferDocumentKinds({ text = "", fileName = "", ent = {} } = {}) {
+    const raw = `${text}\n${fileName}`.toLowerCase();
+    const kinds = [];
+    const add = (label, patterns) => {
+      if (patterns.some((pattern) => pattern.test(raw))) kinds.push(label);
+    };
+    add("letter", [/\bdear\b/, /\bsincerely\b/, /\bto whom it may concern\b/]);
+    add("form", [/\bapplication\b/, /\bform\b/, /\bdate of birth\b/, /\bsignature\b/]);
+    add("id", [/\bid\b/, /\bpassport\b/, /\bdriver'?s license\b/, /\bdate of birth\b/, /\bexpires\b/]);
+    add("leaflet", [/\bleaflet\b/, /\bhandout\b/, /\bpamphlet\b/]);
+    add("pdf", [/\.pdf\b/, /\bpage \d+ of \d+\b/, /\badobe\b/]);
+    add("poster", [/\bposter\b/, /\bcoming soon\b/, /\bnow showing\b/]);
+    add("event flyer", [/\bjoin us\b/, /\brsvp\b/, /\btickets?\b/, /\bdoors open\b/, /\bfriday\b/, /\bsaturday\b/]);
+    add("protest sign", [/\bjustice\b/, /\bstrike\b/, /\bsolidarity\b/, /\bno war\b/, /\bworkers\b/, /\bmarch\b/]);
+    add("menu", [/\bmenu\b/, /\bappetizers?\b/, /\bentrée\b/, /\bdessert\b/, /\bspecials?\b/]);
+    add("receipt", [/\breceipt\b/, /\bsubtotal\b/, /\btax\b/, /\bchange\b/, /\bvisa\b/, /\bmastercard\b/]);
+    add("certificate", [/\bcertificate\b/, /\bawarded\b/, /\bcertify\b/, /\bissued on\b/]);
+    if ((ent.dates?.length || 0) >= 2 && /\baddress\b|\bphone\b|\bemail\b/i.test(raw) && !kinds.includes("form")) kinds.push("form");
+    return Array.from(new Set(kinds));
+  }
+
+  function collectLogoLookupCandidates({ text = "", ent = {}, domains = [], handles = [] } = {}) {
+    const candidates = [];
+    const push = (value) => {
+      const clean = String(value || "").trim();
+      if (!clean) return;
+      if (candidates.some((item) => item.toLowerCase() === clean.toLowerCase())) return;
+      candidates.push(clean);
+    };
+    for (const org of ent.organizations || []) push(org);
+    for (const domain of domains || []) push(String(domain).replace(/^www\./i, ""));
+    for (const handle of handles || []) push(String(handle).replace(/^@/, ""));
+    const lineCandidates = String(text || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 6)
+      .flatMap((line) => line.match(/\b[A-Z][A-Za-z0-9&'.-]{2,}\b/g) || [])
+      .filter((value) => !/^(the|and|for|with|from|menu|receipt|invoice|certificate|event|official)$/i.test(value));
+    for (const lineCandidate of lineCandidates) push(lineCandidate);
+    return candidates.slice(0, 6);
+  }
+
+  function parseFilenameStem(name) {
+    const raw = String(name || "").trim().replace(/\.[^.]+$/, "");
+    return raw.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+  }
+
+  function buildSearchQuerySpecs({ text = "", fileName = "", dimensions = "", language = "English", ent = {}, handles = [], domains = [] } = {}) {
+    const kinds = inferDocumentKinds({ text, fileName, ent });
+    const logoCandidates = collectLogoLookupCandidates({ text, ent, domains, handles });
+    const fileStem = parseFilenameStem(fileName);
+    const topLine = String(text || "")
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .find((line) => line.length >= 4) || "";
+    const queries = [];
+    const seen = new Set();
+    const add = (label, query, why) => {
+      const clean = String(query || "").trim();
+      if (!clean || seen.has(clean)) return;
+      seen.add(clean);
+      queries.push({ label, query: clean, why });
+    };
+    if (logoCandidates[0] && ent.locations?.[0]) add("Brand + city", `"${logoCandidates[0]}" "${ent.locations[0]}"`, "Combine the strongest brand/logo clue with the strongest location clue.");
+    if (topLine && logoCandidates[0]) add("OCR text + logo", `"${topLine.slice(0, 80)}" "${logoCandidates[0]}"`, "Bind the main OCR line to the strongest logo/brand candidate.");
+    if (kinds[0]) add("Object + language", `"${kinds[0]}" "${language}"`, "Search the detected document/object type together with the OCR language.");
+    if (fileStem || dimensions) add("File name + dimensions", `"${fileStem || "image"}" "${dimensions || "unknown dimensions"}"`, "Use file naming residue with the visible pixel dimensions.");
+    if (handles[0]) {
+      const platformHint = domains.find((domain) => /(instagram|tiktok|x\.com|twitter|facebook|linkedin|telegram)/i.test(domain)) || "instagram OR tiktok OR x";
+      add("Visible username + platform", `"${handles[0]}" ${platformHint}`, "Pivot the visible handle against the likeliest platform hint.");
+    }
+    if (domains[0] && logoCandidates[0]) add("Logo + domain", `"${logoCandidates[0]}" "${domains[0]}"`, "Pair a brand/logo clue with the strongest normalized domain.");
+    if (topLine) add("Quoted OCR line", `"${topLine.slice(0, 96)}"`, "Quoted text search for the most stable visible line.");
+    return queries;
+  }
+
   function normalizeHandleValue(value) {
     const clean = String(value || "").trim().replace(/^@+/, "").toLowerCase();
     return clean ? `@${clean}` : "";
@@ -563,11 +665,16 @@
   const api = {
     buildEntityGraph,
     buildInvestigationTimeline,
+    buildSearchQuerySpecs,
+    collectLogoLookupCandidates,
     extractPivotsFromReport,
     getBatchSortValue,
     hammingHex,
+    inferDocumentKinds,
     parseDimensions,
+    parseFilenameStem,
     sortBatchItems,
+    summarizeDocumentLayout,
   };
 
   try {

@@ -5,12 +5,17 @@ const path = require("node:path");
 const { spawn } = require("node:child_process");
 
 const {
+  buildSearchQuerySpecs,
   buildEntityGraph,
   buildInvestigationTimeline,
+  collectLogoLookupCandidates,
   extractPivotsFromReport,
   hammingHex,
+  inferDocumentKinds,
   parseDimensions,
+  parseFilenameStem,
   sortBatchItems,
+  summarizeDocumentLayout,
 } = require("../bluelens-helpers.js");
 
 const SERVER_START_TIMEOUT = 5000;
@@ -53,6 +58,65 @@ test("extractPivotsFromReport keeps OCR handles to a single @ prefix", () => {
   assert.ok(pivots.includes("@alice"));
   assert.ok(pivots.includes("@bob"));
   assert.ok(!pivots.includes("@@alice"));
+});
+
+test("document helpers summarize layout, infer document kinds, and collect logo candidates", () => {
+  const text = [
+    "CITY MENU",
+    "",
+    "Name: Alex Example",
+    "Date: 2024-05-01",
+    "Burger      $12.00",
+    "Subtotal    $12.00",
+  ].join("\n");
+
+  const layout = summarizeDocumentLayout(text);
+  assert.equal(layout.line_count, 5);
+  assert.ok(layout.heading_candidates.includes("CITY MENU"));
+  assert.ok(layout.key_value_rows.some((line) => line.includes("Name: Alex Example")));
+  assert.ok(layout.tabular_rows.some((line) => line.includes("Subtotal")));
+
+  const kinds = inferDocumentKinds({
+    text: `${text}\nDessert\nAppetizers`,
+    fileName: "dinner-menu.pdf",
+    ent: { dates: ["2024-05-01", "2024-05-02"] },
+  });
+  assert.ok(kinds.includes("menu"));
+  assert.ok(kinds.includes("pdf"));
+
+  const logos = collectLogoLookupCandidates({
+    text: "ACME FESTIVAL\nOfficial Poster",
+    ent: { organizations: ["Acme Org"] },
+    domains: ["events.example.org"],
+    handles: ["@acmefest"],
+  });
+  assert.deepEqual(logos.slice(0, 4), ["Acme Org", "events.example.org", "acmefest", "ACME"]);
+});
+
+test("query generator specs combine OCR brands, locations, handles, filename, and dimensions", () => {
+  assert.equal(parseFilenameStem("march_flyer-final.png"), "march flyer final");
+
+  const specs = buildSearchQuerySpecs({
+    text: "ACME FESTIVAL\nJOIN US THIS FRIDAY",
+    fileName: "march_flyer-final.png",
+    dimensions: "1080 × 1350",
+    language: "English",
+    ent: {
+      organizations: ["Acme Festival"],
+      locations: ["Berlin"],
+    },
+    handles: ["@acmefest"],
+    domains: ["instagram.com"],
+  });
+
+  const labels = specs.map((spec) => spec.label);
+  assert.ok(labels.includes("Brand + city"));
+  assert.ok(labels.includes("OCR text + logo"));
+  assert.ok(labels.includes("Object + language"));
+  assert.ok(labels.includes("File name + dimensions"));
+  assert.ok(labels.includes("Visible username + platform"));
+  assert.ok(specs.some((spec) => spec.query.includes('"Acme Festival" "Berlin"')));
+  assert.ok(specs.some((spec) => spec.query.includes('"@acmefest" instagram.com')));
 });
 
 test("investigation graph keeps file/entity provenance and evidence counts", () => {
