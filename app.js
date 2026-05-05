@@ -6208,8 +6208,6 @@ async function analyzeFile(file) {
   reset();
   state.file = file;
   clearCropSelection({ quiet: true });
-  renderCropSelection();
-  updateCropButtons();
 
   elements.metaName.textContent = file.name || "—";
   elements.metaType.textContent = file.type || "—";

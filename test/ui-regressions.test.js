@@ -276,6 +276,7 @@ test("easy mode keeps the search launchpad visible with a giant primary CTA", ()
   assert.match(indexHtml, /id="btnSearchAll"/);
   assert.match(indexHtml, /btn-search-cta/);
   assert.match(indexHtml, /id="workflowAdvanced"/);
+  assert.match(indexHtml, /<section id="searchConsoleAdvanced" class="search-console-panel">/);
   assert.match(indexHtml, /id="searchConsoleAdvanced"/);
   assert.doesNotMatch(indexHtml, /<details id="searchConsoleAdvanced"/);
   assert.match(indexHtml, />AI-image suspicion</);
