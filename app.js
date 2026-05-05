@@ -290,7 +290,7 @@ const METADATA_SUSPICION_BANDS = {
 const UTF8_ENCODER = new TextEncoder();
 const TAR_HEADER_SIZE = 512;
 const TAR_END_PADDING = 1024;
-// Treat near-square crops as a weak review cue only. An 8% delta still catches common 1:1-ish AI art/export canvases
+// Treat near-square crops as a weak review cue only. A 0.08 ratio delta (about an 8% difference) still catches common 1:1-ish AI art/export canvases
 // without sweeping in most normal landscape/portrait photos.
 const AI_SQUAREISH_ASPECT_DELTA = 0.08;
 // Treat ~2.5MP+ PNG/WebP images without provenance as worth a texture pass; this is only a weak review cue,

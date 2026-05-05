@@ -333,7 +333,7 @@ test("readme reflects the current image-recon workflow and embeds the attached i
   assert.match(readmeMd, /False-positive suppressor/);
   assert.match(readmeMd, /Source contradiction panel/);
   assert.match(readmeMd, /Likely original \/ repost labeling/);
-  assert.match(readmeMd, /385bc559-333d-4d71-858f-18e993c3eade/);
+  assert.match(readmeMd, /github\.com\/user-attachments\/assets\/[^"\s)]+/);
 });
 
 test("batch dashboard exposes aggregated entity follow-up controls", () => {
