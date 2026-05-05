@@ -13,8 +13,13 @@ const elements = {
   btnChoose: document.getElementById("btnChoose"),
   btnReset: document.getElementById("btnReset"),
   btnDownloadClean: document.getElementById("btnDownloadClean"),
+  previewStage: document.getElementById("previewStage"),
   previewImg: document.getElementById("previewImg"),
+  previewCropBox: document.getElementById("previewCropBox"),
   previewEmpty: document.getElementById("previewEmpty"),
+  btnSearchCrop: document.getElementById("btnSearchCrop"),
+  btnClearCrop: document.getElementById("btnClearCrop"),
+  cropStatusOut: document.getElementById("cropStatusOut"),
   statusPill: document.getElementById("statusPill"),
   statusLine: document.getElementById("statusLine"),
   progressPanel: document.getElementById("progressPanel"),
@@ -491,6 +496,14 @@ const state = {
     objectUrl: null,
     dhash: "",
     diffScore: null,
+  },
+  crop: {
+    rect: null,
+    file: null,
+    objectUrl: null,
+    dragging: false,
+    pointerId: null,
+    start: null,
   },
   signals: {
     sha256: "",
@@ -2198,6 +2211,7 @@ function setButtonsEnabled(enabled) {
     if (!("disabled" in b)) continue;
     b.disabled = state.uiBusy ? true : !enabled;
   }
+  updateCropButtons();
 }
 
 function reset() {
@@ -2248,6 +2262,8 @@ function reset() {
   state.mutations = [];
   if (state.compare?.objectUrl) URL.revokeObjectURL(state.compare.objectUrl);
   state.compare = { file: null, objectUrl: null, dhash: "", diffScore: null };
+  if (state.crop?.objectUrl) URL.revokeObjectURL(state.crop.objectUrl);
+  state.crop = { rect: null, file: null, objectUrl: null, dragging: false, pointerId: null, start: null };
 
   if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
   state.objectUrl = null;
@@ -2255,7 +2271,18 @@ function reset() {
   elements.fileInput.value = "";
   elements.previewImg.removeAttribute("src");
   elements.previewImg.style.display = "none";
+  elements.previewStage?.classList.remove("crop-ready");
+  if (elements.previewCropBox) {
+    elements.previewCropBox.hidden = true;
+    elements.previewCropBox.style.left = "0px";
+    elements.previewCropBox.style.top = "0px";
+    elements.previewCropBox.style.width = "0px";
+    elements.previewCropBox.style.height = "0px";
+  }
   elements.previewEmpty.style.display = "grid";
+  if (elements.cropStatusOut) {
+    elements.cropStatusOut.textContent = "Drag a box around a face, logo, object, tattoo, sign, vehicle, building, product, artwork, or text area to search just that region.";
+  }
   elements.metaName.textContent = "—";
   elements.metaType.textContent = "—";
   elements.metaSize.textContent = "—";
@@ -3789,7 +3816,7 @@ async function ensurePublicUrl({ purpose = "" } = {}) {
   if (!state.file) throw new Error("No file loaded");
   const normalizedPurpose = purpose ? String(purpose).toLowerCase() : "";
 
-  const artifactWanted = state.shareSafe ? "clean" : "original";
+  const artifactWanted = getSearchArtifactWanted();
   if (
     state.publicUrl &&
     (!normalizedPurpose || normalizedPurpose === state.publicUrlPurpose) &&
@@ -3857,7 +3884,12 @@ async function ensurePublicUrl({ purpose = "" } = {}) {
       return cleanFile;
     };
 
-    const uploadFile = artifactWanted === "clean" ? await ensureCleanCopyFile() : state.file;
+    const uploadFile =
+      artifactWanted === "clean"
+        ? await ensureCleanCopyFile()
+        : artifactWanted === "crop"
+          ? await ensureCropSearchFile()
+          : state.file;
     const url =
       provider === "0x0"
         ? await publicUrlForFile(uploadFile, normalizedPurpose)
@@ -3970,6 +4002,8 @@ async function loadImageFromFile(file) {
   elements.previewImg.onload = () => {
     elements.previewImg.style.display = "block";
     elements.previewEmpty.style.display = "none";
+    elements.previewStage?.classList.add("crop-ready");
+    renderCropSelection();
   };
 
   return await new Promise((resolve, reject) => {
@@ -3995,6 +4029,217 @@ async function canvasToBlob(canvas, type, quality) {
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, type, quality));
   if (!blob) throw new Error("Failed to encode image");
   return blob;
+}
+
+function clampNumber(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function isCropActive() {
+  return Boolean(state.crop?.rect);
+}
+
+function setCropStatus(text) {
+  if (!elements.cropStatusOut) return;
+  elements.cropStatusOut.textContent = text || "";
+}
+
+function revokeCropObjectUrl() {
+  if (state.crop?.objectUrl) URL.revokeObjectURL(state.crop.objectUrl);
+  if (state.crop) state.crop.objectUrl = null;
+}
+
+function getPreviewImageMetrics() {
+  const stage = elements.previewStage;
+  const img = elements.previewImg;
+  if (!stage || !img || !state.file) return null;
+  const iw = img.naturalWidth || img.width || 0;
+  const ih = img.naturalHeight || img.height || 0;
+  if (!iw || !ih) return null;
+  const cw = stage.clientWidth || 0;
+  const ch = stage.clientHeight || 0;
+  if (!cw || !ch) return null;
+  const scale = Math.min(cw / iw, ch / ih);
+  const width = iw * scale;
+  const height = ih * scale;
+  const left = (cw - width) / 2;
+  const top = (ch - height) / 2;
+  return { iw, ih, cw, ch, left, top, width, height };
+}
+
+function renderCropSelection() {
+  const box = elements.previewCropBox;
+  const stage = elements.previewStage;
+  const rect = state.crop?.rect || null;
+  if (!box || !stage) return;
+  const active = Boolean(rect);
+  box.hidden = !active;
+  stage.classList.toggle("crop-ready", Boolean(state.file));
+  if (!active) return;
+  box.style.left = `${rect.left}px`;
+  box.style.top = `${rect.top}px`;
+  box.style.width = `${rect.width}px`;
+  box.style.height = `${rect.height}px`;
+}
+
+function updateCropButtons() {
+  const hasCrop = isCropActive();
+  if (elements.btnSearchCrop) elements.btnSearchCrop.disabled = state.uiBusy ? true : !hasCrop;
+  if (elements.btnClearCrop) elements.btnClearCrop.disabled = state.uiBusy ? true : !hasCrop;
+}
+
+function getSearchArtifactWanted() {
+  return isCropActive() ? "crop" : state.shareSafe ? "clean" : "original";
+}
+
+function invalidateSharedSearch(reason = "") {
+  state.publicUrl = "";
+  state.publicUrlPurpose = "";
+  state.publicUrlArtifact = getSearchArtifactWanted();
+  state.uploadMeta = null;
+  if (elements.publicUrlOut) elements.publicUrlOut.textContent = "—";
+  if (elements.btnCopyPublicUrl) elements.btnCopyPublicUrl.disabled = true;
+  if (elements.btnRetryUpload) {
+    elements.btnRetryUpload.hidden = true;
+    elements.btnRetryUpload.disabled = true;
+  }
+  if (state.shareEnabled) setShareStatus("Not shared");
+  if (reason) setStatusLine(reason);
+}
+
+function clearCropSelection({ quiet = false } = {}) {
+  if (state.crop?.objectUrl) revokeCropObjectUrl();
+  state.crop.rect = null;
+  state.crop.file = null;
+  state.crop.dragging = false;
+  state.crop.pointerId = null;
+  state.crop.start = null;
+  renderCropSelection();
+  updateCropButtons();
+  if (!quiet) {
+    invalidateSharedSearch("Full-image search restored");
+    setCropStatus("Crop cleared. SEARCH now uses the full image again.");
+  }
+}
+
+async function ensureCropSearchFile() {
+  if (!state.file || !state.objectUrl || !state.crop?.rect?.natural) throw new Error("No crop selected");
+  if (state.crop.file) return state.crop.file;
+  const { x, y, width, height } = state.crop.rect.natural;
+  const outType = "image/jpeg";
+  const img = await new Promise((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = reject;
+    el.src = state.objectUrl;
+  });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, width);
+  canvas.height = Math.max(1, height);
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, x, y, width, height, 0, 0, canvas.width, canvas.height);
+  const blob = await canvasToBlob(canvas, outType, 0.94);
+  const baseName = (state.file.name || "image").replace(/\.[^/.]+$/, "") || "image";
+  revokeCropObjectUrl();
+  state.crop.objectUrl = URL.createObjectURL(blob);
+  state.crop.file = new File([blob], `${baseName}_crop.jpg`, { type: outType });
+  return state.crop.file;
+}
+
+function setupCropTool() {
+  const stage = elements.previewStage;
+  if (!stage) return;
+
+  const beginCrop = (event) => {
+    if (!state.file || state.uiBusy) return;
+    const metrics = getPreviewImageMetrics();
+    if (!metrics) return;
+    const bounds = stage.getBoundingClientRect();
+    const px = event.clientX - bounds.left;
+    const py = event.clientY - bounds.top;
+    if (
+      px < metrics.left || px > metrics.left + metrics.width ||
+      py < metrics.top || py > metrics.top + metrics.height
+    ) return;
+    event.preventDefault();
+    state.crop.dragging = true;
+    state.crop.pointerId = event.pointerId;
+    stage.setPointerCapture?.(event.pointerId);
+    state.crop.start = {
+      x: clampNumber(px, metrics.left, metrics.left + metrics.width),
+      y: clampNumber(py, metrics.top, metrics.top + metrics.height),
+    };
+    state.crop.rect = {
+      left: state.crop.start.x,
+      top: state.crop.start.y,
+      width: 0,
+      height: 0,
+      natural: null,
+    };
+    state.crop.file = null;
+    revokeCropObjectUrl();
+    renderCropSelection();
+    updateCropButtons();
+    setCropStatus("Release to lock the crop. SEARCH will use only the selected region.");
+  };
+
+  const moveCrop = (event) => {
+    if (!state.crop?.dragging || state.crop.pointerId !== event.pointerId || !state.crop.start) return;
+    const metrics = getPreviewImageMetrics();
+    if (!metrics) return;
+    const bounds = stage.getBoundingClientRect();
+    const px = clampNumber(event.clientX - bounds.left, metrics.left, metrics.left + metrics.width);
+    const py = clampNumber(event.clientY - bounds.top, metrics.top, metrics.top + metrics.height);
+    const left = Math.min(state.crop.start.x, px);
+    const top = Math.min(state.crop.start.y, py);
+    const width = Math.abs(px - state.crop.start.x);
+    const height = Math.abs(py - state.crop.start.y);
+    state.crop.rect = { left, top, width, height, natural: null };
+    renderCropSelection();
+  };
+
+  const endCrop = (event) => {
+    if (!state.crop?.dragging || state.crop.pointerId !== event.pointerId || !state.crop.rect) return;
+    stage.releasePointerCapture?.(event.pointerId);
+    state.crop.dragging = false;
+    state.crop.pointerId = null;
+    state.crop.start = null;
+    const metrics = getPreviewImageMetrics();
+    const rect = state.crop.rect;
+    if (!metrics || rect.width < 18 || rect.height < 18) {
+      clearCropSelection({ quiet: true });
+      setCropStatus("Crop too small. Drag a larger box to search just that section.");
+      return;
+    }
+    const nx = Math.round(((rect.left - metrics.left) / metrics.width) * metrics.iw);
+    const ny = Math.round(((rect.top - metrics.top) / metrics.height) * metrics.ih);
+    const nw = Math.round((rect.width / metrics.width) * metrics.iw);
+    const nh = Math.round((rect.height / metrics.height) * metrics.ih);
+    const naturalX = clampNumber(nx, 0, metrics.iw - 1);
+    const naturalY = clampNumber(ny, 0, metrics.ih - 1);
+    const naturalWidth = clampNumber(nw, 1, metrics.iw - naturalX);
+    const naturalHeight = clampNumber(nh, 1, metrics.ih - naturalY);
+    state.crop.rect = {
+      ...rect,
+      natural: {
+        x: naturalX,
+        y: naturalY,
+        width: naturalWidth,
+        height: naturalHeight,
+      },
+    };
+    state.crop.file = null;
+    revokeCropObjectUrl();
+    invalidateSharedSearch("Crop ready — next search uploads only the selected region");
+    renderCropSelection();
+    updateCropButtons();
+    setCropStatus(`Crop locked: ${state.crop.rect.natural.width} × ${state.crop.rect.natural.height}px. SEARCH now uses only the selected region.`);
+  };
+
+  stage.addEventListener("pointerdown", beginCrop);
+  stage.addEventListener("pointermove", moveCrop);
+  stage.addEventListener("pointerup", endCrop);
+  stage.addEventListener("pointercancel", endCrop);
 }
 
 async function generateMutationFiles() {
@@ -4288,6 +4533,7 @@ function buildMarkdownReport(report) {
   const clean = r.clean_copy || null;
   const gps = r.gps;
   const kf = r.key_fields || {};
+  const crop = r.crop_selection || null;
   const capturedAt = kf.captured_at || null;
   const sr = r.source_reliability || {};
   const entities = kf.ocr_entities || {};
@@ -4305,6 +4551,9 @@ function buildMarkdownReport(report) {
   lines.push(`- Type: \`${file.type || "—"}\``);
   lines.push(`- Size: \`${file.size_bytes != null ? formatBytes(file.size_bytes) : "—"}\``);
   lines.push(`- Dimensions: \`${r.dimensions || "—"}\``);
+  if (crop?.bounds_pixels) {
+    lines.push(`- Search crop: \`${crop.bounds_pixels.width} × ${crop.bounds_pixels.height}px @ ${crop.bounds_pixels.x},${crop.bounds_pixels.y}\``);
+  }
   lines.push("");
   lines.push(`## Signals`);
   lines.push(`- SHA-256: \`${r.hashes?.sha256 || "—"}\``);
@@ -5224,6 +5473,24 @@ function buildOsintReport({ includeInvestigation = true } = {}) {
           size_bytes: state.file.size || null,
         }
       : null,
+    crop_selection: state.crop?.rect?.natural
+      ? {
+          bounds_pixels: { ...state.crop.rect.natural },
+          preview_bounds: {
+            left: state.crop.rect.left,
+            top: state.crop.rect.top,
+            width: state.crop.rect.width,
+            height: state.crop.rect.height,
+          },
+          derived_file: state.crop.file
+            ? {
+                name: state.crop.file.name || null,
+                type: state.crop.file.type || null,
+                size_bytes: state.crop.file.size || null,
+              }
+            : null,
+        }
+      : null,
     clean_copy: state.cleanSignals ? { ...state.cleanSignals } : null,
     dimensions: elements.metaDim?.textContent || null,
     hashes: { ...state.signals },
@@ -5936,6 +6203,9 @@ async function analyzeFile(file) {
 
   reset();
   state.file = file;
+  clearCropSelection({ quiet: true });
+  renderCropSelection();
+  updateCropButtons();
 
   elements.metaName.textContent = file.name || "—";
   elements.metaType.textContent = file.type || "—";
@@ -5998,6 +6268,9 @@ async function analyzeFile(file) {
     setShareControlsEnabled(true);
     setShareStatus(state.publicUrl ? "Shared" : "Not shared");
     clearCompare();
+    setCropStatus("Drag a box over the preview to search only a face, logo, object, tattoo, sign, vehicle, building, product, artwork, or text area.");
+    renderCropSelection();
+    updateCropButtons();
 
     if (!elements.srcOrig.value) {
       elements.srcOrig.value = file.name || "";
@@ -6259,6 +6532,7 @@ function setupDnD() {
 
 function setupActions() {
   elements.btnReset.addEventListener("click", reset);
+  setupCropTool();
 
   if (elements.btnRetryUpload) {
     elements.btnRetryUpload.addEventListener("click", async () => {
@@ -6267,7 +6541,7 @@ function setupActions() {
       if (state.uiBusy) return;
       state.publicUrl = "";
       state.publicUrlPurpose = "";
-      state.publicUrlArtifact = state.shareSafe ? "clean" : "original";
+      state.publicUrlArtifact = getSearchArtifactWanted();
       await withUiLock("Retrying upload…", async () => {
         try {
           await ensurePublicUrl();
@@ -6292,7 +6566,7 @@ function setupActions() {
       if (state.shareEnabled) {
         state.publicUrl = "";
         state.publicUrlPurpose = "";
-        state.publicUrlArtifact = state.shareSafe ? "clean" : "original";
+        state.publicUrlArtifact = getSearchArtifactWanted();
         setShareStatus("Not shared");
         elements.publicUrlOut.textContent = "—";
       }
@@ -6663,6 +6937,16 @@ function setupActions() {
   elements.btnDownloadClean.addEventListener("click", () => {
     if (!state.cleanBlob || !state.file) return;
     downloadBlob(state.cleanBlob, suggestedCleanFilename(state.file.name, state.cleanBlob.type));
+  });
+
+  elements.btnSearchCrop?.addEventListener("click", () => {
+    if (!isCropActive()) return;
+    void handleSearchAll();
+  });
+
+  elements.btnClearCrop?.addEventListener("click", () => {
+    if (!isCropActive()) return;
+    clearCropSelection();
   });
 
   elements.fileInput.addEventListener("change", () => {

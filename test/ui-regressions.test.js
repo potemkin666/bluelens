@@ -141,6 +141,21 @@ test("loading an image stays local until a launch action is chosen", () => {
   assert.match(appJs, /Local review ready\. Uploads start only when you choose a launch action\./);
 });
 
+test("preview exposes crop-and-search controls for selected regions", () => {
+  assert.match(indexHtml, /id="previewStage"/);
+  assert.match(indexHtml, /id="previewCropBox"/);
+  assert.match(indexHtml, /id="btnSearchCrop"/);
+  assert.match(indexHtml, />\s*Search Crop\s*</);
+  assert.match(indexHtml, /id="btnClearCrop"/);
+  assert.match(indexHtml, /Drag a box around a face, logo, object, tattoo, sign, vehicle, building, product, artwork, or text area/);
+  assert.match(stylesCss, /\.preview-crop-box/);
+  assert.match(stylesCss, /\.preview\.crop-ready/);
+  assert.match(appJs, /function setupCropTool\(/);
+  assert.match(appJs, /function ensureCropSearchFile\(/);
+  assert.match(appJs, /SEARCH now uses only the selected region/);
+  assert.match(appJs, /return isCropActive\(\) \? "crop" : state\.shareSafe \? "clean" : "original"/);
+});
+
 
 test("command palette copy uses fixed UTF-8 text and row clicks run the clicked action", () => {
   assert.match(indexHtml, /placeholder="Type a command…"/);
@@ -240,6 +255,7 @@ test("reports export structured capture provenance and runtime metadata", () => 
   assert.match(appJs, /temporary_external_artifact_warning/);
   assert.match(appJs, /expected_expiry_window/);
   assert.match(appJs, /ocr_entity_review_entries/);
+  assert.match(appJs, /crop_selection:/);
   assert.match(appJs, /investigation: report\.investigation/);
   assert.match(appJs, /report\.investigation = buildInvestigationExport/);
 });

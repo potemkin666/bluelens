@@ -462,8 +462,9 @@
                 <div class="subcard-title">Preview</div>
                 <span class="pill pill-muted">Local</span>
               </div>
-              <div class="preview">
+              <div id="previewStage" class="preview" title="Drag on the image to crop the area you want to search">
                 <img id="previewImg" alt="Uploaded preview" />
+                <div id="previewCropBox" class="preview-crop-box" hidden aria-hidden="true"></div>
                 <div id="previewEmpty" class="preview-empty">No image yet.</div>
               </div>
               <div class="row row-tight">
@@ -471,7 +472,14 @@
                 <button id="btnDownloadClean" class="btn btn-secondary" type="button" disabled title="Re-encode to strip metadata">
                   Clean Copy
                 </button>
+                <button id="btnSearchCrop" class="btn btn-secondary" type="button" disabled title="Search only the selected crop">
+                  Search Crop
+                </button>
+                <button id="btnClearCrop" class="btn btn-ghost" type="button" disabled title="Clear the selected crop">
+                  Clear Crop
+                </button>
               </div>
+              <div id="cropStatusOut" class="hint crop-status">Drag a box around a face, logo, object, tattoo, sign, vehicle, building, product, artwork, or text area to search just that region.</div>
             </div>
 
             <div class="subcard hud" data-hud-key="hashes">
