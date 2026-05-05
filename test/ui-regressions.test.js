@@ -66,15 +66,16 @@ test("primary and secondary actions stay in a static order", () => {
 });
 
 test("landing UI stays focused on image search", () => {
-  assert.match(indexHtml, /Know what runs before you click it\./);
-  assert.match(indexHtml, /Load image<\/strong> — BlueLens inspects it locally first\./);
-  assert.match(indexHtml, /Run local tools<\/strong> — hashes, EXIF, OCR, and compare stay on this device\./);
+  assert.doesNotMatch(indexHtml, /Inspect images locally, extract context, and launch reverse-search providers\./);
+  assert.doesNotMatch(indexHtml, /Know what runs before you click it\./);
+  assert.doesNotMatch(indexHtml, /Load image<\/strong> — BlueLens inspects it locally first\./);
+  assert.doesNotMatch(indexHtml, /Run local tools<\/strong> — hashes, EXIF, OCR, and compare stay on this device\./);
   assert.doesNotMatch(indexHtml, /Search-first workflow/);
   assert.doesNotMatch(indexHtml, /Local file signals/);
 });
 
-test("upload control appears before the landing promo block", () => {
-  assert.ok(indexHtml.indexOf('id="dropzone"') < indexHtml.indexOf('class="focus-shell"'));
+test("landing UI no longer renders the promo block", () => {
+  assert.doesNotMatch(indexHtml, /class="focus-shell"/);
 });
 
 test("caseboard UI is removed from the landing workflow", () => {
@@ -242,7 +243,6 @@ test("batch OCR failures are surfaced instead of silently ignored", () => {
 });
 
 test("onboarding and evidence-pack UI expose operator caveats and export path", () => {
-  assert.match(indexHtml, /id="onboardingStrip"/);
   assert.match(indexHtml, /id="progressPanel"/);
   assert.match(indexHtml, /id="missionExplain"/);
   assert.match(indexHtml, /id="btnEvidencePack"/);
@@ -258,9 +258,9 @@ test("onboarding and evidence-pack UI expose operator caveats and export path", 
   assert.match(appJs, /async function runDoctorChecks\(/);
   assert.match(appJs, /function ingestResults\(raw\)/);
   assert.match(appJs, /function renderMissionOutput\(\)/);
-  assert.match(indexHtml, /Quick start: 1\) load image/);
+  assert.doesNotMatch(indexHtml, /Quick start: 1\) load image/);
   assert.match(appJs, /function renderProgress\(\)/);
-  assert.match(appJs, /Loaded locally first\./);
+  assert.match(appJs, /Load an image to start\./);
   assert.match(helpHtml, />Doctor</);
 });
 

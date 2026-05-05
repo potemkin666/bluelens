@@ -25,7 +25,6 @@
         <img class="brand-mark" src="./favicon.svg" alt="" aria-hidden="true" />
         <div class="brand-text">
           <h1>BlueLens</h1>
-          <p>Inspect images locally, extract context, and launch reverse-search providers.</p>
         </div>
       </div>
       <div class="header-actions">
@@ -33,10 +32,6 @@
         <a class="btn btn-ghost" href="./help.html" title="Startup, privacy, troubleshooting, and defaults.">Help</a>
       </div>
     </header>
-
-    <section class="onboarding-shell" aria-label="Operator onboarding">
-      <div id="onboardingStrip" class="onboarding-strip" hidden></div>
-    </section>
 
     <main class="layout layout-single">
       <section class="card console-card" aria-labelledby="consoleTitle">
@@ -230,10 +225,6 @@
               <div class="kv">
                 <div class="k">Manual notes</div>
                 <textarea id="manualNotes" class="input textarea" rows="3" placeholder="Why this image matters, caveats, hypotheses, or handling notes"></textarea>
-              </div>
-
-              <div class="mono mono-box workflow-box" title="Canonical operator workflow">
-                Quick start: 1) load image → 2) review local signals → 3) run OCR or upload for launchpad links → 4) export if needed.
               </div>
 
               <label class="toggle toggle-mini" title="Uploads the clean copy (re-encoded) instead of the original file">
@@ -679,24 +670,6 @@
         </div>
       </section>
     </main>
-
-    <section class="focus-shell" aria-labelledby="focusTitle">
-      <div class="focus-panel">
-        <div class="focus-copy">
-          <span class="focus-kicker">Quick start</span>
-          <h2 id="focusTitle">Know what runs before you click it.</h2>
-          <ul class="focus-points focus-steps">
-            <li><strong>Load image</strong> — BlueLens inspects it locally first.</li>
-            <li><strong>Run local tools</strong> — hashes, EXIF, OCR, and compare stay on this device.</li>
-            <li><strong>Upload only on demand</strong> — launchpad and engine actions upload only when you choose them.</li>
-          </ul>
-        </div>
-      </div>
-    </section>
-
-    <footer class="footer">
-      <div>Built for investigative workflows. Use responsibly and respect privacy &amp; terms of service.</div>
-    </footer>
 
     <div id="cmdk" class="cmdk" hidden aria-hidden="true">
       <div class="cmdk-backdrop" data-cmdk-close></div>
