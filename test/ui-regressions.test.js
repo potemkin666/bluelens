@@ -55,7 +55,7 @@ test("search-all UI is framed as link preparation, not automatic querying", () =
 
 test("sharing copy matches explicit upload consent", () => {
   assert.match(indexHtml, /Uploads stay off until you run Upload \+ Launchpad, Upload \+ Prepare Links, or an engine open action\./);
-  assert.match(indexHtml, /upload only on demand/i);
+  assert.match(indexHtml, /Upload happens only when you choose an upload action\./);
 });
 
 
