@@ -50,6 +50,7 @@ test("search-all UI is framed as link preparation, not automatic querying", () =
   assert.match(appJs, /Uploading \+ preparing links…/);
   assert.match(appJs, /Upload \+ Prepare Links/);
   assert.match(appJs, /Paste titles, snippets, and URLs back into Result Intake/);
+  assert.match(appJs, /Prepared \$\{ENGINE_ORDER\.length\} engine targets from one upload/);
 });
 
 
@@ -268,11 +269,14 @@ test("onboarding and evidence-pack UI expose operator caveats and export path", 
   assert.match(indexHtml, /id="resultIntakeInput"/);
   assert.match(indexHtml, /id="btnIngestResults"/);
   assert.match(indexHtml, /id="resultIntakeSummary"/);
+  assert.match(indexHtml, /id="noResultAutopsyOut"/);
   assert.match(indexHtml, /id="manualNotes"/);
   assert.match(indexHtml, /id="actionLogOut"/);
   assert.match(appJs, /function downloadEvidencePack\(\)/);
   assert.match(appJs, /async function runDoctorChecks\(/);
   assert.match(appJs, /function ingestResults\(raw\)/);
+  assert.match(appJs, /function computeNoResultAutopsy\(/);
+  assert.match(appJs, /function setResultSuppressed\(/);
   assert.match(appJs, /function renderMissionOutput\(\)/);
   assert.doesNotMatch(indexHtml, /Quick start: 1\) load image/);
   assert.match(appJs, /function renderProgress\(\)/);
@@ -289,6 +293,37 @@ test("launchpad now renders queue-aware swarm cockpit state", () => {
   assert.match(appJs, /data-swarm-disposition/);
   assert.match(appJs, /data-swarm-notes/);
   assert.match(waitHtml, /Uploading… \(check main tab\)\./);
+});
+
+test("engine relay covers broad web and art-focused providers", () => {
+  assert.match(indexHtml, /id="btnOpenPinterest"/);
+  assert.match(indexHtml, /id="btnOpenSauceNAO"/);
+  assert.match(indexHtml, /id="btnOpenIQDB"/);
+  assert.match(indexHtml, /id="btnOpenBaidu"/);
+  assert.match(indexHtml, /id="btnOpenAscii2d"/);
+  assert.match(appJs, /const ENGINE_ORDER = APP_CONFIG\.engines\?\.order \|\| \["lens", "bing", "yandex", "tineye", "pinterest", "saucenao", "iqdb", "baidu", "ascii2d", "google_images"\]/);
+  assert.match(appJs, /ENGINE_BUTTON_BY_KEY/);
+  assert.match(readmeMd, /SauceNAO/);
+  assert.match(readmeMd, /IQDB/);
+  assert.match(readmeMd, /ASCII2D/);
+});
+
+test("result intake supports per-session false-positive suppression and no-result autopsy", () => {
+  assert.match(appJs, /data-result-suppress/);
+  assert.match(appJs, /data-result-restore/);
+  assert.match(appJs, /Match suppressed for this session/);
+  assert.match(appJs, /Private image \/ not indexed/);
+  assert.match(appJs, /Manual-only engine follow-up/);
+  assert.match(stylesCss, /\.result-suppressed/);
+  assert.match(stylesCss, /\.autopsy-card/);
+});
+
+test("readme reflects the current image-recon workflow and embeds the attached image", () => {
+  assert.match(readmeMd, /bluelens-ocean-banner\.svg/);
+  assert.match(readmeMd, /a0c348b1-50b9-42fa-82dd-518edcf2ec5c/);
+  assert.match(readmeMd, /Local-first image reconnaissance/);
+  assert.match(readmeMd, /No-result autopsy/);
+  assert.match(readmeMd, /False-positive suppressor/);
 });
 
 test("batch dashboard exposes aggregated entity follow-up controls", () => {

@@ -116,6 +116,11 @@ const elements = {
   btnOpenBing: document.getElementById("btnOpenBing"),
   btnOpenTineye: document.getElementById("btnOpenTineye"),
   btnOpenYandex: document.getElementById("btnOpenYandex"),
+  btnOpenPinterest: document.getElementById("btnOpenPinterest"),
+  btnOpenSauceNAO: document.getElementById("btnOpenSauceNAO"),
+  btnOpenIQDB: document.getElementById("btnOpenIQDB"),
+  btnOpenBaidu: document.getElementById("btnOpenBaidu"),
+  btnOpenAscii2d: document.getElementById("btnOpenAscii2d"),
   btnOpenGoogleImages: document.getElementById("btnOpenGoogleImages"),
   btnRetryUpload: document.getElementById("btnRetryUpload"),
   ocrLangHint: document.getElementById("ocrLangHint"),
@@ -138,6 +143,7 @@ const elements = {
   btnClearResults: document.getElementById("btnClearResults"),
   btnCopyResultsJson: document.getElementById("btnCopyResultsJson"),
   resultIntakeSummary: document.getElementById("resultIntakeSummary"),
+  noResultAutopsyOut: document.getElementById("noResultAutopsyOut"),
 
   // Command palette
   cmdk: document.getElementById("cmdk"),
@@ -200,20 +206,42 @@ const SERVER_CONFIG = runtimeConfig.server || {};
 const FX_CONFIG = runtimeConfig.fx || {};
 const STORAGE_KEYS = runtimeConfig.storageKeys || {};
 
-const ENGINE_ORDER = APP_CONFIG.engines?.order || ["lens", "bing", "tineye", "yandex", "google_images"];
+const ENGINE_ORDER = APP_CONFIG.engines?.order || ["lens", "bing", "yandex", "tineye", "pinterest", "saucenao", "iqdb", "baidu", "ascii2d", "google_images"];
 const ENGINE_LABEL = APP_CONFIG.engines?.labels || {
   lens: "Lens",
   bing: "Bing",
-  tineye: "TinEye",
   yandex: "Yandex",
-  google_images: "Google",
+  tineye: "TinEye",
+  pinterest: "Pinterest",
+  saucenao: "SauceNAO",
+  iqdb: "IQDB",
+  baidu: "Baidu",
+  ascii2d: "ASCII2D",
+  google_images: "Google Images",
 };
 const ENGINE_ICON = APP_CONFIG.engines?.icons || {
   lens: "⌕",
   bing: "⧉",
-  tineye: "◎",
   yandex: "⟡",
+  tineye: "◎",
+  pinterest: "◌",
+  saucenao: "✦",
+  iqdb: "◈",
+  baidu: "◍",
+  ascii2d: "▣",
   google_images: "◉",
+};
+const ENGINE_BUTTON_BY_KEY = {
+  lens: "btnOpenLens",
+  bing: "btnOpenBing",
+  yandex: "btnOpenYandex",
+  tineye: "btnOpenTineye",
+  pinterest: "btnOpenPinterest",
+  saucenao: "btnOpenSauceNAO",
+  iqdb: "btnOpenIQDB",
+  baidu: "btnOpenBaidu",
+  ascii2d: "btnOpenAscii2d",
+  google_images: "btnOpenGoogleImages",
 };
 const BATCH_TOP_LENS_DEFAULT = APP_CONFIG.batch?.topLensDefault || 5;
 const BATCH_TOP_LENS_MAX = APP_CONFIG.batch?.topLensMax || 10;
@@ -861,7 +889,7 @@ function renderInvestigationSwarm(model) {
             <label class="field">
               <span class="field-label">Disposition</span>
               <select class="select" data-swarm-disposition="${escapeAttr(engine)}">
-                ${["pending", "reviewed", "useful", "dead_end", "blocked", "retry_later"].map((value) => `<option value="${escapeAttr(value)}" ${value === disposition ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}
+                ${["pending", "reviewed", "useful", "false_positive", "dead_end", "blocked", "retry_later"].map((value) => `<option value="${escapeAttr(value)}" ${value === disposition ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}
               </select>
             </label>
             <label class="field">
@@ -979,6 +1007,12 @@ function normalizeEngineName(value, fallback = "") {
   if (!raw) return fallback;
   if (raw === "google" || raw === "googleimages" || raw === "google_image") return "google_images";
   if (raw === "tin_eye") return "tineye";
+  if (raw === "sauce_nao") return "saucenao";
+  if (raw === "ascii_2d") return "ascii2d";
+  if (raw === "google_lens") return "lens";
+  if (raw === "bing_visual_search") return "bing";
+  if (raw === "pinterest_lens") return "pinterest";
+  if (raw === "baidu_images") return "baidu";
   return ENGINE_ORDER.includes(raw) ? raw : fallback;
 }
 
@@ -1036,6 +1070,14 @@ function buildResultIntakeKey(entry) {
   return `line:${entry?.source_line || ""}`;
 }
 
+function getVisibleResultIntakeEntries(entries = state.resultIntake?.entries) {
+  return (entries || []).filter((entry) => !entry?.suppressed);
+}
+
+function getSuppressedResultIntakeEntries(entries = state.resultIntake?.entries) {
+  return (entries || []).filter((entry) => entry?.suppressed);
+}
+
 function summarizeResultIntake(entries = []) {
   const engines = new Set();
   const domains = new Map();
@@ -1055,6 +1097,109 @@ function summarizeResultIntake(entries = []) {
     engines: Array.from(engines),
     topDomains,
   };
+}
+
+function parseCurrentDimensions() {
+  const raw = elements.metaDim?.textContent || "";
+  const match = raw.match(/(\d+)\s*×\s*(\d+)/);
+  if (!match) return null;
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+  return { width, height, area: width * height };
+}
+
+function computeNoResultAutopsy() {
+  const run = state.lastEngineRun || loadLastRun();
+  const visibleEntries = getVisibleResultIntakeEntries();
+  if (!state.file || !run || visibleEntries.length > 0) return null;
+  const reasons = [];
+  const dims = parseCurrentDimensions();
+  const shortEdge = dims ? Math.min(dims.width, dims.height) : 0;
+  const areaMp = dims ? dims.area / 1_000_000 : 0;
+  const blocked = Object.keys(run.blocked || {}).length;
+  const readyEngines = Object.keys(run.targets || {}).length;
+  const manualOnlyProviders = ["pinterest"].filter((engine) => run.targets?.[engine]);
+  const hasExif = Boolean(state.exif && Object.keys(state.exif).length > 0);
+  const hasTextPivots = Boolean((state.ocrText || "").trim()) || Boolean(state.insights?.attribution_hints && state.insights.attribution_hints !== "—");
+
+  if (blocked > 0) {
+    reasons.push({
+      label: "Engine blocked",
+      detail: `${blocked} provider tab${blocked === 1 ? "" : "s"} were blocked before handoff, so coverage was reduced immediately.`,
+    });
+  }
+  if (dims && (areaMp < 0.25 || shortEdge < 320)) {
+    reasons.push({
+      label: "Too low-res",
+      detail: `Current frame is ${dims.width}×${dims.height}. Small relay images often fail indexing and similarity matching.`,
+    });
+  }
+  if (dims && shortEdge > 0 && shortEdge / Math.max(dims.width, dims.height) < 0.45) {
+    reasons.push({
+      label: "Too cropped",
+      detail: "The frame is narrow enough that engines may only see a fragment instead of the original scene.",
+    });
+  }
+  if (!hasExif) {
+    reasons.push({
+      label: "Stripped metadata",
+      detail: "No EXIF/capture metadata is present, which removes time, device, and location pivots that often support manual follow-up.",
+    });
+  }
+  if (!hasTextPivots) {
+    reasons.push({
+      label: "Generic object",
+      detail: "OCR and attribution cues are sparse, so engines may treat this as a generic subject with weak unique pivots.",
+    });
+  }
+  if (manualOnlyProviders.length > 0) {
+    reasons.push({
+      label: "Manual-only engine follow-up",
+      detail: `${manualOnlyProviders.map((engine) => ENGINE_LABEL[engine] || engine).join(", ")} does not expose a clean public URL handoff, so that lane still needs a manual upload check.`,
+    });
+  }
+  if (readyEngines > 0) {
+    reasons.push({
+      label: "Private image / not indexed",
+      detail: `BlueLens staged ${readyEngines} engine target${readyEngines === 1 ? "" : "s"}, but no visible hits were ingested. The image may be private, very new, or absent from those indexes.`,
+    });
+  }
+  return {
+    summary: reasons.length
+      ? `No visible hits are in the queue. BlueLens found ${reasons.length} likely failure mode${reasons.length === 1 ? "" : "s"}.`
+      : "No visible hits are in the queue yet.",
+    reasons,
+  };
+}
+
+function renderNoResultAutopsy() {
+  const el = elements.noResultAutopsyOut;
+  if (!el) return;
+  const autopsy = computeNoResultAutopsy();
+  if (!autopsy) {
+    el.classList.remove("mission-grid");
+    el.textContent = "Run a multi-engine launch, then ingest hits. If nothing lands, BlueLens will explain the likely failure modes here.";
+    return;
+  }
+  el.classList.add("mission-grid");
+  el.innerHTML = `
+    <div class="mission-summary">${escapeHtml(autopsy.summary)}</div>
+    ${autopsy.reasons
+      .map(
+        (reason) => `
+          <div class="mission-card autopsy-card">
+            <div class="mission-card-head">
+              <div>${escapeHtml(reason.label)}</div>
+            </div>
+            <div class="mission-card-lines">
+              <div>${escapeHtml(reason.detail)}</div>
+            </div>
+          </div>
+        `,
+      )
+      .join("")}
+  `;
 }
 
 function parseResultIntakeRaw(raw, defaultEngine = "") {
@@ -1098,6 +1243,8 @@ function parseResultIntakeRaw(raw, defaultEngine = "") {
       first_seen_at: new Date().toISOString(),
       last_seen_at: new Date().toISOString(),
       merged_count: 1,
+      suppressed: false,
+      suppressed_at: null,
     });
   }
   return parsedEntries;
@@ -1120,6 +1267,8 @@ function mergeResultIntakeEntries(existingEntries, incomingEntries) {
     current.last_seen_at = incoming.last_seen_at || new Date().toISOString();
     current.merged_count = Math.max(1, Number(current.merged_count || 1) + 1);
     if (!current.media_hash && incoming.media_hash) current.media_hash = incoming.media_hash;
+    current.suppressed = Boolean(current.suppressed || incoming.suppressed);
+    current.suppressed_at = current.suppressed ? current.suppressed_at || incoming.suppressed_at || new Date().toISOString() : null;
     byKey.set(key, current);
   }
   return Array.from(byKey.values()).sort((a, b) => String(b.last_seen_at || "").localeCompare(String(a.last_seen_at || "")));
@@ -1162,20 +1311,24 @@ function renderResultIntake() {
   const el = elements.resultIntakeSummary;
   if (!el) return;
   const entries = Array.isArray(state.resultIntake?.entries) ? state.resultIntake.entries : [];
+  const visibleEntries = getVisibleResultIntakeEntries(entries);
+  const suppressedEntries = getSuppressedResultIntakeEntries(entries);
   if (!entries.length) {
     el.classList.remove("mission-grid");
     el.textContent = "No external findings ingested yet.";
     if (elements.btnClearResults) elements.btnClearResults.disabled = true;
     if (elements.btnCopyResultsJson) elements.btnCopyResultsJson.disabled = true;
+    renderNoResultAutopsy();
     return;
   }
-  const summary = summarizeResultIntake(entries);
+  const summary = summarizeResultIntake(visibleEntries);
   el.classList.add("mission-grid");
   el.innerHTML = `
     <div class="mission-summary">
-      Intake queue: ${summary.total} deduped entries · merged ${summary.duplicatesMerged} duplicates · engines ${summary.engines.join(", ") || "—"} · top domains ${summary.topDomains.join(", ") || "—"}
+      Intake queue: ${summary.total} visible entries · merged ${summary.duplicatesMerged} duplicates · engines ${summary.engines.join(", ") || "—"} · top domains ${summary.topDomains.join(", ") || "—"}${suppressedEntries.length ? ` · suppressed ${suppressedEntries.length}` : ""}
     </div>
-    ${entries
+    ${visibleEntries.length
+      ? visibleEntries
       .slice(0, 12)
       .map(
         (entry) => `
@@ -1189,13 +1342,45 @@ function renderResultIntake() {
               ${entry.snippet ? `<div>${escapeHtml(entry.snippet)}</div>` : ""}
               <div>Engines: ${escapeHtml((entry.engines || []).join(", ") || "manual")}${entry.media_hash?.value ? ` · hash ${escapeHtml(`${entry.media_hash.algo}:${entry.media_hash.value}`)}` : ""}${entry.merged_count > 1 ? ` · merged ${entry.merged_count}` : ""}</div>
             </div>
+            <div class="mission-card-links mission-card-actions">
+              <button class="btn btn-ghost btn-small" type="button" data-result-suppress="${escapeAttr(buildResultIntakeKey(entry))}">Ignore match</button>
+            </div>
           </div>
         `,
       )
-      .join("")}
+      .join("")
+      : `<div class="mission-card"><div class="mission-card-lines"><div>All current findings are suppressed for this session.</div></div></div>`}
+    ${
+      suppressedEntries.length
+        ? `
+      <div class="mission-summary">Suppressed this session</div>
+      ${suppressedEntries
+        .slice(0, 6)
+        .map(
+          (entry) => `
+            <div class="mission-card result-suppressed">
+              <div class="mission-card-head">
+                <div>${escapeHtml(entry.title || entry.canonical_url || entry.url)}</div>
+                <div class="mission-card-meta">${escapeHtml(entry.domain || "unknown domain")}</div>
+              </div>
+              <div class="mission-card-lines">
+                <div>${escapeHtml(entry.canonical_url || entry.url || "—")}</div>
+                <div>Suppressed ${entry.suppressed_at ? escapeHtml(new Date(entry.suppressed_at).toLocaleString()) : "this session"}</div>
+              </div>
+              <div class="mission-card-links mission-card-actions">
+                <button class="btn btn-ghost btn-small" type="button" data-result-restore="${escapeAttr(buildResultIntakeKey(entry))}">Restore</button>
+              </div>
+            </div>
+          `,
+        )
+        .join("")}
+    `
+        : ""
+    }
   `;
   if (elements.btnClearResults) elements.btnClearResults.disabled = false;
   if (elements.btnCopyResultsJson) elements.btnCopyResultsJson.disabled = false;
+  renderNoResultAutopsy();
   renderInvestigationSurface();
 }
 
@@ -1213,6 +1398,22 @@ function ingestResults(raw) {
   state.resultIntake.last_ingested_at = new Date().toISOString();
   renderResultIntake();
   return incoming.length;
+}
+
+function setResultSuppressed(key, suppressed) {
+  if (!key || !state.resultIntake?.entries) return false;
+  let changed = false;
+  state.resultIntake.entries = state.resultIntake.entries.map((entry) => {
+    if (buildResultIntakeKey(entry) !== key) return entry;
+    changed = true;
+    return {
+      ...entry,
+      suppressed: Boolean(suppressed),
+      suppressed_at: suppressed ? new Date().toISOString() : null,
+    };
+  });
+  if (changed) renderResultIntake();
+  return changed;
 }
 
 function normalizeReconEntities(text) {
@@ -1689,8 +1890,13 @@ function setUiBusy(busy, label = "") {
     elements.chkHud,
     elements.btnOpenLens,
     elements.btnOpenBing,
-    elements.btnOpenTineye,
     elements.btnOpenYandex,
+    elements.btnOpenTineye,
+    elements.btnOpenPinterest,
+    elements.btnOpenSauceNAO,
+    elements.btnOpenIQDB,
+    elements.btnOpenBaidu,
+    elements.btnOpenAscii2d,
     elements.btnOpenGoogleImages,
     elements.srcWhere,
     elements.srcWhen,
@@ -1780,8 +1986,13 @@ function setButtonsEnabled(enabled) {
     elements.btnMutateSearch,
     elements.btnOpenLens,
     elements.btnOpenBing,
-    elements.btnOpenTineye,
     elements.btnOpenYandex,
+    elements.btnOpenTineye,
+    elements.btnOpenPinterest,
+    elements.btnOpenSauceNAO,
+    elements.btnOpenIQDB,
+    elements.btnOpenBaidu,
+    elements.btnOpenAscii2d,
     elements.btnOpenGoogleImages,
   ];
   for (const b of fileControls.filter(Boolean)) {
@@ -1937,6 +2148,10 @@ function reset() {
   if (elements.resultIntakeSummary) {
     elements.resultIntakeSummary.classList.remove("mission-grid");
     elements.resultIntakeSummary.textContent = "No external findings ingested yet.";
+  }
+  if (elements.noResultAutopsyOut) {
+    elements.noResultAutopsyOut.classList.remove("mission-grid");
+    elements.noResultAutopsyOut.textContent = "Run a multi-engine launch, then ingest hits. If nothing lands, BlueLens will explain the likely failure modes here.";
   }
   if (elements.btnIngestResults) elements.btnIngestResults.disabled = true;
   if (elements.btnClearResults) elements.btnClearResults.disabled = true;
@@ -3222,16 +3437,7 @@ async function handleQuickJump(engine) {
     return;
   }
 
-  const label =
-    engine === "lens"
-      ? "Lens"
-      : engine === "bing"
-        ? "Bing"
-        : engine === "tineye"
-          ? "TinEye"
-          : engine === "yandex"
-          ? "Yandex"
-          : "Google Images";
+  const label = ENGINE_LABEL[engine] || engine;
   const waitJob = openWaitJob(engine, label);
   const run = createEngineRunRecord({ engines: [engine], mode: "quick_jump" });
   updateRunQueueStatus(run, engine, {
@@ -3289,11 +3495,9 @@ function wireReverseSearchButtons() {
   elements.btnSearchAll.addEventListener("click", () => void handleSearchAll());
   elements.btnQuickLens?.addEventListener("click", () => void handleQuickJump("lens"));
   elements.btnQuickOcr?.addEventListener("click", () => void runMissionPreset("fast"));
-  elements.btnOpenLens.addEventListener("click", () => void handleQuickJump("lens"));
-  elements.btnOpenBing.addEventListener("click", () => void handleQuickJump("bing"));
-  elements.btnOpenTineye.addEventListener("click", () => void handleQuickJump("tineye"));
-  elements.btnOpenYandex.addEventListener("click", () => void handleQuickJump("yandex"));
-  elements.btnOpenGoogleImages.addEventListener("click", () => void handleQuickJump("google_images"));
+  for (const [engine, key] of Object.entries(ENGINE_BUTTON_BY_KEY)) {
+    elements[key]?.addEventListener("click", () => void handleQuickJump(engine));
+  }
 }
 
 async function loadImageFromFile(file) {
@@ -3672,6 +3876,7 @@ function buildMarkdownReport(report) {
   if (Array.isArray(r.insights?.ai_image_suspicion?.items) && r.insights.ai_image_suspicion.items.length) {
     lines.push(`- AI checklist: ${r.insights.ai_image_suspicion.items.map((item) => `${item.label} [${item.status}]`).join(" · ")}`);
   }
+  if (r.result_intake?.autopsy?.summary) lines.push(`- No-result autopsy: ${String(r.result_intake.autopsy.summary)}`);
   lines.push("");
   lines.push(`## Public URL`);
   lines.push(`- URL: ${r.public_url ? `${r.public_url}` : "—"}`);
@@ -4601,6 +4806,7 @@ function buildOsintReport({ includeInvestigation = true } = {}) {
       ? {
           last_ingested_at: state.resultIntake.last_ingested_at || null,
           entries: Array.isArray(state.resultIntake.entries) ? state.resultIntake.entries.slice() : [],
+          autopsy: computeNoResultAutopsy(),
         }
       : null,
     session_action_log: Array.isArray(state.actionLog) ? state.actionLog.slice() : [],
@@ -5616,12 +5822,28 @@ function setupActions() {
           app_version: APP_VERSION,
           generated_at: new Date().toISOString(),
           intake: state.resultIntake?.entries || [],
+          autopsy: computeNoResultAutopsy(),
         },
         null,
         2,
       ),
     );
     setStatus("Copied intake JSON");
+  });
+  elements.resultIntakeSummary?.addEventListener("click", (event) => {
+    const suppressKey = event.target?.getAttribute?.("data-result-suppress");
+    if (suppressKey) {
+      if (setResultSuppressed(suppressKey, true)) {
+        setStatus("Suppressed");
+        setStatusLine("Match suppressed for this session");
+      }
+      return;
+    }
+    const restoreKey = event.target?.getAttribute?.("data-result-restore");
+    if (restoreKey && setResultSuppressed(restoreKey, false)) {
+      setStatus("Restored");
+      setStatusLine("Suppressed match restored");
+    }
   });
 
   elements.btnPivotSearch?.addEventListener("click", () => {

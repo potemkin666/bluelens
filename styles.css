@@ -1636,6 +1636,19 @@ body.skin-chrome .tab.active {
   margin-top: 8px;
 }
 
+.mission-card-actions {
+  justify-content: flex-end;
+}
+
+.result-suppressed {
+  opacity: 0.78;
+  border-style: dashed;
+}
+
+.autopsy-card {
+  border-color: rgba(255, 209, 102, 0.28);
+}
+
 .chip-select {
   margin-top: 0;
   padding: 8px 10px;
