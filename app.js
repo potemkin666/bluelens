@@ -262,6 +262,9 @@ const TAR_END_PADDING = 1024;
 // Treat near-square crops as a weak review cue only. An 8% delta still catches common 1:1-ish AI art/export canvases
 // without sweeping in most normal landscape/portrait photos.
 const AI_SQUAREISH_ASPECT_DELTA = 0.08;
+// Treat ~2.5MP+ PNG/WebP images without provenance as worth a texture pass; this is only a weak review cue,
+// not a classifier, because plenty of legitimate exports also land in this range.
+const AI_SYNTHETIC_TEXTURE_HIRES_MP = 2.5;
 // OCR-only malformed-text heuristics stay conservative: a 14% weird-glyph ratio or 3 noisy mixed alnum tokens
 // is enough to warrant manual review, but not strong enough to act as a verdict.
 const AI_OCR_WEIRD_GLYPH_RATIO = 0.14;
@@ -4233,7 +4236,7 @@ function computeAiImageSuspicionChecklist({ exifObj, file, width, height, ocrTex
   const squareish = Number.isFinite(width) && Number.isFinite(height)
     ? Math.abs(width - height) < Math.max(width, height) * AI_SQUAREISH_ASPECT_DELTA
     : false;
-  const hiRes = Number.isFinite(width) && Number.isFinite(height) ? (width * height) / 1_000_000 >= 2.5 : false;
+  const hiRes = Number.isFinite(width) && Number.isFinite(height) ? (width * height) / 1_000_000 >= AI_SYNTHETIC_TEXTURE_HIRES_MP : false;
   const syntheticFriendlyFormat = /image\/(png|webp)/i.test(file?.type || "");
 
   const items = [
