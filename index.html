@@ -75,27 +75,31 @@
 
         <div class="action-stack" aria-label="Quick actions">
           <div class="action-group action-group-primary action-group-easy">
-            <div class="field-label">Quick actions</div>
-            <div class="row row-tight quick-actions-row">
+            <div class="field-label">Main action</div>
+            <div class="search-cta-shell">
+              <button
+                id="btnSearchAll"
+                class="btn btn-search-cta"
+                type="button"
+                disabled
+                data-ico="◎"
+                title="Upload once and prepare every reverse-search engine."
+              >
+                SEARCH
+              </button>
+              <div class="search-cta-hint">Hit SEARCH to launch the full reverse-search board.</div>
+            </div>
+            <div class="field-label">Other actions</div>
+            <div class="row row-tight quick-actions-row quick-actions-row-secondary">
               <button
                 id="btnQuickLens"
-                class="btn"
+                class="btn btn-secondary"
                 type="button"
                 disabled
                 data-ico="⌕"
                 title="Upload once and open Lens."
               >
-                Search Lens
-              </button>
-              <button
-                id="btnSearchAll"
-                class="btn btn-secondary"
-                type="button"
-                disabled
-                data-ico="◎"
-                title="Upload once and prepare all engine links."
-              >
-                Search All
+                Lens only
               </button>
               <button
                 id="btnQuickOcr"
@@ -215,9 +219,8 @@
 
         <div class="tabpanels">
           <div class="tabpanel active" data-panel="search" role="tabpanel">
-            <details id="searchConsoleAdvanced" class="drawer hud search-console-drawer">
-              <summary title="Share settings, workflows, intake, and extra tools">Advanced</summary>
-              <div class="drawer-body search-console-stack">
+            <section id="searchConsoleAdvanced" class="search-console-panel">
+              <div class="search-console-stack">
             <div class="subcard hud" data-hud-key="search">
               <div class="subcard-head">
                 <div class="subcard-title">Share</div>
@@ -450,7 +453,7 @@
               </div>
             </details>
               </div>
-            </details>
+            </section>
           </div>
 
           <div class="tabpanel" data-panel="signals" role="tabpanel">
@@ -459,8 +462,9 @@
                 <div class="subcard-title">Preview</div>
                 <span class="pill pill-muted">Local</span>
               </div>
-              <div class="preview">
+              <div id="previewStage" class="preview" title="Drag on the image to crop the area you want to search">
                 <img id="previewImg" alt="Uploaded preview" />
+                <div id="previewCropBox" class="preview-crop-box" hidden aria-hidden="true"></div>
                 <div id="previewEmpty" class="preview-empty">No image yet.</div>
               </div>
               <div class="row row-tight">
@@ -468,7 +472,14 @@
                 <button id="btnDownloadClean" class="btn btn-secondary" type="button" disabled title="Re-encode to strip metadata">
                   Clean Copy
                 </button>
+                <button id="btnSearchCrop" class="btn btn-secondary" type="button" disabled title="Search only the selected crop">
+                  Search Crop
+                </button>
+                <button id="btnClearCrop" class="btn btn-ghost" type="button" disabled title="Clear the selected crop">
+                  Clear Crop
+                </button>
               </div>
+              <div id="cropStatusOut" class="hint crop-status">Drag a box around a face, logo, object, tattoo, sign, vehicle, building, product, artwork, or text area to search just that region.</div>
             </div>
 
             <div class="subcard hud" data-hud-key="hashes">

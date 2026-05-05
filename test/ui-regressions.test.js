@@ -49,7 +49,9 @@ test("package startup contract declares Node 18+ and a server start script", () 
 });
 
 test("search-all UI is framed as link preparation, not automatic querying", () => {
-  assert.match(indexHtml, />\s*Search All\s*</);
+  assert.match(indexHtml, /id="btnSearchAll"[\s\S]*class="btn btn-search-cta"/);
+  assert.match(indexHtml, />\s*SEARCH\s*</);
+  assert.match(indexHtml, /Hit SEARCH to launch the full reverse-search board\./);
   assert.match(appJs, /Uploading \+ preparing links…/);
   assert.match(appJs, /Upload \+ Prepare Links/);
   assert.match(appJs, /Paste titles, snippets, and URLs back into Result Intake/);
@@ -95,7 +97,8 @@ test("source reliability state no longer uses stale caseInfo naming", () => {
   assert.doesNotMatch(appJs, /caseInfo/);
 });
 
-test("only the live squid background asset remains wired", () => {
+test("landing background layers the provided artwork over the squid fallback", () => {
+  assert.match(stylesCss, /github\.com\/user-attachments\/assets\/e061975f-68eb-4d6f-b6a9-bff2785854ed/);
   assert.match(stylesCss, /assets\/squid-bg\.jpg/);
   assert.doesNotMatch(stylesCss, /assets\/ocean-bg\.jpg/);
   assert.equal(fs.existsSync(oceanBgPath), false);
@@ -137,6 +140,24 @@ test("loading an image stays local until a launch action is chosen", () => {
   assert.doesNotMatch(appJs, /handleSearchAll\(\{ autoEnableShare: true, openLens: false \}\)/);
   assert.match(appJs, /window\.__osintActivateTab\?\.\("search"\);/);
   assert.match(appJs, /Local review ready\. Uploads start only when you choose a launch action\./);
+});
+
+test("preview exposes crop-and-search controls for selected regions", () => {
+  assert.match(indexHtml, /id="previewStage"/);
+  assert.match(indexHtml, /id="previewCropBox"/);
+  assert.match(indexHtml, /id="btnSearchCrop"/);
+  assert.match(indexHtml, />\s*Search Crop\s*</);
+  assert.match(indexHtml, /id="btnClearCrop"/);
+  assert.match(indexHtml, /Drag a box around a face, logo, object, tattoo, sign, vehicle, building, product, artwork, or text area/);
+  assert.match(stylesCss, /\.preview-crop-box/);
+  assert.match(stylesCss, /\.preview\.crop-ready/);
+  assert.match(appJs, /function setupCropTool\(/);
+  assert.match(appJs, /function ensureCropSearchFile\(/);
+  assert.match(appJs, /const MIN_CROP_SIZE_PX = 18;/);
+  assert.match(appJs, /const CROP_JPEG_QUALITY = 0\.94;/);
+  assert.match(appJs, /SEARCH now uses only the selected region/);
+  assert.match(appJs, /if \(isCropActive\(\)\) return "crop";/);
+  assert.match(appJs, /if \(state\.shareSafe\) return "clean";/);
 });
 
 
@@ -238,6 +259,7 @@ test("reports export structured capture provenance and runtime metadata", () => 
   assert.match(appJs, /temporary_external_artifact_warning/);
   assert.match(appJs, /expected_expiry_window/);
   assert.match(appJs, /ocr_entity_review_entries/);
+  assert.match(appJs, /crop_selection:/);
   assert.match(appJs, /investigation: report\.investigation/);
   assert.match(appJs, /report\.investigation = buildInvestigationExport/);
 });
@@ -247,12 +269,16 @@ test("share provider UI is explicit about automatic host ranking", () => {
   assert.match(indexHtml, />Auto host</);
 });
 
-test("easy mode defaults to direct search actions and keeps AI suspicion in advanced review", () => {
+test("easy mode keeps the search launchpad visible with a giant primary CTA", () => {
   assert.match(indexHtml, /id="btnQuickLens"/);
-  assert.match(indexHtml, />\s*Search Lens\s*</);
+  assert.match(indexHtml, />\s*Lens only\s*</);
   assert.match(indexHtml, /id="btnQuickOcr"/);
+  assert.match(indexHtml, /id="btnSearchAll"/);
+  assert.match(indexHtml, /btn-search-cta/);
   assert.match(indexHtml, /id="workflowAdvanced"/);
+  assert.match(indexHtml, /<section id="searchConsoleAdvanced" class="search-console-panel">/);
   assert.match(indexHtml, /id="searchConsoleAdvanced"/);
+  assert.doesNotMatch(indexHtml, /<details id="searchConsoleAdvanced"/);
   assert.match(indexHtml, />AI-image suspicion</);
   assert.match(indexHtml, /Checklist only — not an oracle\./);
   assert.match(appJs, /function computeAiImageSuspicionChecklist/);

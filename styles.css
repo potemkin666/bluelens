@@ -34,6 +34,8 @@ body {
     radial-gradient(1200px 720px at 18% 8%, rgba(216, 247, 255, 0.18), transparent 58%),
     radial-gradient(960px 680px at 82% 12%, rgba(125, 205, 255, 0.18), transparent 60%),
     radial-gradient(920px 760px at 50% 100%, rgba(92, 173, 255, 0.18), transparent 60%),
+    linear-gradient(180deg, rgba(3, 13, 30, 0.18), rgba(3, 13, 30, 0.58)),
+    url("https://github.com/user-attachments/assets/e061975f-68eb-4d6f-b6a9-bff2785854ed") center / cover no-repeat fixed,
     var(--bg) url("./assets/squid-bg.jpg") center / cover no-repeat fixed;
   overflow-x: hidden;
 }
@@ -1035,6 +1037,23 @@ body.skin-chrome .tab.active {
   background: rgba(2, 6, 23, 0.2);
 }
 
+.preview-crop-box {
+  position: absolute;
+  border: 2px solid rgba(255, 239, 169, 0.96);
+  border-radius: 12px;
+  background: rgba(255, 224, 130, 0.18);
+  box-shadow:
+    0 0 0 9999px rgba(3, 10, 24, 0.34),
+    inset 0 0 0 1px rgba(255, 252, 234, 0.6),
+    0 0 30px rgba(255, 214, 120, 0.18);
+  pointer-events: none;
+}
+
+.preview.crop-ready {
+  cursor: crosshair;
+  touch-action: none;
+}
+
 .preview-empty {
   position: absolute;
   inset: 0;
@@ -1042,6 +1061,10 @@ body.skin-chrome .tab.active {
   place-items: center;
   color: rgba(226, 232, 240, 0.7);
   font-size: 13px;
+}
+
+.crop-status {
+  min-height: 1.4em;
 }
 
 .grid {
@@ -2431,6 +2454,69 @@ body.hud-mode .hud .card-title-row {
     linear-gradient(180deg, rgba(11, 38, 77, 0.24), rgba(6, 22, 48, 0.12));
 }
 
+.search-cta-shell {
+  display: grid;
+  gap: 10px;
+}
+
+.btn-search-cta {
+  width: 100%;
+  min-height: 84px;
+  border-radius: 24px;
+  font-size: clamp(26px, 4vw, 38px);
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  border-color: rgba(255, 240, 176, 0.95);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0.14)),
+    linear-gradient(180deg, rgba(255, 232, 150, 0.78), rgba(255, 188, 80, 0.44));
+  box-shadow:
+    0 0 0 1px rgba(255, 241, 189, 0.28),
+    0 28px 80px rgba(255, 194, 92, 0.28);
+  animation: searchPulse 1.9s ease-in-out infinite;
+}
+
+.btn-search-cta::before {
+  margin-right: 14px;
+  font-size: 0.88em;
+}
+
+.btn-search-cta:hover {
+  transform: translateY(-2px) scale(1.01);
+  border-color: rgba(255, 248, 219, 1);
+}
+
+.btn-search-cta:disabled {
+  animation: none;
+}
+
+.search-cta-hint {
+  font-size: 13px;
+  color: rgba(239, 248, 255, 0.9);
+  text-align: center;
+}
+
+.quick-actions-row-secondary .btn {
+  flex: 1 1 220px;
+}
+
+@keyframes searchPulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(255, 241, 189, 0.24),
+      0 24px 70px rgba(255, 194, 92, 0.24);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow:
+      0 0 0 8px rgba(255, 229, 143, 0.10),
+      0 34px 98px rgba(255, 198, 102, 0.36);
+    transform: scale(1.012);
+  }
+}
+
 .quick-actions-row .btn {
   flex: 1 1 160px;
 }
@@ -2487,6 +2573,16 @@ body.hud-mode .hud .card-title-row {
   border: 1px solid rgba(198, 244, 255, 0.22);
   object-fit: cover;
   background: rgba(255, 255, 255, 0.04);
+}
+
+.search-console-panel {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(198, 244, 255, 0.25);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04)),
+    rgba(255, 255, 255, 0.04);
 }
 
 .search-console-stack {
