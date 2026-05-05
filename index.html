@@ -45,6 +45,23 @@
           <span id="statusPill" class="pill pill-muted">Idle</span>
         </div>
         <div id="statusLine" class="status-line" aria-live="polite"></div>
+        <div id="progressPanel" class="progress-panel" hidden aria-live="polite">
+          <div class="progress-head">
+            <strong id="progressLabel">Working…</strong>
+            <span id="progressValue">Starting…</span>
+          </div>
+          <div
+            id="progressTrack"
+            class="progress-track"
+            role="progressbar"
+            aria-label="Current task progress"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+          >
+            <div id="progressFill" class="progress-fill"></div>
+          </div>
+        </div>
 
         <div id="dropzone" class="dropzone" tabindex="0" role="button" aria-label="Upload image">
           <div class="dropzone-inner">
@@ -63,7 +80,7 @@
 
         <div class="action-stack" aria-label="Primary and secondary actions">
           <div class="action-group action-group-primary">
-            <div class="field-label">Primary action</div>
+            <div class="field-label">Step 2: Run one workflow</div>
             <div id="missionRow" class="row row-tight">
               <select id="missionPreset" class="select" disabled title="One mission = one run">
                 <option value="fast">Quick OCR</option>
@@ -74,13 +91,13 @@
                 <option value="metadata_pass">Metadata Pass</option>
                 <option value="cross_engine_swarm">Cross-Engine Swarm</option>
               </select>
-              <button id="btnRunMission" class="btn" type="button" disabled title="Runs the selected mission preset">Run</button>
+              <button id="btnRunMission" class="btn" type="button" disabled title="Run the selected workflow">Run selected</button>
             </div>
-            <div class="hint">Choose the default workflow here, then run it without the layout shifting after load.</div>
+            <div id="missionExplain" class="hint action-explain">Load an image first, then run one workflow.</div>
           </div>
 
           <div class="action-group action-group-secondary">
-            <div class="field-label">Secondary actions</div>
+            <div class="field-label">Step 3: optional follow-up tools</div>
             <div id="manualRow" class="row row-tight">
               <button
                 id="btnSearchAll"
@@ -90,7 +107,7 @@
                 data-ico="⌕"
                 title="Uploads once, opens Lens, and prepares manual links for the other providers."
               >
-                Prepare Engine Links
+                Upload + Prepare Links
               </button>
               <button
                 id="btnRunPass"
@@ -100,7 +117,7 @@
                 data-ico="⚡"
                 title="Runs OCR and refreshes attribution and metadata-suspicion cues."
               >
-                OSINT Pass
+                Refresh Local Analysis
               </button>
               <button
                 id="btnCopyReport"
@@ -123,6 +140,7 @@
                 Evidence Pack
               </button>
             </div>
+            <div class="hint">Use these after local review is ready. Upload happens only when you choose an upload action.</div>
           </div>
         </div>
 
@@ -159,6 +177,7 @@
           <button class="tab" type="button" role="tab" aria-selected="false" data-tab="signals">Signals</button>
           <button class="tab" type="button" role="tab" aria-selected="false" data-tab="text">Text</button>
           <button class="tab" type="button" role="tab" aria-selected="false" data-tab="compare">Compare</button>
+          <button class="tab" type="button" role="tab" aria-selected="false" data-tab="investigation">Investigation</button>
         </div>
 
         <div class="tabpanels">
@@ -205,7 +224,7 @@
 
               <div class="mono mono-box" title="Uploading only happens after you choose a launch action">
                 <input id="chkEnableShare" type="checkbox" checked hidden />
-                Launch actions upload to a temporary public host only after you explicitly choose them.
+                Uploads stay off until you run Upload + Launchpad, Upload + Prepare Links, or an engine open action.
               </div>
 
               <div class="kv">
@@ -214,7 +233,7 @@
               </div>
 
               <div class="mono mono-box workflow-box" title="Canonical operator workflow">
-                Operator workflow: 1) load image locally → 2) review signals + suspicion inputs → 3) choose OCR / launchpad → 4) export report or evidence pack.
+                Quick start: 1) load image → 2) review local signals → 3) run OCR or upload for launchpad links → 4) export if needed.
               </div>
 
               <label class="toggle toggle-mini" title="Uploads the clean copy (re-encoded) instead of the original file">
@@ -310,7 +329,7 @@
               </div>
               <div class="row row-tight">
                 <input id="batchInput" class="input" type="file" accept="image/*" multiple title="Select multiple images" />
-                <button id="btnRunBatch" class="btn btn-secondary" type="button" title="Generate per-file reports">Run</button>
+                <button id="btnRunBatch" class="btn btn-secondary" type="button" title="Generate per-file reports">Run Batch</button>
                 <button id="btnDownloadBatch" class="btn btn-ghost" type="button" disabled title="Download JSON bundle">Download</button>
               </div>
               <div id="batchOut" class="pre">—</div>
@@ -498,11 +517,11 @@
                 <span class="pill">manual</span>
               </div>
               <div class="actions">
-                <button id="btnOpenLens" class="btn btn-secondary" type="button" disabled>Lens</button>
-                <button id="btnOpenBing" class="btn btn-secondary" type="button" disabled>Bing</button>
-                <button id="btnOpenTineye" class="btn btn-secondary" type="button" disabled>TinEye</button>
-                <button id="btnOpenYandex" class="btn btn-secondary" type="button" disabled>Yandex</button>
-                <button id="btnOpenGoogleImages" class="btn btn-secondary" type="button" disabled>Google</button>
+                <button id="btnOpenLens" class="btn btn-secondary" type="button" disabled>Open Lens</button>
+                <button id="btnOpenBing" class="btn btn-secondary" type="button" disabled>Open Bing</button>
+                <button id="btnOpenTineye" class="btn btn-secondary" type="button" disabled>Open TinEye</button>
+                <button id="btnOpenYandex" class="btn btn-secondary" type="button" disabled>Open Yandex</button>
+                <button id="btnOpenGoogleImages" class="btn btn-secondary" type="button" disabled>Open Google</button>
               </div>
             </div>
           </div>
@@ -538,7 +557,7 @@
                   </select>
                 </label>
                 <span id="ocrLangHint" class="pill pill-muted" hidden title="Weak script hint from observed characters">Weak script hint</span>
-                <button id="btnRunOcr" class="btn btn-secondary" type="button" disabled title="Run OCR">Run</button>
+                <button id="btnRunOcr" class="btn btn-secondary" type="button" disabled title="Run OCR">Run OCR</button>
                 <button id="btnPivotSearch" class="btn btn-secondary" type="button" disabled title="Open manual pivot templates for OCR hits">Manual pivots</button>
                 <button id="btnCopyOcr" class="btn btn-ghost" type="button" disabled title="Copy OCR text">Copy</button>
               </div>
@@ -598,6 +617,61 @@
               </div>
             </div>
           </div>
+
+          <div class="tabpanel" data-panel="investigation" role="tabpanel">
+            <div class="subcard hud" data-hud-key="investigation">
+              <div class="subcard-head">
+                <div class="subcard-title">Investigation</div>
+                <span class="pill pill-muted">graph + chronology</span>
+              </div>
+              <div class="hint">Correlate entities, inspect chronology, monitor source health, and track swarm outcomes from one shared investigation model.</div>
+              <div class="row row-tight investigation-subtabs" role="tablist" aria-label="Investigation views">
+                <button class="btn btn-secondary btn-small active" type="button" data-investigation-view="graph">Graph</button>
+                <button class="btn btn-secondary btn-small" type="button" data-investigation-view="timeline">Timeline</button>
+                <button class="btn btn-secondary btn-small" type="button" data-investigation-view="sonar">Sonar</button>
+                <button class="btn btn-secondary btn-small" type="button" data-investigation-view="swarm">Swarm</button>
+                <button id="btnRunSonar" class="btn btn-ghost btn-small" type="button" title="Refresh live source-health sonar">
+                  Refresh Sonar
+                </button>
+                <button id="btnCopySwarmJson" class="btn btn-ghost btn-small" type="button" disabled title="Copy the staged swarm run as JSON">
+                  Copy Swarm JSON
+                </button>
+              </div>
+              <div id="investigationSummary" class="mono mono-box">
+                Load an image, run OCR, or build a batch to populate the investigation graph and timeline.
+              </div>
+
+              <div class="investigation-view active" data-investigation-panel="graph">
+                <div class="investigation-grid">
+                  <div class="investigation-stage">
+                    <svg id="investigationGraph" class="investigation-graph" viewBox="0 0 860 480" role="img" aria-label="Investigation entity graph"></svg>
+                    <div id="investigationLegend" class="chips chips-mini" hidden></div>
+                  </div>
+                  <div id="investigationDetail" class="mono mono-box">
+                    Select a node to inspect linked files, evidence counts, and provenance.
+                  </div>
+                </div>
+              </div>
+
+              <div class="investigation-view" data-investigation-panel="timeline" hidden>
+                <div id="investigationTimeline" class="mono mono-box">
+                  No chronology yet. Add source timing, OCR dates, or analyst actions to build the timeline.
+                </div>
+              </div>
+
+              <div class="investigation-view" data-investigation-panel="sonar" hidden>
+                <div id="investigationSonarOut" class="mono mono-box">
+                  Running sonar…
+                </div>
+              </div>
+
+              <div class="investigation-view" data-investigation-panel="swarm" hidden>
+                <div id="investigationSwarmOut" class="mono mono-box">
+                  No launchpad or swarm run staged yet.
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="hint">
@@ -609,23 +683,13 @@
     <section class="focus-shell" aria-labelledby="focusTitle">
       <div class="focus-panel">
         <div class="focus-copy">
-          <span class="focus-kicker">Search-first workflow</span>
-          <h2 id="focusTitle">Drop an image, inspect locally, then choose when to upload.</h2>
-          <p class="focus-lede">
-            BlueLens works best as a fast launchpad with explicit operator consent: inspect locally first, then choose if you want a temporary public URL for provider review.
-          </p>
-          <ul class="focus-points">
-            <li>Choose once to inspect locally; uploads happen only after you ask for launchpad links.</li>
-            <li>Keep hashes, EXIF, OCR, and compare tools one click away.</li>
-            <li>Launch Lens first, then use the prepared manual links for the rest.</li>
+          <span class="focus-kicker">Quick start</span>
+          <h2 id="focusTitle">Know what runs before you click it.</h2>
+          <ul class="focus-points focus-steps">
+            <li><strong>Load image</strong> — BlueLens inspects it locally first.</li>
+            <li><strong>Run local tools</strong> — hashes, EXIF, OCR, and compare stay on this device.</li>
+            <li><strong>Upload only on demand</strong> — launchpad and engine actions upload only when you choose them.</li>
           </ul>
-        </div>
-
-        <div class="focus-demo">
-          <img
-            src="https://github.com/user-attachments/assets/280b967d-aca5-4eb9-8fa7-af8c262acbc5"
-            alt="BlueLens image search workflow demo"
-          />
         </div>
       </div>
     </section>

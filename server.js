@@ -17,6 +17,7 @@ const os = require("os");
 const path = require("path");
 const { URL } = require("url");
 const BLUELENS_CONFIG = require("./bluelens-config.js");
+const { reverseSearchUploadPage } = require("./osint-lib.js");
 
 const ROOT = __dirname;
 const SERVER_CONFIG = BLUELENS_CONFIG.server || {};
@@ -34,6 +35,7 @@ const LITTERBOX_EXPIRY = UPLOAD_CONFIG.litterboxExpiry || "72h";
 const WAIT_JOB_STORE_PATH = path.join(os.tmpdir(), "bluelens-wait-jobs-v1.json");
 const SERVER_STARTED_AT = Date.now();
 const DOCTOR_TIMEOUT_MS = 2500;
+const DOCTOR_HISTORY_MAX = 24;
 const ACQ_CONFIG = SERVER_CONFIG.acquisition || {};
 const ACQ_TIMEOUT_MS = ACQ_CONFIG.timeoutMs || 10_000;
 const ACQ_MAX_BYTES = ACQ_CONFIG.maxBytes || 768 * 1024;
@@ -49,6 +51,11 @@ const UPLOAD_DOCTOR_URLS = {
   litterbox: "https://litterbox.catbox.moe/",
   "0x0": "https://0x0.st/",
 };
+const CDN_DOCTOR_URLS = [
+  { name: "unpkg", url: "https://unpkg.com/" },
+  { name: "jsdelivr", url: "https://cdn.jsdelivr.net/" },
+  { name: "google_lens", url: "https://lens.google.com/" },
+];
 const ACQ_RATE_LIMITS = new Map();
 
 // Durable wait-job handoff for wait tabs.
@@ -59,6 +66,12 @@ const WAIT_JOB_LISTENERS = new Map();
 // Upload host telemetry for auto-fastest selection.
 // host -> { ok: number, fail: number, avgMs: number }
 const UPLOAD_STATS = new Map();
+const DOCTOR_HISTORY = {
+  uploadReachability: [],
+  cdnReachability: [],
+  engineAvailability: [],
+  uploadAttempts: [],
+};
 function reportServerIssue(scope, error, detail = null) {
   const msg = error?.message || String(error || "unknown error");
   if (detail) console.warn("[BlueLens]", { scope, message: msg, detail });
@@ -362,7 +375,7 @@ async function fetchScopedUrl(rawUrl, { req, scope = "fetch", accept = "text/htm
 }
 
 async function collectDoctorUploadReachability() {
-  return await Promise.all(UPLOAD_HOSTS.map(async (host) => {
+  const rows = await Promise.all(UPLOAD_HOSTS.map(async (host) => {
     const url = UPLOAD_DOCTOR_URLS[host];
     if (!url) {
       return { host, reachable: false, status_code: null, error: "no diagnostic url configured" };
@@ -374,6 +387,8 @@ async function collectDoctorUploadReachability() {
       return { host, reachable: false, status_code: null, error: error?.message || "unreachable" };
     }
   }));
+  pushDoctorHistory(DOCTOR_HISTORY.uploadReachability, { ts: new Date().toISOString(), rows });
+  return rows;
 }
 
 function updateUploadStats(host, ok, ms) {
@@ -390,6 +405,69 @@ function hostScore(host) {
   if (!s) return { failRate: 0.2, avgMs: 45_000 };
   const n = Math.max(1, s.ok + s.fail);
   return { failRate: s.fail / n, avgMs: s.avgMs || 45_000 };
+}
+
+function pushDoctorHistory(bucket, sample, max = DOCTOR_HISTORY_MAX) {
+  if (!Array.isArray(bucket) || !sample) return;
+  bucket.push(sample);
+  if (bucket.length > max) bucket.splice(0, bucket.length - max);
+}
+
+async function collectReachabilityRows(rows = []) {
+  return await Promise.all(rows.map(async (row) => {
+    try {
+      const startedAt = Date.now();
+      const res = await fetchWithTimeout(row.url, { method: "GET", redirect: "follow" }, DOCTOR_TIMEOUT_MS);
+      return {
+        ...row,
+        reachable: res.ok,
+        status_code: res.status,
+        error: res.ok ? "" : `http ${res.status}`,
+        duration_ms: Date.now() - startedAt,
+      };
+    } catch (error) {
+      return {
+        ...row,
+        reachable: false,
+        status_code: null,
+        error: error?.message || "unreachable",
+        duration_ms: null,
+      };
+    }
+  }));
+}
+
+async function collectDoctorCdnReachability() {
+  return await collectReachabilityRows(CDN_DOCTOR_URLS);
+}
+
+async function collectDoctorEngineAvailability() {
+  return await collectReachabilityRows(
+    ["lens", "bing", "tineye", "yandex", "google_images"].map((engine) => ({ engine, url: reverseSearchUploadPage(engine) })),
+  );
+}
+
+function summarizeUploadHostHistory() {
+  const summary = {};
+  for (const host of UPLOAD_HOSTS) {
+    const stats = UPLOAD_STATS.get(host) || { ok: 0, fail: 0, avgMs: 0 };
+    const total = Math.max(1, Number(stats.ok || 0) + Number(stats.fail || 0));
+    summary[host] = {
+      ok: Number(stats.ok || 0),
+      fail: Number(stats.fail || 0),
+      avg_ms: Number(stats.avgMs || 0),
+      fail_rate: Number(stats.fail || 0) / total,
+    };
+  }
+  return summary;
+}
+
+function bestUploadHost() {
+  const ranked = UPLOAD_HOSTS
+    .slice()
+    .map((host) => ({ host, ...hostScore(host) }))
+    .sort((a, b) => a.failRate - b.failRate || a.avgMs - b.avgMs);
+  return ranked[0]?.host || "";
 }
 
 function sanitizeWaitJob(entry, idHint = "") {
@@ -760,6 +838,7 @@ async function handleUpload(req, res) {
         const ms = Date.now() - t0;
         updateUploadStats(a.name, true, ms);
         attemptMeta.push({ host: a.name, ok: true, ms });
+        pushDoctorHistory(DOCTOR_HISTORY.uploadAttempts, { ts: new Date().toISOString(), host: a.name, ok: true, ms, purpose });
 
         send(
           res,
@@ -774,6 +853,7 @@ async function handleUpload(req, res) {
         errors.push(`${a.name}: ${msg}`);
         updateUploadStats(a.name, false, ms);
         attemptMeta.push({ host: a.name, ok: false, ms, err: msg });
+        pushDoctorHistory(DOCTOR_HISTORY.uploadAttempts, { ts: new Date().toISOString(), host: a.name, ok: false, ms, err: msg, purpose });
       }
     }
 
@@ -1043,6 +1123,10 @@ const server = http.createServer(async (req, res) => {
   }
   if (u.pathname === "/api/doctor") {
     const uploadReachability = await collectDoctorUploadReachability();
+    const cdnReachability = await collectDoctorCdnReachability();
+    const engineAvailability = await collectDoctorEngineAvailability();
+    pushDoctorHistory(DOCTOR_HISTORY.cdnReachability, { ts: new Date().toISOString(), rows: cdnReachability });
+    pushDoctorHistory(DOCTOR_HISTORY.engineAvailability, { ts: new Date().toISOString(), rows: engineAvailability });
     send(
       res,
       200,
@@ -1061,6 +1145,16 @@ const server = http.createServer(async (req, res) => {
           rate_limit_window_ms: ACQ_RATE_LIMIT_WINDOW_MS,
         },
         upload_reachability: uploadReachability,
+        cdn_reachability: cdnReachability,
+        engine_availability: engineAvailability,
+        recent_upload_attempts: DOCTOR_HISTORY.uploadAttempts.slice(-8).reverse(),
+        recommended_upload_host: bestUploadHost(),
+        history: {
+          upload_hosts: summarizeUploadHostHistory(),
+          upload_reachability: DOCTOR_HISTORY.uploadReachability.slice(-6),
+          cdn_reachability: DOCTOR_HISTORY.cdnReachability.slice(-6),
+          engine_availability: DOCTOR_HISTORY.engineAvailability.slice(-6),
+        },
       }),
       { "Content-Type": "application/json" },
     );

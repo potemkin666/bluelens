@@ -46,16 +46,16 @@ test("package startup contract declares Node 18+ and a server start script", () 
 });
 
 test("search-all UI is framed as link preparation, not automatic querying", () => {
-  assert.match(indexHtml, />\s*Prepare Engine Links\s*</);
-  assert.match(appJs, /Preparing engine links…/);
-  assert.match(appJs, /Prepare Engine Links/);
+  assert.match(indexHtml, />\s*Upload \+ Prepare Links\s*</);
+  assert.match(appJs, /Uploading \+ preparing links…/);
+  assert.match(appJs, /Upload \+ Prepare Links/);
   assert.match(appJs, /Paste titles, snippets, and URLs back into Result Intake/);
 });
 
 
 test("sharing copy matches explicit upload consent", () => {
-  assert.match(indexHtml, /Launch actions upload to a temporary public host only after you explicitly choose them\./);
-  assert.match(indexHtml, /uploads happen only after you ask for launchpad links/i);
+  assert.match(indexHtml, /Uploads stay off until you run Upload \+ Launchpad, Upload \+ Prepare Links, or an engine open action\./);
+  assert.match(indexHtml, /upload only on demand/i);
 });
 
 
@@ -66,9 +66,10 @@ test("primary and secondary actions stay in a static order", () => {
 });
 
 test("landing UI stays focused on image search", () => {
-  assert.match(indexHtml, /Drop an image, inspect locally, then choose when to upload\./);
-  assert.match(indexHtml, /alt="BlueLens image search workflow demo"/);
-  assert.match(indexHtml, /<div class="focus-demo">[\s\S]*?<img/);
+  assert.match(indexHtml, /Know what runs before you click it\./);
+  assert.match(indexHtml, /Load image<\/strong> — BlueLens inspects it locally first\./);
+  assert.match(indexHtml, /Run local tools<\/strong> — hashes, EXIF, OCR, and compare stay on this device\./);
+  assert.doesNotMatch(indexHtml, /Search-first workflow/);
   assert.doesNotMatch(indexHtml, /Local file signals/);
 });
 
@@ -111,6 +112,20 @@ test("brand identity is carried through favicon, wait page, and shortcut icon", 
 test("search tab is always the first panel shown on load", () => {
   assert.match(setupTabsBlock, /activate\("search"\);/);
   assert.doesNotMatch(setupTabsBlock, /localStorage\.getItem\("ui:tab"\)/);
+});
+
+test("investigation surface exposes graph timeline sonar and swarm views", () => {
+  assert.match(indexHtml, /data-tab="investigation"/);
+  assert.match(indexHtml, /data-investigation-view="graph"/);
+  assert.match(indexHtml, /data-investigation-view="timeline"/);
+  assert.match(indexHtml, /data-investigation-view="sonar"/);
+  assert.match(indexHtml, /data-investigation-view="swarm"/);
+  assert.match(indexHtml, /id="investigationGraph"/);
+  assert.match(indexHtml, /id="investigationTimeline"/);
+  assert.match(indexHtml, /id="investigationSonarOut"/);
+  assert.match(indexHtml, /id="investigationSwarmOut"/);
+  assert.match(appJs, /function buildInvestigationModel\(/);
+  assert.match(appJs, /function renderInvestigationSurface\(/);
 });
 
 test("loading an image stays local until a launch action is chosen", () => {
@@ -198,6 +213,8 @@ test("reports export structured capture provenance and runtime metadata", () => 
   assert.match(appJs, /temporary_external_artifact_warning/);
   assert.match(appJs, /expected_expiry_window/);
   assert.match(appJs, /ocr_entity_review_entries/);
+  assert.match(appJs, /investigation: report\.investigation/);
+  assert.match(appJs, /report\.investigation = buildInvestigationExport/);
 });
 
 test("share provider UI is explicit about automatic host ranking", () => {
@@ -226,6 +243,8 @@ test("batch OCR failures are surfaced instead of silently ignored", () => {
 
 test("onboarding and evidence-pack UI expose operator caveats and export path", () => {
   assert.match(indexHtml, /id="onboardingStrip"/);
+  assert.match(indexHtml, /id="progressPanel"/);
+  assert.match(indexHtml, /id="missionExplain"/);
   assert.match(indexHtml, /id="btnEvidencePack"/);
   assert.match(indexHtml, /id="btnRunDoctor"/);
   assert.match(indexHtml, /id="doctorOut"/);
@@ -236,11 +255,12 @@ test("onboarding and evidence-pack UI expose operator caveats and export path", 
   assert.match(indexHtml, /id="manualNotes"/);
   assert.match(indexHtml, /id="actionLogOut"/);
   assert.match(appJs, /function downloadEvidencePack\(\)/);
-  assert.match(appJs, /function runDoctorChecks\(\)/);
+  assert.match(appJs, /async function runDoctorChecks\(/);
   assert.match(appJs, /function ingestResults\(raw\)/);
   assert.match(appJs, /function renderMissionOutput\(\)/);
-  assert.match(indexHtml, /Operator workflow: 1\) load image locally/);
-  assert.match(appJs, /Batch export omits failures/);
+  assert.match(indexHtml, /Quick start: 1\) load image/);
+  assert.match(appJs, /function renderProgress\(\)/);
+  assert.match(appJs, /Loaded locally first\./);
   assert.match(helpHtml, />Doctor</);
 });
 
@@ -249,6 +269,9 @@ test("launchpad now renders queue-aware swarm cockpit state", () => {
   assert.match(appJs, /data-lp-open="pending"/);
   assert.match(appJs, /function prepareEngineSwarm\(/);
   assert.match(appJs, /ENGINE_SWARM_DELAY_MS/);
+  assert.match(indexHtml, /id="btnCopySwarmJson"/);
+  assert.match(appJs, /data-swarm-disposition/);
+  assert.match(appJs, /data-swarm-notes/);
   assert.match(waitHtml, /Uploading… \(check main tab\)\./);
 });
 
