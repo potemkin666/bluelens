@@ -4089,7 +4089,9 @@ function updateCropButtons() {
 }
 
 function getSearchArtifactWanted() {
-  return isCropActive() ? "crop" : state.shareSafe ? "clean" : "original";
+  if (isCropActive()) return "crop";
+  if (state.shareSafe) return "clean";
+  return "original";
 }
 
 function invalidateSharedSearch(reason = "") {

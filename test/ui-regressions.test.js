@@ -153,7 +153,8 @@ test("preview exposes crop-and-search controls for selected regions", () => {
   assert.match(appJs, /function setupCropTool\(/);
   assert.match(appJs, /function ensureCropSearchFile\(/);
   assert.match(appJs, /SEARCH now uses only the selected region/);
-  assert.match(appJs, /return isCropActive\(\) \? "crop" : state\.shareSafe \? "clean" : "original"/);
+  assert.match(appJs, /if \(isCropActive\(\)\) return "crop";/);
+  assert.match(appJs, /if \(state\.shareSafe\) return "clean";/);
 });
 
 
