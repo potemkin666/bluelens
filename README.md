@@ -5,6 +5,9 @@
   <br />
   <br />
   <img src="https://github.com/user-attachments/assets/a0c348b1-50b9-42fa-82dd-518edcf2ec5c" alt="BlueLens sea mark" width="360" />
+  <br />
+  <br />
+  <img src="https://github.com/user-attachments/assets/385bc559-333d-4d71-858f-18e993c3eade" alt="BlueLens ocean companion mark" width="280" />
 </div>
 
 <div align="center">
@@ -45,10 +48,16 @@
     - private / unindexed imagery
 - **False-positive suppressor**
   - mark bad matches and keep them suppressed for the current session
+- **Source contradiction panel**
+  - if dated results disagree, BlueLens shows the conflict instead of pretending there is one clean truth
+- **Likely original / repost labeling**
+  - each ingested result is tagged as a likely original, repost, scraped mirror, meme derivative, stock duplicate, or review-needed lead
 - **Investigation surface**
   - graph, timeline, sonar, and swarm views share one investigation model
 - **Evidence output**
   - report export, evidence pack export, upload provenance, OCR settings, and runtime metadata
+- **Batch export**
+  - batch mode now supports reviewer-friendly JSON and CSV summaries with best match, earliest date, source URLs, confidence, duplicate count, and notes
 
 ---
 
@@ -62,7 +71,8 @@ BlueLens is designed for disciplined image triage:
 4. **Launch the multi-engine relay**
 5. **Ingest external hits**
 6. **Suppress junk**
-7. **Use the autopsy when the queue stays empty**
+7. **Check contradictions and source labels**
+8. **Use the autopsy when the queue stays empty**
 
 The default posture is explicit and restrained:
 
@@ -81,6 +91,8 @@ BlueLens already had a launchpad; it now reads more accurately as a **one upload
 - the launchpad tracks queue state, blocked tabs, opened tabs, and analyst dispositions
 - art-focused follow-ups such as **SauceNAO**, **IQDB**, and **ASCII2D** sit beside the broader web engines
 - the intake queue dedupes pasted findings and now supports per-session suppression of false positives
+- the intake layer now tags results as likely originals, reposts, mirrors, meme derivatives, or stock duplicates
+- contradictory years across sources are surfaced as conflicts instead of being silently averaged into nonsense
 
 > Pinterest does not expose the same clean public URL handoff as the other providers, so BlueLens treats it as a best-effort follow-up door rather than a guaranteed automated match lane.
 
@@ -98,6 +110,38 @@ When the intake queue is empty after a relay run, BlueLens does not shrug. It pe
 - staged engine coverage
 
 This keeps “no result” from being a dead screen. It becomes a concrete explanation of **why** the image likely failed to match.
+
+---
+
+## ⚖️ Source contradictions and repost posture
+
+BlueLens now treats external results as evidence, not revelation.
+
+- if one source says **2020** and another says **2024**, the contradiction panel shows both sides
+- intake results are labeled with a likely posture:
+  - **Likely original**
+  - **Likely repost**
+  - **Scraped mirror**
+  - **Meme derivative**
+  - **Stock duplicate**
+- each label carries confidence and short notes so the analyst can challenge the machine instead of obeying it
+
+This is not a claim of omniscience. It is a structured argument surface.
+
+---
+
+## 📊 Batch mode
+
+Drop a large set of images and BlueLens will build a sortable dashboard plus export artifacts for review.
+
+- JSON export keeps the full per-file reports
+- CSV export produces a summary table with:
+  - best match
+  - earliest date
+  - source URLs
+  - confidence
+  - duplicate count
+  - analyst notes
 
 ---
 

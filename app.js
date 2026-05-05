@@ -104,6 +104,7 @@ const elements = {
   batchInput: document.getElementById("batchInput"),
   btnRunBatch: document.getElementById("btnRunBatch"),
   btnDownloadBatch: document.getElementById("btnDownloadBatch"),
+  btnDownloadBatchCsv: document.getElementById("btnDownloadBatchCsv"),
   batchOut: document.getElementById("batchOut"),
   scanlineSlider: document.getElementById("scanlineSlider"),
   chromaticSlider: document.getElementById("chromaticSlider"),
@@ -144,6 +145,7 @@ const elements = {
   btnCopyResultsJson: document.getElementById("btnCopyResultsJson"),
   resultIntakeSummary: document.getElementById("resultIntakeSummary"),
   noResultAutopsyOut: document.getElementById("noResultAutopsyOut"),
+  sourceContradictionOut: document.getElementById("sourceContradictionOut"),
 
   // Command palette
   cmdk: document.getElementById("cmdk"),
@@ -1100,6 +1102,185 @@ function summarizeResultIntake(entries = []) {
   };
 }
 
+const SOURCE_LABEL_META = {
+  likely_original: { label: "Likely original", tone: "ok" },
+  likely_repost: { label: "Likely repost", tone: "warn" },
+  scraped_mirror: { label: "Scraped mirror", tone: "warn" },
+  meme_derivative: { label: "Meme derivative", tone: "hot" },
+  stock_duplicate: { label: "Stock duplicate", tone: "warn" },
+  needs_review: { label: "Needs review", tone: "" },
+};
+
+function formatSourceLabelKey(key) {
+  const meta = SOURCE_LABEL_META[key] || SOURCE_LABEL_META.needs_review;
+  return meta.label;
+}
+
+function extractYearCandidatesFromText(text) {
+  const raw = String(text || "");
+  const years = Array.from(new Set((raw.match(/\b(19\d{2}|20\d{2})\b/g) || []).map((value) => Number(value)).filter((value) => value >= 1900 && value <= 2099)));
+  return years.sort((a, b) => a - b);
+}
+
+function buildResultIntakeDerivedContext(entries = []) {
+  const visible = getVisibleResultIntakeEntries(entries);
+  const repeatedDomains = new Map();
+  const allYears = [];
+  for (const entry of visible) {
+    const domain = String(entry?.domain || "");
+    if (domain) repeatedDomains.set(domain, (repeatedDomains.get(domain) || 0) + 1);
+    allYears.push(...extractYearCandidatesFromText(`${entry?.title || ""}\n${entry?.snippet || ""}\n${entry?.source_line || ""}`));
+  }
+  const uniqueYears = Array.from(new Set(allYears)).sort((a, b) => a - b);
+  return {
+    earliestYear: uniqueYears[0] || null,
+    latestYear: uniqueYears.length ? uniqueYears[uniqueYears.length - 1] : null,
+    repeatedDomains,
+  };
+}
+
+function classifyResultIntakeEntry(entry, context = {}) {
+  const combined = `${entry?.title || ""}\n${entry?.snippet || ""}\n${entry?.canonical_url || entry?.url || ""}\n${entry?.source_line || ""}`.toLowerCase();
+  const years = extractYearCandidatesFromText(combined);
+  const earliestYear = years[0] || null;
+  const notes = [];
+  let label = "needs_review";
+  let confidence = 0.34;
+
+  const domain = String(entry?.domain || "");
+  const repeated = Number(context.repeatedDomains?.get(domain) || 0);
+  const has = (re) => re.test(combined);
+  const stockDomain = /(shutterstock|adobestock|stock|istockphoto|gettyimages|pixabay|pexels|unsplash)/.test(domain) || has(/\b(stock|royalty[- ]free|licensing|shutterstock|getty|adobe stock|iStock)\b/);
+  const memeSignal = has(/\b(meme|reaction image|caption|template|knowyourmeme|imgflip|shitpost)\b/);
+  const mirrorSignal = /(pinimg|pinterest|weheartit|tumblr|reddit|9gag|danbooru|gelbooru|yande\.re|zerochan|e-shuushuu|fancaps)/.test(domain) || has(/\b(mirror|mirrored|rehost|aggregator|board|cached|scraped|proxy)\b/);
+  const originalSignal = /(artstation|behance|deviantart|pixiv|flickr|instagram|twitter|x\.com|newgrounds)/.test(domain) || has(/\b(original|official|artist|author|portfolio|source post|posted by)\b/);
+  const repostSignal = has(/\b(repost|reblog|shared by|posted on|pinned|collection|roundup|compilation)\b/);
+
+  if (stockDomain) {
+    label = "stock_duplicate";
+    confidence = 0.89;
+    notes.push("Stock-domain or licensing vocabulary detected");
+  } else if (memeSignal) {
+    label = "meme_derivative";
+    confidence = 0.87;
+    notes.push("Meme/template vocabulary detected");
+  } else if (mirrorSignal) {
+    label = "scraped_mirror";
+    confidence = 0.78;
+    notes.push("Mirror/board/rehost pattern detected");
+  } else if (repostSignal) {
+    label = "likely_repost";
+    confidence = 0.69;
+    notes.push("Repost-style wording detected");
+  } else if (originalSignal) {
+    label = "likely_original";
+    confidence = 0.72;
+    notes.push("Original-source vocabulary or creator platform detected");
+  }
+
+  if (context.earliestYear && earliestYear) {
+    if (earliestYear === context.earliestYear) {
+      if (label === "needs_review" || label === "likely_repost") {
+        label = "likely_original";
+        confidence = Math.max(confidence, 0.58);
+      }
+      notes.push(`Shares the earliest observed year (${context.earliestYear})`);
+    } else if (earliestYear > context.earliestYear && label === "needs_review") {
+      label = "likely_repost";
+      confidence = Math.max(confidence, 0.57);
+      notes.push(`Later than earliest observed year (${context.earliestYear})`);
+    }
+  }
+
+  if (repeated > 1) notes.push(`Domain repeated ${repeated} times in current intake`);
+  return {
+    ...entry,
+    observed_years: years,
+    earliest_observed_year: earliestYear,
+    source_label: label,
+    source_label_display: formatSourceLabelKey(label),
+    source_confidence: Number(confidence.toFixed(2)),
+    source_notes: notes,
+  };
+}
+
+function getAnalyzedResultIntakeEntries(entries = state.resultIntake?.entries) {
+  const base = Array.isArray(entries) ? entries.slice() : [];
+  const context = buildResultIntakeDerivedContext(base);
+  return base.map((entry) => classifyResultIntakeEntry(entry, context));
+}
+
+function buildSourceContradictionModel(entries = state.resultIntake?.entries) {
+  const analyzed = getAnalyzedResultIntakeEntries(entries).filter((entry) => !entry?.suppressed);
+  const yearBuckets = new Map();
+  for (const entry of analyzed) {
+    for (const year of entry.observed_years || []) {
+      const current = yearBuckets.get(year) || { year, count: 0, domains: new Set(), sources: [] };
+      current.count += 1;
+      if (entry.domain) current.domains.add(entry.domain);
+      current.sources.push({
+        domain: entry.domain || "unknown domain",
+        title: entry.title || entry.canonical_url || entry.url || "untitled result",
+        source_label: entry.source_label_display,
+      });
+      yearBuckets.set(year, current);
+    }
+  }
+  const rows = Array.from(yearBuckets.values()).sort((a, b) => a.year - b.year);
+  if (rows.length < 2) return null;
+  return {
+    summary: `Contradictory source dates detected: ${rows[0].year} vs ${rows[rows.length - 1].year} across ${rows.reduce((sum, row) => sum + row.count, 0)} dated findings.`,
+    rows: rows.map((row) => ({
+      ...row,
+      domains: Array.from(row.domains).sort(),
+      sources: row.sources.slice(0, 4),
+    })),
+  };
+}
+
+function renderSourceContradictions() {
+  const el = elements.sourceContradictionOut;
+  if (!el) return;
+  const conflict = buildSourceContradictionModel();
+  if (!conflict) {
+    el.classList.remove("mission-grid");
+    el.textContent = "Ingest result snippets with dates and BlueLens will surface conflicts instead of flattening them into fake certainty.";
+    return;
+  }
+  el.classList.add("mission-grid");
+  el.innerHTML = `
+    <div class="mission-summary">${escapeHtml(conflict.summary)}</div>
+    ${conflict.rows
+      .map(
+        (row) => `
+          <div class="mission-card contradiction-card">
+            <div class="mission-card-head">
+              <div>${escapeHtml(String(row.year))}</div>
+              <div class="mission-card-meta">${escapeHtml(`${row.count} findings · ${row.domains.join(", ") || "unknown domain"}`)}</div>
+            </div>
+            <div class="mission-card-lines">
+              ${row.sources.map((source) => `<div>${escapeHtml(source.domain)} · ${escapeHtml(source.source_label)} · ${escapeHtml(source.title)}</div>`).join("")}
+            </div>
+          </div>
+        `,
+      )
+      .join("")}
+  `;
+}
+
+function pickBestResultIntakeEntry(entries = []) {
+  const priority = { likely_original: 5, stock_duplicate: 4, scraped_mirror: 3, likely_repost: 2, meme_derivative: 1, needs_review: 0 };
+  return entries
+    .slice()
+    .sort((a, b) => {
+      const pa = priority[a.source_label] || 0;
+      const pb = priority[b.source_label] || 0;
+      if (pb !== pa) return pb - pa;
+      if ((b.source_confidence || 0) !== (a.source_confidence || 0)) return (b.source_confidence || 0) - (a.source_confidence || 0);
+      return String(a.canonical_url || a.url || "").localeCompare(String(b.canonical_url || b.url || ""));
+    })[0] || null;
+}
+
 function parseCurrentDimensions() {
   const raw = elements.metaDim?.textContent || "";
   const match = raw.match(/(\d+)\s*×\s*(\d+)/);
@@ -1312,14 +1493,16 @@ function renderResultIntake() {
   const el = elements.resultIntakeSummary;
   if (!el) return;
   const entries = Array.isArray(state.resultIntake?.entries) ? state.resultIntake.entries : [];
-  const visibleEntries = getVisibleResultIntakeEntries(entries);
-  const suppressedEntries = getSuppressedResultIntakeEntries(entries);
+  const analyzedEntries = getAnalyzedResultIntakeEntries(entries);
+  const visibleEntries = analyzedEntries.filter((entry) => !entry?.suppressed);
+  const suppressedEntries = analyzedEntries.filter((entry) => entry?.suppressed);
   if (!entries.length) {
     el.classList.remove("mission-grid");
     el.textContent = "No external findings ingested yet.";
     if (elements.btnClearResults) elements.btnClearResults.disabled = true;
     if (elements.btnCopyResultsJson) elements.btnCopyResultsJson.disabled = true;
     renderNoResultAutopsy();
+    renderSourceContradictions();
     return;
   }
   const summary = summarizeResultIntake(visibleEntries);
@@ -1342,6 +1525,8 @@ function renderResultIntake() {
               <div>${escapeHtml(entry.canonical_url || entry.url || "—")}</div>
               ${entry.snippet ? `<div>${escapeHtml(entry.snippet)}</div>` : ""}
               <div>Engines: ${escapeHtml((entry.engines || []).join(", ") || "manual")}${entry.media_hash?.value ? ` · hash ${escapeHtml(`${entry.media_hash.algo}:${entry.media_hash.value}`)}` : ""}${entry.merged_count > 1 ? ` · merged ${entry.merged_count}` : ""}</div>
+              <div>Source label: ${escapeHtml(entry.source_label_display)} · confidence ${escapeHtml(String(entry.source_confidence))}${entry.earliest_observed_year ? ` · earliest year ${escapeHtml(String(entry.earliest_observed_year))}` : ""}</div>
+              ${entry.source_notes?.length ? `<div>${escapeHtml(entry.source_notes.join(" · "))}</div>` : ""}
             </div>
             <div class="mission-card-links mission-card-actions">
               <button class="btn btn-ghost btn-small" type="button" data-result-suppress="${escapeAttr(buildResultIntakeKey(entry))}">Ignore match</button>
@@ -1367,6 +1552,7 @@ function renderResultIntake() {
               <div class="mission-card-lines">
                 <div>${escapeHtml(entry.canonical_url || entry.url || "—")}</div>
                 <div>Suppressed ${entry.suppressed_at ? escapeHtml(new Date(entry.suppressed_at).toLocaleString()) : "this session"}</div>
+                <div>${escapeHtml(entry.source_label_display)} · confidence ${escapeHtml(String(entry.source_confidence))}</div>
               </div>
               <div class="mission-card-links mission-card-actions">
                 <button class="btn btn-ghost btn-small" type="button" data-result-restore="${escapeAttr(buildResultIntakeKey(entry))}">Restore</button>
@@ -1382,6 +1568,7 @@ function renderResultIntake() {
   if (elements.btnClearResults) elements.btnClearResults.disabled = false;
   if (elements.btnCopyResultsJson) elements.btnCopyResultsJson.disabled = false;
   renderNoResultAutopsy();
+  renderSourceContradictions();
   renderInvestigationSurface();
 }
 
@@ -1885,6 +2072,7 @@ function setUiBusy(busy, label = "") {
     elements.batchInput,
     elements.btnRunBatch,
     elements.btnDownloadBatch,
+    elements.btnDownloadBatchCsv,
     elements.scanlineSlider,
     elements.chromaticSlider,
     elements.btnOverclock,
@@ -2154,11 +2342,17 @@ function reset() {
     elements.noResultAutopsyOut.classList.remove("mission-grid");
     elements.noResultAutopsyOut.textContent = "Run a multi-engine launch, then ingest hits. If nothing lands, BlueLens will explain the likely failure modes here.";
   }
+  if (elements.sourceContradictionOut) {
+    elements.sourceContradictionOut.classList.remove("mission-grid");
+    elements.sourceContradictionOut.textContent =
+      "Ingest result snippets with dates and BlueLens will surface conflicts instead of flattening them into fake certainty.";
+  }
   if (elements.btnIngestResults) elements.btnIngestResults.disabled = true;
   if (elements.btnClearResults) elements.btnClearResults.disabled = true;
   if (elements.btnCopyResultsJson) elements.btnCopyResultsJson.disabled = true;
   elements.batchOut.textContent = "—";
   elements.btnDownloadBatch.disabled = true;
+  if (elements.btnDownloadBatchCsv) elements.btnDownloadBatchCsv.disabled = true;
   if (elements.actionLogOut) {
     elements.actionLogOut.hidden = true;
     elements.actionLogOut.textContent = "";
@@ -3878,6 +4072,7 @@ function buildMarkdownReport(report) {
     lines.push(`- AI checklist: ${r.insights.ai_image_suspicion.items.map((item) => `${item.label} [${item.status}]`).join(" · ")}`);
   }
   if (r.result_intake?.autopsy?.summary) lines.push(`- No-result autopsy: ${String(r.result_intake.autopsy.summary)}`);
+  if (r.result_intake?.contradictions?.summary) lines.push(`- Source contradictions: ${String(r.result_intake.contradictions.summary)}`);
   lines.push("");
   lines.push(`## Public URL`);
   lines.push(`- URL: ${r.public_url ? `${r.public_url}` : "—"}`);
@@ -3943,6 +4138,11 @@ function buildMarkdownReport(report) {
   lines.push(`## Result Intake`);
   lines.push(`- Deduped entries: \`${Array.isArray(r.result_intake?.entries) ? r.result_intake.entries.length : 0}\``);
   lines.push(`- Last ingested: ${r.result_intake?.last_ingested_at ? `\`${r.result_intake.last_ingested_at}\`` : "—"}`);
+  if (r.result_intake?.best_match) {
+    lines.push(`- Best match: ${r.result_intake.best_match.title ? `\`${r.result_intake.best_match.title}\`` : "—"} · ${r.result_intake.best_match.label || "—"} · confidence ${r.result_intake.best_match.confidence ?? "—"}`);
+    lines.push(`- Best match URL: ${r.result_intake.best_match.url || "—"}`);
+  }
+  if (r.result_intake?.contradictions?.summary) lines.push(`- Contradictions: ${r.result_intake.contradictions.summary}`);
   lines.push("");
   lines.push(`## Action Log`);
   const actionLog = Array.isArray(r.session_action_log) ? r.session_action_log : [];
@@ -4808,6 +5008,18 @@ function buildOsintReport({ includeInvestigation = true } = {}) {
           last_ingested_at: state.resultIntake.last_ingested_at || null,
           entries: Array.isArray(state.resultIntake.entries) ? state.resultIntake.entries.slice() : [],
           autopsy: computeNoResultAutopsy(),
+          contradictions: buildSourceContradictionModel(),
+          best_match: (() => {
+            const best = pickBestResultIntakeEntry(getAnalyzedResultIntakeEntries(state.resultIntake.entries || []).filter((entry) => !entry?.suppressed));
+            return best
+              ? {
+                  title: best.title || null,
+                  url: best.canonical_url || best.url || null,
+                  label: best.source_label_display,
+                  confidence: best.source_confidence,
+                }
+              : null;
+          })(),
         }
       : null,
     session_action_log: Array.isArray(state.actionLog) ? state.actionLog.slice() : [],
@@ -4889,6 +5101,7 @@ async function runBatchFiles(files) {
 
   elements.btnRunBatch.disabled = true;
   elements.btnDownloadBatch.disabled = true;
+  if (elements.btnDownloadBatchCsv) elements.btnDownloadBatchCsv.disabled = true;
   elements.batchOut.textContent = `Running batch (${imageFiles.length} files)…`;
   elements.batchOut.classList.remove("batchdash");
   state.batchReports = [];
@@ -4927,6 +5140,7 @@ async function runBatchFiles(files) {
 
   elements.btnRunBatch.disabled = false;
   elements.btnDownloadBatch.disabled = state.batchReports.length === 0;
+  if (elements.btnDownloadBatchCsv) elements.btnDownloadBatchCsv.disabled = state.batchReports.length === 0;
   if (state.batchReports.length > 0) {
     // Render triage dashboard (sortable + filters + clustering).
     renderBatchDashboard();
@@ -4955,6 +5169,77 @@ function downloadJson(obj, filename) {
       : obj;
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
   downloadBlob(blob, filename);
+}
+
+function toCsvValue(value) {
+  const raw = value == null ? "" : String(value);
+  return /[",\n]/.test(raw) ? `"${raw.replace(/"/g, '""')}"` : raw;
+}
+
+function estimateLocalSourcePosture(report) {
+  const hasExif = Boolean(report?.exif && Object.keys(report.exif).length);
+  const software = String(report?.key_fields?.software || "").trim();
+  const score = Number(report?.insights?.metadata_suspicion_score ?? report?.insights?.repost_heuristic ?? 0);
+  const dims = String(report?.dimensions || "");
+  const match = dims.match(/(\d+)\s*[×x]\s*(\d+)/);
+  const mp = match ? (Number(match[1]) * Number(match[2])) / 1_000_000 : 0;
+  if (hasExif && !software && mp >= 1.5 && score <= 45) return { label: "Likely original", confidence: 0.62, notes: ["Local metadata and resolution look comparatively source-like"] };
+  if (software || score >= 60) return { label: "Likely repost", confidence: 0.58, notes: ["Editing/software or repost-oriented metadata cues present"] };
+  return { label: "Needs review", confidence: 0.4, notes: ["No external result intake was attached to this batch row"] };
+}
+
+function buildBatchSummaryRows(items = state.batchItems) {
+  const sourceItems = Array.isArray(items) ? items.filter((item) => item?.report) : [];
+  const clusterCounts = new Map();
+  for (const item of sourceItems) {
+    const key = Number(item.clusterId || 0);
+    if (key > 0) clusterCounts.set(key, (clusterCounts.get(key) || 0) + 1);
+  }
+  return sourceItems.map((item) => {
+    const report = item.report || {};
+    const intakeEntries = getAnalyzedResultIntakeEntries(report?.result_intake?.entries || []).filter((entry) => !entry?.suppressed);
+    const best = pickBestResultIntakeEntry(intakeEntries);
+    const contradiction = buildSourceContradictionModel(report?.result_intake?.entries || []);
+    const localSource = estimateLocalSourcePosture(report);
+    const urls = Array.isArray(report?.key_fields?.ocr_entities?.urls) ? report.key_fields.ocr_entities.urls.slice(0, 3) : [];
+    const earliestDate = best?.earliest_observed_year
+      ? String(best.earliest_observed_year)
+      : report?.key_fields?.captured_at?.normalized
+        ? String(report.key_fields.captured_at.normalized).slice(0, 10)
+        : report?.key_fields?.captured
+          ? String(report.key_fields.captured)
+          : "";
+    const duplicateCount = Math.max(1, Number(clusterCounts.get(Number(item.clusterId || 0)) || 1));
+    const notes = [
+      best?.source_notes?.join(" · "),
+      contradiction?.summary || "",
+      report?.insights?.metadata_suspicion_band ? `Metadata suspicion ${report.insights.metadata_suspicion_band}` : "",
+      report?.ocr_error ? `OCR ${report.ocr_error}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return {
+      file_name: report?.file?.name || "",
+      dimensions: report?.dimensions || "",
+      sha256: report?.hashes?.sha256 || "",
+      best_match: best?.title || best?.canonical_url || urls[0] || "",
+      best_match_label: best?.source_label_display || localSource.label,
+      earliest_date: earliestDate,
+      source_urls: [best?.canonical_url || best?.url || "", ...urls].filter(Boolean).join(" | "),
+      confidence: best?.source_confidence ?? localSource.confidence,
+      duplicate_count: duplicateCount,
+      notes,
+    };
+  });
+}
+
+function downloadCsvRows(rows, filename) {
+  const cols = ["file_name", "dimensions", "sha256", "best_match", "best_match_label", "earliest_date", "source_urls", "confidence", "duplicate_count", "notes"];
+  const lines = [cols.join(",")];
+  for (const row of rows || []) {
+    lines.push(cols.map((col) => toCsvValue(row?.[col] ?? "")).join(","));
+  }
+  downloadBlob(new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" }), filename);
 }
 
 async function downloadEvidencePack() {
@@ -5824,6 +6109,19 @@ function setupActions() {
           generated_at: new Date().toISOString(),
           intake: state.resultIntake?.entries || [],
           autopsy: computeNoResultAutopsy(),
+          contradictions: buildSourceContradictionModel(),
+          best_match: (() => {
+            const best = pickBestResultIntakeEntry(getAnalyzedResultIntakeEntries(state.resultIntake?.entries || []).filter((entry) => !entry?.suppressed));
+            return best
+              ? {
+                  title: best.title || null,
+                  url: best.canonical_url || best.url || null,
+                  label: best.source_label_display,
+                  confidence: best.source_confidence,
+                  notes: best.source_notes || [],
+                }
+              : null;
+          })(),
         },
         null,
         2,
@@ -6118,8 +6416,21 @@ function setupActions() {
       cloned.investigation = buildInvestigationExport({ currentReport: cloned });
       return cloned;
     });
-    downloadJson(reports, `osint_reports_${ts}.json`);
+    downloadJson(
+      {
+        generated_at: new Date().toISOString(),
+        summary_rows: buildBatchSummaryRows(state.batchItems),
+        reports,
+      },
+      `osint_reports_${ts}.json`,
+    );
     logAction("batch_export_downloaded", `${state.batchReports.length} reports`);
+  });
+  elements.btnDownloadBatchCsv?.addEventListener("click", () => {
+    if (!state.batchItems || state.batchItems.length === 0) return;
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    downloadCsvRows(buildBatchSummaryRows(state.batchItems), `osint_batch_summary_${ts}.csv`);
+    logAction("batch_export_csv_downloaded", `${state.batchItems.length} rows`);
   });
 
   elements.btnChooseCompare.addEventListener("click", () => {

@@ -353,6 +353,16 @@
               </div>
             </div>
 
+            <div class="subcard hud" data-hud-key="source-contradictions">
+              <div class="subcard-head">
+                <div class="subcard-title">Source contradictions</div>
+                <span class="pill pill-muted">date conflicts</span>
+              </div>
+              <div id="sourceContradictionOut" class="mono mono-box mission-output-box">
+                Ingest result snippets with dates and BlueLens will surface conflicts instead of flattening them into fake certainty.
+              </div>
+            </div>
+
             <details class="drawer hud" data-hud-key="advanced">
               <summary title="More tools">More tools</summary>
               <div class="drawer-body">
@@ -378,7 +388,8 @@
               <div class="row row-tight">
                 <input id="batchInput" class="input" type="file" accept="image/*" multiple title="Select multiple images" />
                 <button id="btnRunBatch" class="btn btn-secondary" type="button" title="Generate per-file reports">Run Batch</button>
-                <button id="btnDownloadBatch" class="btn btn-ghost" type="button" disabled title="Download JSON bundle">Download</button>
+                <button id="btnDownloadBatch" class="btn btn-ghost" type="button" disabled title="Download JSON bundle">Download JSON</button>
+                <button id="btnDownloadBatchCsv" class="btn btn-ghost" type="button" disabled title="Download CSV summary">Download CSV</button>
               </div>
               <div id="batchOut" class="pre">—</div>
             </div>

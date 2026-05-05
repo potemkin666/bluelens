@@ -270,12 +270,14 @@ test("onboarding and evidence-pack UI expose operator caveats and export path", 
   assert.match(indexHtml, /id="btnIngestResults"/);
   assert.match(indexHtml, /id="resultIntakeSummary"/);
   assert.match(indexHtml, /id="noResultAutopsyOut"/);
+  assert.match(indexHtml, /id="sourceContradictionOut"/);
   assert.match(indexHtml, /id="manualNotes"/);
   assert.match(indexHtml, /id="actionLogOut"/);
   assert.match(appJs, /function downloadEvidencePack\(\)/);
   assert.match(appJs, /async function runDoctorChecks\(/);
   assert.match(appJs, /function ingestResults\(raw\)/);
   assert.match(appJs, /function computeNoResultAutopsy\(/);
+  assert.match(appJs, /function buildSourceContradictionModel\(/);
   assert.match(appJs, /function setResultSuppressed\(/);
   assert.match(appJs, /function renderMissionOutput\(\)/);
   assert.doesNotMatch(indexHtml, /Quick start: 1\) load image/);
@@ -314,8 +316,13 @@ test("result intake supports per-session false-positive suppression and no-resul
   assert.match(appJs, /Match suppressed for this session/);
   assert.match(appJs, /Private image \/ not indexed/);
   assert.match(appJs, /Manual-only engine follow-up/);
+  assert.match(appJs, /Likely original/);
+  assert.match(appJs, /Likely repost/);
+  assert.match(appJs, /Source label:/);
+  assert.match(appJs, /Contradictory source dates detected/);
   assert.match(stylesCss, /\.result-suppressed/);
   assert.match(stylesCss, /\.autopsy-card/);
+  assert.match(stylesCss, /\.contradiction-card/);
 });
 
 test("readme reflects the current image-recon workflow and embeds the attached image", () => {
@@ -324,6 +331,9 @@ test("readme reflects the current image-recon workflow and embeds the attached i
   assert.match(readmeMd, /Local-first image reconnaissance/);
   assert.match(readmeMd, /No-result autopsy/);
   assert.match(readmeMd, /False-positive suppressor/);
+  assert.match(readmeMd, /Source contradiction panel/);
+  assert.match(readmeMd, /Likely original \/ repost labeling/);
+  assert.match(readmeMd, /385bc559-333d-4d71-858f-18e993c3eade/);
 });
 
 test("batch dashboard exposes aggregated entity follow-up controls", () => {
@@ -331,6 +341,9 @@ test("batch dashboard exposes aggregated entity follow-up controls", () => {
   assert.match(appJs, /data-batch-entity-open/);
   assert.match(appJs, /data-batch-entity-mission/);
   assert.match(stylesCss, /\.entity-cluster-summary/);
+  assert.match(indexHtml, /id="btnDownloadBatchCsv"/);
+  assert.match(appJs, /function buildBatchSummaryRows\(/);
+  assert.match(appJs, /downloadCsvRows\(buildBatchSummaryRows\(state\.batchItems\)/);
 });
 
 test("result intake accepts loose pipe delimiters and tracks blocked wait tabs honestly", () => {

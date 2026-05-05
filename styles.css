@@ -1649,6 +1649,11 @@ body.skin-chrome .tab.active {
   border-color: rgba(255, 209, 102, 0.28);
 }
 
+.contradiction-card {
+  border-color: rgba(255, 183, 140, 0.30);
+  background: rgba(255, 183, 140, 0.06);
+}
+
 .chip-select {
   margin-top: 0;
   padding: 8px 10px;
