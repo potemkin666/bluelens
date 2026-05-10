@@ -1,4 +1,4 @@
-/* global window */
+/* global BLUELENS_CONFIG */
 
 (() => {
   const emptyRecon = { urls: [], emails: [], handles: [], phones: [], people: [], organizations: [], locations: [], dates: [], aliases: [] };
