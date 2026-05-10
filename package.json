@@ -8,6 +8,15 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage",
+    "lint": "eslint *.js test/*.js",
+    "lint:fix": "eslint *.js test/*.js --fix",
+    "format": "prettier --write \"**/*.{js,json,md,html,css}\"",
+    "format:check": "prettier --check \"**/*.{js,json,md,html,css}\"",
     "desktop-icon": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\\\create-desktop-icon.ps1"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "prettier": "^3.2.5"
   }
 }

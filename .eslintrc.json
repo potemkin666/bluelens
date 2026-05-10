@@ -1,0 +1,28 @@
+{
+  "env": {
+    "node": true,
+    "es2022": true,
+    "browser": true
+  },
+  "extends": "eslint:recommended",
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "commonjs"
+  },
+  "rules": {
+    "no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    "no-console": "off",
+    "prefer-const": "warn",
+    "no-var": "warn"
+  },
+  "globals": {
+    "exifr": "readonly",
+    "sha256": "readonly",
+    "SparkMD5": "readonly",
+    "OCR_PIPELINE": "readonly",
+    "OSINT_LIB": "readonly",
+    "BLUELENS_HELPERS": "readonly",
+    "BLUELENS_CONFIG": "readonly",
+    "Tesseract": "readonly"
+  }
+}
