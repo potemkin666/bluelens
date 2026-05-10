@@ -1,4 +1,4 @@
-/* global window */
+/* global BLUELENS_CONFIG, crypto */
 
 (() => {
   const getRunEngines = ({ run, engineOrder = [] } = {}) => {
@@ -14,7 +14,6 @@
     run.queue[engine] = {
       status: current.status || runQueueStatus.queued || "queued",
       attempts: Number(current.attempts || 0),
-      updated_at: new Date().toISOString(),
       ...current,
       ...patch,
       updated_at: patch.updated_at || new Date().toISOString(),

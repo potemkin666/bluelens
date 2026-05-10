@@ -18,6 +18,7 @@ const path = require("path");
 const { URL } = require("url");
 const BLUELENS_CONFIG = require("./bluelens-config.js");
 const { reverseSearchUploadPage } = require("./osint-lib.js");
+const { defaultLogger } = require("./logger.js");
 
 const ROOT = __dirname;
 const SERVER_CONFIG = BLUELENS_CONFIG.server || {};
@@ -72,12 +73,29 @@ const DOCTOR_HISTORY = {
   engineAvailability: [],
   uploadAttempts: [],
 };
+/**
+ * Reports server errors with consistent formatting and structured logging
+ * @param {string} scope - Error scope/context
+ * @param {Error|string} error - Error object or message
+ * @param {Object|null} [detail=null] - Additional error details
+ */
 function reportServerIssue(scope, error, detail = null) {
   const msg = error?.message || String(error || "unknown error");
-  if (detail) console.warn("[BlueLens]", { scope, message: msg, detail });
-  else console.warn("[BlueLens]", { scope, message: msg });
+  if (detail) {
+    defaultLogger.warn(msg, { scope, detail });
+  } else {
+    defaultLogger.warn(msg, { scope });
+  }
 }
 
+/**
+ * Safely parses JSON with fallback on error
+ * @param {string} txt - JSON text to parse
+ * @param {*} fallback - Value to return if parsing fails
+ * @param {string|null} [scope=null] - Error scope for reporting
+ * @param {Object|null} [detail=null] - Additional error details
+ * @returns {*} Parsed JSON or fallback value
+ */
 function safeJsonParse(txt, fallback, scope, detail = null) {
   try {
     return JSON.parse(txt);
@@ -87,6 +105,14 @@ function safeJsonParse(txt, fallback, scope, detail = null) {
   }
 }
 
+/**
+ * Fetches a URL with timeout protection
+ * @param {string} url - URL to fetch
+ * @param {Object} init - Fetch options
+ * @param {number} ms - Timeout in milliseconds
+ * @returns {Promise<Response>} Fetch response
+ * @throws {Error} If fetch times out or fails
+ */
 async function fetchWithTimeout(url, init, ms) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), ms);
@@ -97,17 +123,33 @@ async function fetchWithTimeout(url, init, ms) {
   }
 }
 
+/**
+ * Extracts client IP address from request
+ * @param {http.IncomingMessage} req - HTTP request object
+ * @returns {string} Client IP address
+ */
 function clientAddress(req) {
   const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
   return forwarded || req.socket?.remoteAddress || "local";
 }
 
+/**
+ * Prunes expired rate limit entries
+ * @param {number} [now=Date.now()] - Current timestamp
+ */
 function pruneAcquisitionRateLimits(now = Date.now()) {
   for (const [key, value] of ACQ_RATE_LIMITS.entries()) {
     if (!value || value.reset_at <= now) ACQ_RATE_LIMITS.delete(key);
   }
 }
 
+/**
+ * Enforces rate limiting for acquisition endpoints
+ * @param {string} scope - Rate limit scope
+ * @param {http.IncomingMessage} req - HTTP request object
+ * @returns {Object} Rate limit status
+ * @throws {Error} If rate limit exceeded
+ */
 function acquisitionRateLimit(scope, req) {
   pruneAcquisitionRateLimits();
   const now = Date.now();
@@ -145,6 +187,11 @@ function acquisitionRateLimit(scope, req) {
   };
 }
 
+/**
+ * Checks if an IPv4 address is in a private range
+ * @param {string} address - IPv4 address to check
+ * @returns {boolean} True if private, false otherwise
+ */
 function isPrivateIpv4(address) {
   const parts = String(address || "")
     .split(".")
@@ -158,6 +205,11 @@ function isPrivateIpv4(address) {
   return false;
 }
 
+/**
+ * Checks if an IPv6 address is in a private range
+ * @param {string} address - IPv6 address to check
+ * @returns {boolean} True if private, false otherwise
+ */
 function isPrivateIpv6(address) {
   const normalized = String(address || "").toLowerCase();
   if (!normalized) return false;
@@ -167,6 +219,11 @@ function isPrivateIpv6(address) {
   return false;
 }
 
+/**
+ * Checks if an IP address (v4 or v6) is in a private range
+ * @param {string} address - IP address to check
+ * @returns {boolean} True if private, false otherwise
+ */
 function isPrivateIp(address) {
   const version = net.isIP(address);
   if (version === 4) return isPrivateIpv4(address);
@@ -174,6 +231,12 @@ function isPrivateIp(address) {
   return false;
 }
 
+/**
+ * Validates and sanitizes a URL, ensuring it's public and allowed
+ * @param {string} rawUrl - Raw URL to validate
+ * @returns {Promise<string>} Validated and normalized URL
+ * @throws {Error} If URL is invalid, private, or not allowed
+ */
 async function assertScopedPublicUrl(rawUrl) {
   let parsed;
   try {
@@ -231,6 +294,13 @@ async function assertScopedPublicUrl(rawUrl) {
   return parsed.toString();
 }
 
+/**
+ * Reads response body with size limit protection
+ * @param {Response} response - Fetch response object
+ * @param {number} [maxBytes=ACQ_MAX_BYTES] - Maximum bytes to read
+ * @returns {Promise<string>} Response text
+ * @throws {Error} If response exceeds size limit
+ */
 async function readResponseTextLimited(response, maxBytes = ACQ_MAX_BYTES) {
   const chunks = [];
   let total = 0;
@@ -248,11 +318,22 @@ async function readResponseTextLimited(response, maxBytes = ACQ_MAX_BYTES) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+/**
+ * Extracts first regex match from text
+ * @param {string} text - Text to search
+ * @param {RegExp} pattern - Regex pattern with capture group
+ * @returns {string} Matched text or empty string
+ */
 function firstMatch(text, pattern) {
   const match = String(text || "").match(pattern);
   return match ? match[1].trim() : "";
 }
 
+/**
+ * Strips HTML tags and normalizes whitespace
+ * @param {string} html - HTML string
+ * @returns {string} Plain text
+ */
 function stripTags(html) {
   return String(html || "")
     .replace(/<script\b[^>]*>[\s\S]*?<\/script[^>]*>/gi, " ")
@@ -264,6 +345,12 @@ function stripTags(html) {
     .trim();
 }
 
+/**
+ * Converts relative URL to absolute, returns empty string if invalid
+ * @param {string} value - URL to convert
+ * @param {string} [baseUrl=""] - Base URL for relative URLs
+ * @returns {string} Absolute URL or empty string
+ */
 function absoluteUrlOrEmpty(value, baseUrl = "") {
   if (!value) return "";
   try {
@@ -273,6 +360,12 @@ function absoluteUrlOrEmpty(value, baseUrl = "") {
   }
 }
 
+/**
+ * Extracts social media identity links from HTML
+ * @param {string} html - HTML content
+ * @param {string} baseUrl - Base URL for resolving relative links
+ * @returns {Array<Object>} Array of identity objects with platform and url
+ */
 function extractIdentityLinks(html, baseUrl) {
   const identities = new Map();
   for (const match of String(html || "").matchAll(/<a[^>]+href=["']([^"'#]+)["']/gi)) {
@@ -302,6 +395,13 @@ function extractIdentityLinks(html, baseUrl) {
   return Array.from(identities.values()).slice(0, 10);
 }
 
+/**
+ * Extracts normalized metadata from HTML
+ * @param {string} html - HTML content
+ * @param {string} sourceUrl - Original requested URL
+ * @param {string} finalUrl - Final URL after redirects
+ * @returns {Object} Metadata object with title, description, canonical URL, etc.
+ */
 function extractNormalizedMetadata(html, sourceUrl, finalUrl) {
   const title =
     firstMatch(html, /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
@@ -324,6 +424,12 @@ function extractNormalizedMetadata(html, sourceUrl, finalUrl) {
   };
 }
 
+/**
+ * Extracts sitemap URLs from robots.txt content
+ * @param {string} robotsText - robots.txt content
+ * @param {string} baseUrl - Base URL for resolving relative links
+ * @returns {Array<string>} Array of sitemap URLs (max 12)
+ */
 function extractSitemapsFromRobots(robotsText, baseUrl) {
   const sitemaps = [];
   for (const match of String(robotsText || "").matchAll(/^\s*Sitemap:\s*(.+)\s*$/gim)) {
@@ -333,6 +439,16 @@ function extractSitemapsFromRobots(robotsText, baseUrl) {
   return Array.from(new Set(sitemaps)).slice(0, 12);
 }
 
+/**
+ * Fetches a validated public URL with rate limiting
+ * @param {string} rawUrl - URL to fetch
+ * @param {Object} options - Fetch options
+ * @param {http.IncomingMessage} options.req - HTTP request for rate limiting
+ * @param {string} [options.scope="fetch"] - Rate limit scope
+ * @param {string} [options.accept] - Accept header value
+ * @returns {Promise<Object>} Response with content, metadata, and provenance
+ * @throws {Error} If URL is invalid, private, rate limited, or fetch fails
+ */
 async function fetchScopedUrl(rawUrl, { req, scope = "fetch", accept = "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5" } = {}) {
   const target = await assertScopedPublicUrl(rawUrl);
   const rate_limit = acquisitionRateLimit(scope, req);
@@ -1203,6 +1319,12 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, "127.0.0.1", () => {
+  defaultLogger.info(`BlueLens server started`, { 
+    port: PORT, 
+    version: APP_VERSION,
+    pid: process.pid,
+    nodeVersion: process.version
+  });
   // eslint-disable-next-line no-console
   console.log(`BlueLens running at http://localhost:${PORT}`);
 });

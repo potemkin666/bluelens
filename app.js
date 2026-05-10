@@ -1,9 +1,4 @@
-﻿/* global exifr, sha256, SparkMD5 */
-
-/* global OCR_PIPELINE */
-/* global OSINT_LIB */
-/* global BLUELENS_HELPERS */
-/* global BLUELENS_CONFIG */
+/* global exifr, sha256, SparkMD5, OCR_PIPELINE, OSINT_LIB, BLUELENS_HELPERS, BLUELENS_CONFIG, Tesseract */
 
 const elements = {
   dropzone: document.getElementById("dropzone"),

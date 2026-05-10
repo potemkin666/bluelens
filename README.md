@@ -191,3 +191,45 @@ npm run desktop-icon
 Or double-click `bluelens-start.cmd`.
 
 The start script waits for `/api/ping` before opening the browser.
+
+---
+
+## 📚 Documentation
+
+For detailed documentation, see the [docs/](./docs) folder:
+
+- **[Architecture](./docs/ARCHITECTURE.md)**: System design and component overview
+- **[API Documentation](./docs/API.md)**: Server endpoints and client functions
+- **[Deployment Guide](./docs/DEPLOYMENT.md)**: Installation, production setup, and monitoring
+- **[Modularization Notes](./docs/MODULARIZATION.md)**: Code organization strategy
+
+---
+
+## 🧑‍💻 Development
+
+**Install development tools**:
+```bash
+npm install
+```
+
+**Run tests**:
+```bash
+npm test
+```
+
+**Run tests with coverage**:
+```bash
+npm run test:coverage
+```
+
+**Linting**:
+```bash
+npm run lint
+npm run lint:fix
+```
+
+**Formatting**:
+```bash
+npm run format:check
+npm run format
+```
