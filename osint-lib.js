@@ -1,5 +1,16 @@
+/**
+ * OSINT Library - Utilities for reverse image search operations
+ * @module osint-lib
+ */
+
 // UMD-ish small pure helpers used by the browser app + node tests.
 (() => {
+  /**
+   * Generates a reverse search URL for a given engine and image URL
+   * @param {string} engine - Search engine name (lens, bing, tineye, yandex, pinterest, saucenao, iqdb, baidu, ascii2d, google_images)
+   * @param {string} imageUrl - Public URL of the image
+   * @returns {string} Reverse search URL or empty string if engine not supported
+   */
   const reverseSearchUrl = (engine, imageUrl) => {
     const u = encodeURIComponent(imageUrl);
     switch (engine) {
@@ -28,6 +39,11 @@
     }
   };
 
+  /**
+   * Returns the manual upload page URL for a search engine
+   * @param {string} engine - Search engine name
+   * @returns {string} Upload page URL or "about:blank" if not supported
+   */
   const reverseSearchUploadPage = (engine) => {
     switch (engine) {
       case "lens":

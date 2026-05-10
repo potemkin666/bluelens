@@ -2,6 +2,12 @@
 (() => {
   const bitCounts = [0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4];
 
+  /**
+   * Calculates Hamming distance between two hexadecimal strings
+   * @param {string} a - First hex string
+   * @param {string} b - Second hex string
+   * @returns {number|null} Hamming distance or null if invalid
+   */
   function hammingHex(a, b) {
     if (!a || !b || a.length !== b.length) return null;
     let dist = 0;
@@ -14,6 +20,11 @@
     return dist;
   }
 
+  /**
+   * Parses dimension string like "1920x1080" into width, height, and area
+   * @param {string} dimensions - Dimension string
+   * @returns {Object|null} Object with width, height, area or null if invalid
+   */
   function parseDimensions(dimensions) {
     const text = String(dimensions || "");
     const match = text.match(/(\d+)\s*[×x]\s*(\d+)/);
@@ -24,6 +35,12 @@
     return { width, height, area: width * height };
   }
 
+  /**
+   * Gets sort value for batch item based on sort key
+   * @param {Object} item - Batch item with triage and report data
+   * @param {string} sortKey - Sort key (name, gps, ent, repost, cluster, dim, lead)
+   * @returns {string|number} Sort value
+   */
   function getBatchSortValue(item, sortKey) {
     const triage = item?.triage || {};
     const report = item?.report || {};
