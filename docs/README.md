@@ -5,6 +5,7 @@ This folder contains development and deployment documentation for BlueLens.
 ## Documentation Files
 
 ### [ARCHITECTURE.md](./ARCHITECTURE.md)
+
 - System architecture overview
 - Component descriptions (client, server, helpers)
 - Data flow diagrams
@@ -15,6 +16,7 @@ This folder contains development and deployment documentation for BlueLens.
 - Dependencies
 
 ### [API.md](./API.md)
+
 - Server API endpoints documentation
   - Health & status endpoints
   - Upload proxy API
@@ -26,6 +28,7 @@ This folder contains development and deployment documentation for BlueLens.
 - Environment variables
 
 ### [DEPLOYMENT.md](./DEPLOYMENT.md)
+
 - Local development setup
 - Production deployment options
   - Direct Node.js deployment
@@ -41,6 +44,7 @@ This folder contains development and deployment documentation for BlueLens.
 - Backup and recovery
 
 ### [MODULARIZATION.md](./MODULARIZATION.md)
+
 - Code organization notes
 - Rationale for not splitting large files yet
 - Future modularization strategy
@@ -51,15 +55,18 @@ This folder contains development and deployment documentation for BlueLens.
 ## Quick Links
 
 ### For Developers
+
 - Start with [ARCHITECTURE.md](./ARCHITECTURE.md) to understand the system
 - See [API.md](./API.md) for endpoint and function documentation
 - Review [MODULARIZATION.md](./MODULARIZATION.md) before making structural changes
 
 ### For Operators
+
 - See [DEPLOYMENT.md](./DEPLOYMENT.md) for installation and configuration
 - Reference [API.md](./API.md) for API endpoints and environment variables
 
 ### For Contributors
+
 - Read [ARCHITECTURE.md](./ARCHITECTURE.md) to understand the codebase
 - Check [MODULARIZATION.md](./MODULARIZATION.md) for code organization philosophy
 - Follow the development workflow in [DEPLOYMENT.md](./DEPLOYMENT.md#local-development)

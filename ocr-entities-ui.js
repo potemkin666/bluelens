@@ -1,7 +1,15 @@
-/* global BLUELENS_CONFIG */
-
 (() => {
-  const emptyRecon = { urls: [], emails: [], handles: [], phones: [], people: [], organizations: [], locations: [], dates: [], aliases: [] };
+  const emptyRecon = {
+    urls: [],
+    emails: [],
+    handles: [],
+    phones: [],
+    people: [],
+    organizations: [],
+    locations: [],
+    dates: [],
+    aliases: [],
+  };
 
   const buildDetailIndex = (entries = []) =>
     new Map(
@@ -28,7 +36,13 @@
     const handles = Array.from(
       new Set(
         [...(ent.handles || []), ...(extra.handles || [])]
-          .map((value) => ocrPipeline?.normalizeHandle?.(value) || String(value || "").replace(/^@/, "").trim())
+          .map(
+            (value) =>
+              ocrPipeline?.normalizeHandle?.(value) ||
+              String(value || "")
+                .replace(/^@/, "")
+                .trim(),
+          )
           .filter(Boolean)
           .map((value) => `@${value}`),
       ),
@@ -70,14 +84,18 @@
     });
     return {
       mission: "handle_recon",
-      summary: handles?.length ? `Handle recon prepared ${handles.length} normalized handles.` : "Handle recon found no stable OCR handles.",
+      summary: handles?.length
+        ? `Handle recon prepared ${handles.length} normalized handles.`
+        : "Handle recon found no stable OCR handles.",
       items,
     };
   };
 
   const buildDomainReconOutput = ({ ent, domains, normalizeDomain }) => {
     const items = (domains || []).slice(0, 8).map((domain) => {
-      const relatedUrls = (ent?.urls || []).filter((url) => (typeof normalizeDomain === "function" ? normalizeDomain(url) : "") === domain).slice(0, 2);
+      const relatedUrls = (ent?.urls || [])
+        .filter((url) => (typeof normalizeDomain === "function" ? normalizeDomain(url) : "") === domain)
+        .slice(0, 2);
       return {
         type: "domain",
         label: domain,
@@ -94,7 +112,9 @@
     });
     return {
       mission: "domain_recon",
-      summary: domains?.length ? `Domain recon normalized ${domains.length} domains from OCR and URL pivots.` : "Domain recon found no domains to normalize.",
+      summary: domains?.length
+        ? `Domain recon normalized ${domains.length} domains from OCR and URL pivots.`
+        : "Domain recon found no domains to normalize.",
       items,
     };
   };
@@ -120,7 +140,10 @@
       element.hidden = true;
       return;
     }
-    const labels = hint.models.slice(0, 3).map((code) => getOcrLanguageLabel(code)).join(" / ");
+    const labels = hint.models
+      .slice(0, 3)
+      .map((code) => getOcrLanguageLabel(code))
+      .join(" / ");
     element.hidden = false;
     element.textContent = `Weak script hint: ${hint.label} → try ${labels}`;
   };
@@ -266,9 +289,7 @@
       sel.className = "select chip-select";
       sel.title = "Analyst confidence (manual)";
       sel.innerHTML =
-        `<option value="unverified">?</option>` +
-        `<option value="likely">~</option>` +
-        `<option value="confirmed">✓</option>`;
+        `<option value="unverified">?</option>` + `<option value="likely">~</option>` + `<option value="confirmed">✓</option>`;
       parent.appendChild(sel);
       sel.value = state.entityConfidence?.[entityKey] || "unverified";
       sel.addEventListener("change", () => {
@@ -323,7 +344,9 @@
         const d = ocrPipeline?.normalizeDomain?.(u);
         const row = document.createElement("div");
         row.className = "pivot-row";
-        const short = String(u).replace(/^https?:\/\//i, "").slice(0, 44);
+        const short = String(u)
+          .replace(/^https?:\/\//i, "")
+          .slice(0, 44);
         addLinkChip(row, short, u, { title: "Open URL" });
         if (d) {
           addInfoChip(row, "Derived domain follow-up");
@@ -372,7 +395,12 @@
         if (normalized?.confidence != null) addInfoChip(row, `${Math.round(normalized.confidence * 100)}%`);
         const q = normalized?.e164 || normalized?.digits || phone;
         addLinkChip(row, "Search", google(`"${q}"`), { title: "Search phone" });
-        addDerivedEntry({ entityType: "phone", entityKey: `phone:${String(q).replace(/\s+/g, "")}`, entityValue: label, note: "Direct OCR hit" });
+        addDerivedEntry({
+          entityType: "phone",
+          entityKey: `phone:${String(q).replace(/\s+/g, "")}`,
+          entityValue: label,
+          note: "Direct OCR hit",
+        });
         addConfidence(row, { entityType: "phone", entityKey: `phone:${String(q).replace(/\s+/g, "")}`, entityValue: label });
         addTaskButton(row, { entityType: "phone", entityKey: `phone:${String(q).replace(/\s+/g, "")}`, entityValue: label });
         g.appendChild(row);

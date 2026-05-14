@@ -176,6 +176,7 @@ npm test
 - choosing an image stays local until you launch a provider action
 - upload proxy uses ranked temporary-host failover
 - OCR model files load from a CDN on first use
+- **Browser-loaded libraries**: BlueLens loads external libraries (exifr, Tesseract.js, SparkMD5, sha256) directly in the browser via CDN for flexibility and to keep the server-side footprint minimal. These are not listed as npm dependencies because they're browser-loaded, not bundled.
 - capture-time exports preserve raw value, normalized value, source field, and timezone ambiguity notes
 - the evidence pack includes report data and reproducibility metadata
 - `BLUELENS_ALLOW_PRIVATE_FETCH=1` is for controlled local testing only
@@ -208,27 +209,32 @@ For detailed documentation, see the [docs/](./docs) folder:
 ## 🧑‍💻 Development
 
 **Install development tools**:
+
 ```bash
 npm install
 ```
 
 **Run tests**:
+
 ```bash
 npm test
 ```
 
 **Run tests with coverage**:
+
 ```bash
 npm run test:coverage
 ```
 
 **Linting**:
+
 ```bash
 npm run lint
 npm run lint:fix
 ```
 
 **Formatting**:
+
 ```bash
 npm run format:check
 npm run format

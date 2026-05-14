@@ -58,12 +58,10 @@ test("search-all UI is framed as link preparation, not automatic querying", () =
   assert.match(appJs, /Prepared \$\{ENGINE_ORDER\.length\} engine targets from one upload/);
 });
 
-
 test("sharing copy matches explicit upload consent", () => {
   assert.match(indexHtml, /Uploads start only when you choose search\./);
   assert.match(appJs, /Local review ready\. Uploads start only when you choose a launch action\./);
 });
-
 
 test("primary and secondary actions stay in a static order", () => {
   assert.ok(indexHtml.indexOf('id="missionRow"') < indexHtml.indexOf('id="manualRow"'));
@@ -160,13 +158,11 @@ test("preview exposes crop-and-search controls for selected regions", () => {
   assert.match(appJs, /if \(state\.shareSafe\) return "clean";/);
 });
 
-
 test("command palette copy uses fixed UTF-8 text and row clicks run the clicked action", () => {
   assert.match(indexHtml, /placeholder="Type a command…"/);
   assert.match(indexHtml, />Enter • ↑\/↓ • Esc</);
   assert.match(appJs, /const chosen = action;/);
 });
-
 
 test("operator theme is calm by default and fun mode is explicit", () => {
   assert.match(indexHtml, /id="chkFunMode"/);
@@ -352,7 +348,10 @@ test("engine relay covers broad web and art-focused providers", () => {
   assert.match(indexHtml, /id="btnOpenIQDB"/);
   assert.match(indexHtml, /id="btnOpenBaidu"/);
   assert.match(indexHtml, /id="btnOpenAscii2d"/);
-  assert.match(appJs, /const ENGINE_ORDER = APP_CONFIG\.engines\?\.order \|\| \["lens", "bing", "yandex", "tineye", "pinterest", "saucenao", "iqdb", "baidu", "ascii2d", "google_images"\]/);
+  assert.match(
+    appJs,
+    /const ENGINE_ORDER = APP_CONFIG\.engines\?\.order \|\| \["lens", "bing", "yandex", "tineye", "pinterest", "saucenao", "iqdb", "baidu", "ascii2d", "google_images"\]/,
+  );
   assert.match(appJs, /ENGINE_BUTTON_BY_KEY/);
   assert.match(readmeMd, /SauceNAO/);
   assert.match(readmeMd, /IQDB/);
@@ -396,7 +395,7 @@ test("batch dashboard exposes aggregated entity follow-up controls", () => {
 });
 
 test("result intake accepts loose pipe delimiters and tracks blocked wait tabs honestly", () => {
-  assert.ok(appJs.includes('split(/\\s*\\|\\s*/)'));
+  assert.ok(appJs.includes("split(/\\s*\\|\\s*/)"));
   assert.ok(appJs.includes('split("\\t")'));
   assert.match(appJs, /wait_tab_blocked/);
 });
@@ -411,15 +410,21 @@ test("browser modules split launchpad core and OCR entity UI out of app.js", () 
   assert.match(ocrEntitiesUiJs, /const renderOcrEntities = \(\{/);
   assert.match(appJs, /source: "mission:share_search"/);
   assert.match(appJs, /source: "search-all"/);
-  assert.doesNotMatch(appJs, /const run = await prepareLaunchpadRun\(\{ engines: ENGINE_ORDER, openLens: true, mode: "launchpad", labelPrefix: "Mission" \}\);/);
-  assert.doesNotMatch(appJs, /const run = await prepareLaunchpadRun\(\{ engines: ENGINE_ORDER, openLens, mode: "launchpad", labelPrefix: "Launchpad" \}\);/);
+  assert.doesNotMatch(
+    appJs,
+    /const run = await prepareLaunchpadRun\(\{ engines: ENGINE_ORDER, openLens: true, mode: "launchpad", labelPrefix: "Mission" \}\);/,
+  );
+  assert.doesNotMatch(
+    appJs,
+    /const run = await prepareLaunchpadRun\(\{ engines: ENGINE_ORDER, openLens, mode: "launchpad", labelPrefix: "Launchpad" \}\);/,
+  );
 });
 
 test("windows start script waits for ping before opening the browser", () => {
   assert.match(startCmd, /node server\.js/);
   assert.match(startCmd, /api\/ping/);
   assert.match(startCmd, /Invoke-WebRequest/);
-  assert.ok(startCmd.indexOf("node server.js") < startCmd.lastIndexOf("start \"\" \"%BLUELENS_URL%\""));
+  assert.ok(startCmd.indexOf("node server.js") < startCmd.lastIndexOf('start "" "%BLUELENS_URL%"'));
 });
 
 test("global error surface is installed before storage-backed startup work", () => {

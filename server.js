@@ -129,7 +129,9 @@ async function fetchWithTimeout(url, init, ms) {
  * @returns {string} Client IP address
  */
 function clientAddress(req) {
-  const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  const forwarded = String(req.headers["x-forwarded-for"] || "")
+    .split(",")[0]
+    .trim();
   return forwarded || req.socket?.remoteAddress || "local";
 }
 
@@ -215,7 +217,8 @@ function isPrivateIpv6(address) {
   if (!normalized) return false;
   if (normalized === "::1" || normalized === "::") return true;
   if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
-  if (normalized.startsWith("fe8") || normalized.startsWith("fe9") || normalized.startsWith("fea") || normalized.startsWith("feb")) return true;
+  if (normalized.startsWith("fe8") || normalized.startsWith("fe9") || normalized.startsWith("fea") || normalized.startsWith("feb"))
+    return true;
   return false;
 }
 
@@ -409,9 +412,10 @@ function extractNormalizedMetadata(html, sourceUrl, finalUrl) {
   const description =
     firstMatch(html, /<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) ||
     firstMatch(html, /<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i);
-  const canonical =
-    firstMatch(html, /<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i) || finalUrl || sourceUrl;
-  const h1 = firstMatch(html, /<h1[^>]*>([\s\S]*?)<\/h1>/i).replace(/\s+/g, " ").trim();
+  const canonical = firstMatch(html, /<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i) || finalUrl || sourceUrl;
+  const h1 = firstMatch(html, /<h1[^>]*>([\s\S]*?)<\/h1>/i)
+    .replace(/\s+/g, " ")
+    .trim();
   const text = stripTags(html);
   const snippet = text.slice(0, 240);
   return {
@@ -449,7 +453,10 @@ function extractSitemapsFromRobots(robotsText, baseUrl) {
  * @returns {Promise<Object>} Response with content, metadata, and provenance
  * @throws {Error} If URL is invalid, private, rate limited, or fetch fails
  */
-async function fetchScopedUrl(rawUrl, { req, scope = "fetch", accept = "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5" } = {}) {
+async function fetchScopedUrl(
+  rawUrl,
+  { req, scope = "fetch", accept = "text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.5" } = {},
+) {
   const target = await assertScopedPublicUrl(rawUrl);
   const rate_limit = acquisitionRateLimit(scope, req);
   const startedAt = Date.now();
@@ -491,18 +498,20 @@ async function fetchScopedUrl(rawUrl, { req, scope = "fetch", accept = "text/htm
 }
 
 async function collectDoctorUploadReachability() {
-  const rows = await Promise.all(UPLOAD_HOSTS.map(async (host) => {
-    const url = UPLOAD_DOCTOR_URLS[host];
-    if (!url) {
-      return { host, reachable: false, status_code: null, error: "no diagnostic url configured" };
-    }
-    try {
-      const res = await fetchWithTimeout(url, { method: "GET" }, DOCTOR_TIMEOUT_MS);
-      return { host, reachable: res.ok, status_code: res.status, error: res.ok ? "" : `http ${res.status}` };
-    } catch (error) {
-      return { host, reachable: false, status_code: null, error: error?.message || "unreachable" };
-    }
-  }));
+  const rows = await Promise.all(
+    UPLOAD_HOSTS.map(async (host) => {
+      const url = UPLOAD_DOCTOR_URLS[host];
+      if (!url) {
+        return { host, reachable: false, status_code: null, error: "no diagnostic url configured" };
+      }
+      try {
+        const res = await fetchWithTimeout(url, { method: "GET" }, DOCTOR_TIMEOUT_MS);
+        return { host, reachable: res.ok, status_code: res.status, error: res.ok ? "" : `http ${res.status}` };
+      } catch (error) {
+        return { host, reachable: false, status_code: null, error: error?.message || "unreachable" };
+      }
+    }),
+  );
   pushDoctorHistory(DOCTOR_HISTORY.uploadReachability, { ts: new Date().toISOString(), rows });
   return rows;
 }
@@ -530,27 +539,29 @@ function pushDoctorHistory(bucket, sample, max = DOCTOR_HISTORY_MAX) {
 }
 
 async function collectReachabilityRows(rows = []) {
-  return await Promise.all(rows.map(async (row) => {
-    try {
-      const startedAt = Date.now();
-      const res = await fetchWithTimeout(row.url, { method: "GET", redirect: "follow" }, DOCTOR_TIMEOUT_MS);
-      return {
-        ...row,
-        reachable: res.ok,
-        status_code: res.status,
-        error: res.ok ? "" : `http ${res.status}`,
-        duration_ms: Date.now() - startedAt,
-      };
-    } catch (error) {
-      return {
-        ...row,
-        reachable: false,
-        status_code: null,
-        error: error?.message || "unreachable",
-        duration_ms: null,
-      };
-    }
-  }));
+  return await Promise.all(
+    rows.map(async (row) => {
+      try {
+        const startedAt = Date.now();
+        const res = await fetchWithTimeout(row.url, { method: "GET", redirect: "follow" }, DOCTOR_TIMEOUT_MS);
+        return {
+          ...row,
+          reachable: res.ok,
+          status_code: res.status,
+          error: res.ok ? "" : `http ${res.status}`,
+          duration_ms: Date.now() - startedAt,
+        };
+      } catch (error) {
+        return {
+          ...row,
+          reachable: false,
+          status_code: null,
+          error: error?.message || "unreachable",
+          duration_ms: null,
+        };
+      }
+    }),
+  );
 }
 
 async function collectDoctorCdnReachability() {
@@ -582,8 +593,7 @@ function summarizeUploadHostHistory() {
 }
 
 function bestUploadHost() {
-  const ranked = UPLOAD_HOSTS
-    .slice()
+  const ranked = UPLOAD_HOSTS.slice()
     .map((host) => ({ host, ...hostScore(host) }))
     .sort((a, b) => a.failRate - b.failRate || a.avgMs - b.avgMs);
   return ranked[0]?.host || "";
@@ -684,19 +694,18 @@ function getWaitJob(jobId) {
 
 function upsertWaitJob(jobId, patch = {}) {
   const now = Date.now();
-  const current =
-    WAIT_JOBS.get(jobId) || {
-      id: jobId,
-      engine: "",
-      label: "",
-      status: "queued",
-      url: "",
-      err: "",
-      seq: 0,
-      created_at: now,
-      updated_at: now,
-      expires_at: now + WAIT_JOB_MAX_AGE_MS,
-    };
+  const current = WAIT_JOBS.get(jobId) || {
+    id: jobId,
+    engine: "",
+    label: "",
+    status: "queued",
+    url: "",
+    err: "",
+    seq: 0,
+    created_at: now,
+    updated_at: now,
+    expires_at: now + WAIT_JOB_MAX_AGE_MS,
+  };
 
   const next = {
     ...current,
@@ -785,15 +794,7 @@ function contentType(filePath) {
   }
 }
 
-const ALLOWED_UPLOAD_MIME_TYPES = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-  "image/heic",
-  "image/heif",
-  "image/avif",
-]);
+const ALLOWED_UPLOAD_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/heic", "image/heif", "image/avif"]);
 
 function normalizeMime(mime) {
   return String(mime || "")
@@ -805,7 +806,18 @@ function normalizeMime(mime) {
 function detectImageMime(buf) {
   if (!buf || buf.length < 12) return null;
   if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
-  if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47 && buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a) return "image/png";
+  if (
+    buf.length >= 8 &&
+    buf[0] === 0x89 &&
+    buf[1] === 0x50 &&
+    buf[2] === 0x4e &&
+    buf[3] === 0x47 &&
+    buf[4] === 0x0d &&
+    buf[5] === 0x0a &&
+    buf[6] === 0x1a &&
+    buf[7] === 0x0a
+  )
+    return "image/png";
   if (buf.length >= 12 && buf.toString("ascii", 0, 4) === "RIFF" && buf.toString("ascii", 8, 12) === "WEBP") return "image/webp";
   if (buf.length >= 6) {
     const gif = buf.toString("ascii", 0, 6);
@@ -959,12 +971,9 @@ async function handleUpload(req, res) {
         attemptMeta.push({ host: a.name, ok: true, ms });
         pushDoctorHistory(DOCTOR_HISTORY.uploadAttempts, { ts: new Date().toISOString(), host: a.name, ok: true, ms, purpose });
 
-        send(
-          res,
-          200,
-          JSON.stringify({ ok: true, url, host: a.name, ms, attempts: attemptMeta }),
-          { "Content-Type": "application/json; charset=utf-8" },
-        );
+        send(res, 200, JSON.stringify({ ok: true, url, host: a.name, ms, attempts: attemptMeta }), {
+          "Content-Type": "application/json; charset=utf-8",
+        });
         return;
       } catch (e) {
         const ms = Date.now() - t0;
@@ -976,22 +985,16 @@ async function handleUpload(req, res) {
       }
     }
 
-    send(
-      res,
-      502,
-      JSON.stringify({ ok: false, error: "all_hosts_failed", details: errors, attempts: attemptMeta }),
-      { "Content-Type": "application/json; charset=utf-8" },
-    );
+    send(res, 502, JSON.stringify({ ok: false, error: "all_hosts_failed", details: errors, attempts: attemptMeta }), {
+      "Content-Type": "application/json; charset=utf-8",
+    });
   } catch (e) {
     const statusCode = Number(e?.statusCode) || 500;
     const errorCode = e?.errorCode || "upload_error";
     reportServerIssue("upload.handle", e, { path: req.url, statusCode, errorCode });
-    send(
-      res,
-      statusCode,
-      JSON.stringify({ ok: false, error: errorCode, message: e?.message || "unknown" }),
-      { "Content-Type": "application/json; charset=utf-8" },
-    );
+    send(res, statusCode, JSON.stringify({ ok: false, error: errorCode, message: e?.message || "unknown" }), {
+      "Content-Type": "application/json; charset=utf-8",
+    });
   }
 }
 
@@ -1013,7 +1016,9 @@ async function handleWaitJobGet(req, res, u, jobId) {
   }
 
   const latest = getWaitJob(jobId);
-  send(res, 200, JSON.stringify({ ok: true, timeout: true, job: latest, missing: !latest, meta: waitJobMeta() }), { "Content-Type": "application/json" });
+  send(res, 200, JSON.stringify({ ok: true, timeout: true, job: latest, missing: !latest, meta: waitJobMeta() }), {
+    "Content-Type": "application/json",
+  });
 }
 
 async function handleWaitJobPost(req, res, jobId) {
@@ -1071,7 +1076,12 @@ async function handleScopedFetch(req, res, u) {
     send(
       res,
       Number(error?.statusCode) || 500,
-      JSON.stringify({ ok: false, error: error?.errorCode || "fetch_failed", message: error?.message || "unknown", rate_limit: error?.rateLimit || null }),
+      JSON.stringify({
+        ok: false,
+        error: error?.errorCode || "fetch_failed",
+        message: error?.message || "unknown",
+        rate_limit: error?.rateLimit || null,
+      }),
       { "Content-Type": "application/json; charset=utf-8" },
     );
   }
@@ -1100,7 +1110,12 @@ async function handleMetadata(req, res, u) {
     send(
       res,
       Number(error?.statusCode) || 500,
-      JSON.stringify({ ok: false, error: error?.errorCode || "metadata_failed", message: error?.message || "unknown", rate_limit: error?.rateLimit || null }),
+      JSON.stringify({
+        ok: false,
+        error: error?.errorCode || "metadata_failed",
+        message: error?.message || "unknown",
+        rate_limit: error?.rateLimit || null,
+      }),
       { "Content-Type": "application/json; charset=utf-8" },
     );
   }
@@ -1120,8 +1135,12 @@ async function handleDiscover(req, res, u) {
     );
     const robotsText = await readResponseTextLimited(robotsRes, ACQ_MAX_BYTES);
     const sitemaps = extractSitemapsFromRobots(robotsText, origin);
-    const allow = Array.from(robotsText.matchAll(/^\s*Allow:\s*(.+)\s*$/gim)).map((match) => match[1].trim()).slice(0, 12);
-    const disallow = Array.from(robotsText.matchAll(/^\s*Disallow:\s*(.+)\s*$/gim)).map((match) => match[1].trim()).slice(0, 12);
+    const allow = Array.from(robotsText.matchAll(/^\s*Allow:\s*(.+)\s*$/gim))
+      .map((match) => match[1].trim())
+      .slice(0, 12);
+    const disallow = Array.from(robotsText.matchAll(/^\s*Disallow:\s*(.+)\s*$/gim))
+      .map((match) => match[1].trim())
+      .slice(0, 12);
     send(
       res,
       200,
@@ -1151,7 +1170,12 @@ async function handleDiscover(req, res, u) {
     send(
       res,
       Number(error?.statusCode) || 500,
-      JSON.stringify({ ok: false, error: error?.errorCode || "discover_failed", message: error?.message || "unknown", rate_limit: error?.rateLimit || null }),
+      JSON.stringify({
+        ok: false,
+        error: error?.errorCode || "discover_failed",
+        message: error?.message || "unknown",
+        rate_limit: error?.rateLimit || null,
+      }),
       { "Content-Type": "application/json; charset=utf-8" },
     );
   }
@@ -1203,7 +1227,12 @@ async function handleArchive(req, res, u) {
     send(
       res,
       Number(error?.statusCode) || 500,
-      JSON.stringify({ ok: false, error: error?.errorCode || "archive_failed", message: error?.message || "unknown", rate_limit: error?.rateLimit || null }),
+      JSON.stringify({
+        ok: false,
+        error: error?.errorCode || "archive_failed",
+        message: error?.message || "unknown",
+        rate_limit: error?.rateLimit || null,
+      }),
       { "Content-Type": "application/json; charset=utf-8" },
     );
   }
@@ -1319,11 +1348,11 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, "127.0.0.1", () => {
-  defaultLogger.info(`BlueLens server started`, { 
-    port: PORT, 
+  defaultLogger.info(`BlueLens server started`, {
+    port: PORT,
     version: APP_VERSION,
     pid: process.pid,
-    nodeVersion: process.version
+    nodeVersion: process.version,
   });
   // eslint-disable-next-line no-console
   console.log(`BlueLens running at http://localhost:${PORT}`);

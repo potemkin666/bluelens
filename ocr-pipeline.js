@@ -1,5 +1,3 @@
-/* global Tesseract, BLUELENS_CONFIG */
-
 // Lightweight OCR preprocessing + entity extraction helpers.
 // Exposed as `window.OCR_PIPELINE` for the non-module app.js script.
 (() => {
@@ -218,39 +216,293 @@
     "Institute",
   ]);
 
-  const ORGANIZATION_SUFFIXES = /(inc|llc|ltd|limited|corp|corporation|company|co\.?|group|studio|university|college|school|bank|agency|department|ministry|foundation|institute|association|press|media|hospital|clinic|hotel|restaurant|museum|council|office)$/i;
-  const LOCATION_SUFFIXES = /(street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|park|plaza|square|airport|station|beach|river|harbor|harbour|mount|mountain|valley|city|county|district|province|state)$/i;
+  const ORGANIZATION_SUFFIXES =
+    /(inc|llc|ltd|limited|corp|corporation|company|co\.?|group|studio|university|college|school|bank|agency|department|ministry|foundation|institute|association|press|media|hospital|clinic|hotel|restaurant|museum|council|office)$/i;
+  const LOCATION_SUFFIXES =
+    /(street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|park|plaza|square|airport|station|beach|river|harbor|harbour|mount|mountain|valley|city|county|district|province|state)$/i;
 
   const PHONE_RULES = [
-    { code: "971", region: "AE", region_name: "United Arab Emirates", nsnMin: 8, nsnMax: 9, nationalPattern: /^0\d{8,9}$/, nationalTransform: (digits) => `+971${digits.slice(1)}`, nationalConfidence: 0.68 },
-    { code: "380", region: "UA", region_name: "Ukraine", nsnMin: 9, nsnMax: 9, nationalPattern: /^0\d{9}$/, nationalTransform: (digits) => `+380${digits.slice(1)}`, nationalConfidence: 0.68 },
-    { code: "972", region: "IL", region_name: "Israel", nsnMin: 8, nsnMax: 9, nationalPattern: /^0\d{8,9}$/, nationalTransform: (digits) => `+972${digits.slice(1)}`, nationalConfidence: 0.67 },
-    { code: "420", region: "CZ", region_name: "Czech Republic", nsnMin: 9, nsnMax: 9, nationalPattern: /^\d{9}$/, nationalTransform: (digits) => `+420${digits}`, nationalConfidence: 0.56 },
-    { code: "385", region: "HR", region_name: "Croatia", nsnMin: 8, nsnMax: 9, nationalPattern: /^0\d{8,9}$/, nationalTransform: (digits) => `+385${digits.slice(1)}`, nationalConfidence: 0.65 },
-    { code: "353", region: "IE", region_name: "Ireland", nsnMin: 7, nsnMax: 9, nationalPattern: /^0\d{8,9}$/, nationalTransform: (digits) => `+353${digits.slice(1)}`, nationalConfidence: 0.63 },
-    { code: "351", region: "PT", region_name: "Portugal", nsnMin: 9, nsnMax: 9, nationalPattern: /^9\d{8}$/, nationalTransform: (digits) => `+351${digits}`, nationalConfidence: 0.58 },
-    { code: "358", region: "FI", region_name: "Finland", nsnMin: 7, nsnMax: 10, nationalPattern: /^0(?:4|5)\d{6,8}$/, nationalTransform: (digits) => `+358${digits.slice(1)}`, nationalConfidence: 0.63 },
+    {
+      code: "971",
+      region: "AE",
+      region_name: "United Arab Emirates",
+      nsnMin: 8,
+      nsnMax: 9,
+      nationalPattern: /^0\d{8,9}$/,
+      nationalTransform: (digits) => `+971${digits.slice(1)}`,
+      nationalConfidence: 0.68,
+    },
+    {
+      code: "380",
+      region: "UA",
+      region_name: "Ukraine",
+      nsnMin: 9,
+      nsnMax: 9,
+      nationalPattern: /^0\d{9}$/,
+      nationalTransform: (digits) => `+380${digits.slice(1)}`,
+      nationalConfidence: 0.68,
+    },
+    {
+      code: "972",
+      region: "IL",
+      region_name: "Israel",
+      nsnMin: 8,
+      nsnMax: 9,
+      nationalPattern: /^0\d{8,9}$/,
+      nationalTransform: (digits) => `+972${digits.slice(1)}`,
+      nationalConfidence: 0.67,
+    },
+    {
+      code: "420",
+      region: "CZ",
+      region_name: "Czech Republic",
+      nsnMin: 9,
+      nsnMax: 9,
+      nationalPattern: /^\d{9}$/,
+      nationalTransform: (digits) => `+420${digits}`,
+      nationalConfidence: 0.56,
+    },
+    {
+      code: "385",
+      region: "HR",
+      region_name: "Croatia",
+      nsnMin: 8,
+      nsnMax: 9,
+      nationalPattern: /^0\d{8,9}$/,
+      nationalTransform: (digits) => `+385${digits.slice(1)}`,
+      nationalConfidence: 0.65,
+    },
+    {
+      code: "353",
+      region: "IE",
+      region_name: "Ireland",
+      nsnMin: 7,
+      nsnMax: 9,
+      nationalPattern: /^0\d{8,9}$/,
+      nationalTransform: (digits) => `+353${digits.slice(1)}`,
+      nationalConfidence: 0.63,
+    },
+    {
+      code: "351",
+      region: "PT",
+      region_name: "Portugal",
+      nsnMin: 9,
+      nsnMax: 9,
+      nationalPattern: /^9\d{8}$/,
+      nationalTransform: (digits) => `+351${digits}`,
+      nationalConfidence: 0.58,
+    },
+    {
+      code: "358",
+      region: "FI",
+      region_name: "Finland",
+      nsnMin: 7,
+      nsnMax: 10,
+      nationalPattern: /^0(?:4|5)\d{6,8}$/,
+      nationalTransform: (digits) => `+358${digits.slice(1)}`,
+      nationalConfidence: 0.63,
+    },
     { code: "352", region: "LU", region_name: "Luxembourg", nsnMin: 8, nsnMax: 11 },
-    { code: "90", region: "TR", region_name: "Türkiye", nsnMin: 10, nsnMax: 10, nationalPattern: /^0\d{10}$/, nationalTransform: (digits) => `+90${digits.slice(1)}`, nationalConfidence: 0.69 },
-    { code: "91", region: "IN", region_name: "India", nsnMin: 10, nsnMax: 10, nationalPattern: /^[6-9]\d{9}$/, nationalTransform: (digits) => `+91${digits}`, nationalConfidence: 0.62 },
-    { code: "81", region: "JP", region_name: "Japan", nsnMin: 9, nsnMax: 10, nationalPattern: /^0\d{9,10}$/, nationalTransform: (digits) => `+81${digits.slice(1)}`, nationalConfidence: 0.68 },
-    { code: "82", region: "KR", region_name: "South Korea", nsnMin: 9, nsnMax: 10, nationalPattern: /^0\d{9,10}$/, nationalTransform: (digits) => `+82${digits.slice(1)}`, nationalConfidence: 0.66 },
-    { code: "61", region: "AU", region_name: "Australia", nsnMin: 9, nsnMax: 9, nationalPattern: /^0\d{9}$/, nationalTransform: (digits) => `+61${digits.slice(1)}`, nationalConfidence: 0.7 },
-    { code: "64", region: "NZ", region_name: "New Zealand", nsnMin: 8, nsnMax: 10, nationalPattern: /^0\d{8,10}$/, nationalTransform: (digits) => `+64${digits.slice(1)}`, nationalConfidence: 0.66 },
-    { code: "55", region: "BR", region_name: "Brazil", nsnMin: 10, nsnMax: 11, nationalPattern: /^0?\d{10,11}$/, nationalTransform: (digits) => `+55${digits.replace(/^0/, "")}`, nationalConfidence: 0.6 },
-    { code: "52", region: "MX", region_name: "Mexico", nsnMin: 10, nsnMax: 10, nationalPattern: /^\d{10}$/, nationalTransform: (digits) => `+52${digits}`, nationalConfidence: 0.58 },
-    { code: "49", region: "DE", region_name: "Germany", nsnMin: 10, nsnMax: 13, nationalPattern: /^0\d{10,12}$/, nationalTransform: (digits) => `+49${digits.slice(1)}`, nationalConfidence: 0.64 },
-    { code: "44", region: "GB", region_name: "United Kingdom", nsnMin: 10, nsnMax: 10, nationalPattern: /^0\d{10}$/, nationalTransform: (digits) => `+44${digits.slice(1)}`, nationalConfidence: 0.72 },
-    { code: "33", region: "FR", region_name: "France", nsnMin: 9, nsnMax: 9, nationalPattern: /^0\d{9}$/, nationalTransform: (digits) => `+33${digits.slice(1)}`, nationalConfidence: 0.71 },
-    { code: "34", region: "ES", region_name: "Spain", nsnMin: 9, nsnMax: 9, nationalPattern: /^\d{9}$/, nationalTransform: (digits) => `+34${digits}`, nationalConfidence: 0.58 },
-    { code: "39", region: "IT", region_name: "Italy", nsnMin: 8, nsnMax: 10, nationalPattern: /^0\d{8,10}$/, nationalTransform: (digits) => `+39${digits}`, nationalConfidence: 0.65 },
-    { code: "31", region: "NL", region_name: "Netherlands", nsnMin: 9, nsnMax: 9, nationalPattern: /^0\d{9}$/, nationalTransform: (digits) => `+31${digits.slice(1)}`, nationalConfidence: 0.67 },
-    { code: "46", region: "SE", region_name: "Sweden", nsnMin: 7, nsnMax: 10, nationalPattern: /^0\d{7,10}$/, nationalTransform: (digits) => `+46${digits.slice(1)}`, nationalConfidence: 0.64 },
-    { code: "47", region: "NO", region_name: "Norway", nsnMin: 8, nsnMax: 8, nationalPattern: /^\d{8}$/, nationalTransform: (digits) => `+47${digits}`, nationalConfidence: 0.54 },
-    { code: "48", region: "PL", region_name: "Poland", nsnMin: 9, nsnMax: 9, nationalPattern: /^\d{9}$/, nationalTransform: (digits) => `+48${digits}`, nationalConfidence: 0.56 },
-    { code: "7", region: "RU/KZ", region_name: "Russia / Kazakhstan", nsnMin: 10, nsnMax: 10, nationalPattern: /^[78]\d{9}$/, nationalTransform: (digits) => `+7${digits.slice(1)}`, nationalConfidence: 0.61 },
-    { code: "27", region: "ZA", region_name: "South Africa", nsnMin: 9, nsnMax: 9, nationalPattern: /^0\d{9}$/, nationalTransform: (digits) => `+27${digits.slice(1)}`, nationalConfidence: 0.66 },
-    { code: "1", region: "US/CA", region_name: "United States / Canada", nsnMin: 10, nsnMax: 10, nationalPattern: /^[2-9]\d{9}$/, nationalTransform: (digits) => `+1${digits}`, nationalConfidence: 0.74 },
+    {
+      code: "90",
+      region: "TR",
+      region_name: "Türkiye",
+      nsnMin: 10,
+      nsnMax: 10,
+      nationalPattern: /^0\d{10}$/,
+      nationalTransform: (digits) => `+90${digits.slice(1)}`,
+      nationalConfidence: 0.69,
+    },
+    {
+      code: "91",
+      region: "IN",
+      region_name: "India",
+      nsnMin: 10,
+      nsnMax: 10,
+      nationalPattern: /^[6-9]\d{9}$/,
+      nationalTransform: (digits) => `+91${digits}`,
+      nationalConfidence: 0.62,
+    },
+    {
+      code: "81",
+      region: "JP",
+      region_name: "Japan",
+      nsnMin: 9,
+      nsnMax: 10,
+      nationalPattern: /^0\d{9,10}$/,
+      nationalTransform: (digits) => `+81${digits.slice(1)}`,
+      nationalConfidence: 0.68,
+    },
+    {
+      code: "82",
+      region: "KR",
+      region_name: "South Korea",
+      nsnMin: 9,
+      nsnMax: 10,
+      nationalPattern: /^0\d{9,10}$/,
+      nationalTransform: (digits) => `+82${digits.slice(1)}`,
+      nationalConfidence: 0.66,
+    },
+    {
+      code: "61",
+      region: "AU",
+      region_name: "Australia",
+      nsnMin: 9,
+      nsnMax: 9,
+      nationalPattern: /^0\d{9}$/,
+      nationalTransform: (digits) => `+61${digits.slice(1)}`,
+      nationalConfidence: 0.7,
+    },
+    {
+      code: "64",
+      region: "NZ",
+      region_name: "New Zealand",
+      nsnMin: 8,
+      nsnMax: 10,
+      nationalPattern: /^0\d{8,10}$/,
+      nationalTransform: (digits) => `+64${digits.slice(1)}`,
+      nationalConfidence: 0.66,
+    },
+    {
+      code: "55",
+      region: "BR",
+      region_name: "Brazil",
+      nsnMin: 10,
+      nsnMax: 11,
+      nationalPattern: /^0?\d{10,11}$/,
+      nationalTransform: (digits) => `+55${digits.replace(/^0/, "")}`,
+      nationalConfidence: 0.6,
+    },
+    {
+      code: "52",
+      region: "MX",
+      region_name: "Mexico",
+      nsnMin: 10,
+      nsnMax: 10,
+      nationalPattern: /^\d{10}$/,
+      nationalTransform: (digits) => `+52${digits}`,
+      nationalConfidence: 0.58,
+    },
+    {
+      code: "49",
+      region: "DE",
+      region_name: "Germany",
+      nsnMin: 10,
+      nsnMax: 13,
+      nationalPattern: /^0\d{10,12}$/,
+      nationalTransform: (digits) => `+49${digits.slice(1)}`,
+      nationalConfidence: 0.64,
+    },
+    {
+      code: "44",
+      region: "GB",
+      region_name: "United Kingdom",
+      nsnMin: 10,
+      nsnMax: 10,
+      nationalPattern: /^0\d{10}$/,
+      nationalTransform: (digits) => `+44${digits.slice(1)}`,
+      nationalConfidence: 0.72,
+    },
+    {
+      code: "33",
+      region: "FR",
+      region_name: "France",
+      nsnMin: 9,
+      nsnMax: 9,
+      nationalPattern: /^0\d{9}$/,
+      nationalTransform: (digits) => `+33${digits.slice(1)}`,
+      nationalConfidence: 0.71,
+    },
+    {
+      code: "34",
+      region: "ES",
+      region_name: "Spain",
+      nsnMin: 9,
+      nsnMax: 9,
+      nationalPattern: /^\d{9}$/,
+      nationalTransform: (digits) => `+34${digits}`,
+      nationalConfidence: 0.58,
+    },
+    {
+      code: "39",
+      region: "IT",
+      region_name: "Italy",
+      nsnMin: 8,
+      nsnMax: 10,
+      nationalPattern: /^0\d{8,10}$/,
+      nationalTransform: (digits) => `+39${digits}`,
+      nationalConfidence: 0.65,
+    },
+    {
+      code: "31",
+      region: "NL",
+      region_name: "Netherlands",
+      nsnMin: 9,
+      nsnMax: 9,
+      nationalPattern: /^0\d{9}$/,
+      nationalTransform: (digits) => `+31${digits.slice(1)}`,
+      nationalConfidence: 0.67,
+    },
+    {
+      code: "46",
+      region: "SE",
+      region_name: "Sweden",
+      nsnMin: 7,
+      nsnMax: 10,
+      nationalPattern: /^0\d{7,10}$/,
+      nationalTransform: (digits) => `+46${digits.slice(1)}`,
+      nationalConfidence: 0.64,
+    },
+    {
+      code: "47",
+      region: "NO",
+      region_name: "Norway",
+      nsnMin: 8,
+      nsnMax: 8,
+      nationalPattern: /^\d{8}$/,
+      nationalTransform: (digits) => `+47${digits}`,
+      nationalConfidence: 0.54,
+    },
+    {
+      code: "48",
+      region: "PL",
+      region_name: "Poland",
+      nsnMin: 9,
+      nsnMax: 9,
+      nationalPattern: /^\d{9}$/,
+      nationalTransform: (digits) => `+48${digits}`,
+      nationalConfidence: 0.56,
+    },
+    {
+      code: "7",
+      region: "RU/KZ",
+      region_name: "Russia / Kazakhstan",
+      nsnMin: 10,
+      nsnMax: 10,
+      nationalPattern: /^[78]\d{9}$/,
+      nationalTransform: (digits) => `+7${digits.slice(1)}`,
+      nationalConfidence: 0.61,
+    },
+    {
+      code: "27",
+      region: "ZA",
+      region_name: "South Africa",
+      nsnMin: 9,
+      nsnMax: 9,
+      nationalPattern: /^0\d{9}$/,
+      nationalTransform: (digits) => `+27${digits.slice(1)}`,
+      nationalConfidence: 0.66,
+    },
+    {
+      code: "1",
+      region: "US/CA",
+      region_name: "United States / Canada",
+      nsnMin: 10,
+      nsnMax: 10,
+      nationalPattern: /^[2-9]\d{9}$/,
+      nationalTransform: (digits) => `+1${digits}`,
+      nationalConfidence: 0.74,
+    },
   ];
 
   const PHONE_RULES_BY_CODE = [...PHONE_RULES].sort((a, b) => b.code.length - a.code.length);
@@ -403,8 +655,7 @@
   };
 
   const hasOverlap = (offsets, start, end) =>
-    Array.isArray(offsets) &&
-    offsets.some(([s, e]) => Math.max(Number(s || 0), start) < Math.min(Number(e || 0), end));
+    Array.isArray(offsets) && offsets.some(([s, e]) => Math.max(Number(s || 0), start) < Math.min(Number(e || 0), end));
 
   const extractEntities = (text) => {
     const t = String(text || "");
@@ -475,7 +726,9 @@
       });
     }
 
-    for (const m of t.matchAll(/\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s+\d{4}\b/gi)) {
+    for (const m of t.matchAll(
+      /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s+\d{4}\b/gi,
+    )) {
       const normalized = normalizeDateValue(m[0]);
       collector.recordSpan("dates", normalized.normalized || m[0], normalized.iso || normalized.normalized || m[0], {
         start: Number(m.index || 0),
@@ -509,7 +762,9 @@
       });
     }
 
-    for (const m of t.matchAll(/\b(?:[A-Z][\w&.-]*\s+){0,4}(?:Inc|LLC|Ltd|Limited|Corp|Corporation|Company|Co\.?|Group|Studio|University|College|School|Bank|Agency|Department|Ministry|Foundation|Institute|Association|Press|Media|Hospital|Clinic|Hotel|Restaurant|Museum|Council|Office)\b/g)) {
+    for (const m of t.matchAll(
+      /\b(?:[A-Z][\w&.-]*\s+){0,4}(?:Inc|LLC|Ltd|Limited|Corp|Corporation|Company|Co\.?|Group|Studio|University|College|School|Bank|Agency|Department|Ministry|Foundation|Institute|Association|Press|Media|Hospital|Clinic|Hotel|Restaurant|Museum|Council|Office)\b/g,
+    )) {
       const value = m[0].trim();
       collector.recordSpan("organizations", value, value.toLowerCase(), {
         start: Number(m.index || 0),
@@ -531,7 +786,9 @@
         raw: value,
       });
     }
-    for (const m of t.matchAll(/\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Park|Plaza|Square|Airport|Station|Beach|River|Harbor|Harbour|Mount|Mountain|Valley|City|County|District|Province|State))\b/g)) {
+    for (const m of t.matchAll(
+      /\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,3}\s+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Lane|Ln|Drive|Dr|Park|Plaza|Square|Airport|Station|Beach|River|Harbor|Harbour|Mount|Mountain|Valley|City|County|District|Province|State))\b/g,
+    )) {
       const value = m[1].trim();
       collector.recordSpan("locations", value, value.toLowerCase(), {
         start: Number(m.index || 0),

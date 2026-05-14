@@ -2,6 +2,7 @@
   "name": "ocean-osint-lens",
   "private": true,
   "type": "commonjs",
+  "license": "MIT",
   "engines": {
     "node": ">=18"
   },
@@ -16,7 +17,8 @@
     "desktop-icon": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\\\create-desktop-icon.ps1"
   },
   "devDependencies": {
-    "eslint": "^8.57.0",
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.3.0",
     "prettier": "^3.2.5"
   }
 }

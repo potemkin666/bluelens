@@ -6,30 +6,12 @@ const { extractEntities, normalizePhone, phoneCountryHint } = require("../ocr-pi
 
 test("reverseSearchUrl builds expected engine URLs", () => {
   const url = "https://example.com/a b.jpg?x=1&y=2";
-  assert.equal(
-    reverseSearchUrl("lens", url),
-    `https://lens.google.com/uploadbyurl?url=${encodeURIComponent(url)}`,
-  );
-  assert.equal(
-    reverseSearchUrl("tineye", url),
-    `https://tineye.com/search?url=${encodeURIComponent(url)}`,
-  );
-  assert.equal(
-    reverseSearchUrl("saucenao", url),
-    `https://saucenao.com/search.php?url=${encodeURIComponent(url)}`,
-  );
-  assert.equal(
-    reverseSearchUrl("iqdb", url),
-    `https://iqdb.org/?url=${encodeURIComponent(url)}`,
-  );
-  assert.equal(
-    reverseSearchUrl("baidu", url),
-    `https://image.baidu.com/n/pc_search?queryImageUrl=${encodeURIComponent(url)}`,
-  );
-  assert.equal(
-    reverseSearchUrl("ascii2d", url),
-    `https://ascii2d.net/search/url/${encodeURIComponent(url)}`,
-  );
+  assert.equal(reverseSearchUrl("lens", url), `https://lens.google.com/uploadbyurl?url=${encodeURIComponent(url)}`);
+  assert.equal(reverseSearchUrl("tineye", url), `https://tineye.com/search?url=${encodeURIComponent(url)}`);
+  assert.equal(reverseSearchUrl("saucenao", url), `https://saucenao.com/search.php?url=${encodeURIComponent(url)}`);
+  assert.equal(reverseSearchUrl("iqdb", url), `https://iqdb.org/?url=${encodeURIComponent(url)}`);
+  assert.equal(reverseSearchUrl("baidu", url), `https://image.baidu.com/n/pc_search?queryImageUrl=${encodeURIComponent(url)}`);
+  assert.equal(reverseSearchUrl("ascii2d", url), `https://ascii2d.net/search/url/${encodeURIComponent(url)}`);
   assert.equal(reverseSearchUrl("nope", url), "");
 });
 
@@ -43,8 +25,7 @@ test("reverseSearchUploadPage returns engine upload pages", () => {
 
 test("extractEntities pulls urls/emails/handles/phones", () => {
   const t =
-    "Contact: hello@example.com @some_user https://example.com/path and www.test.com\n" +
-    "Phone: +1 (415) 555-1234 and 020 7946 0958";
+    "Contact: hello@example.com @some_user https://example.com/path and www.test.com\n" + "Phone: +1 (415) 555-1234 and 020 7946 0958";
 
   const ent = extractEntities(t);
   assert.deepEqual(ent.emails, ["hello@example.com"]);

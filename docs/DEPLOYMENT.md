@@ -21,17 +21,20 @@
 ### Setup Steps
 
 1. **Clone the repository**:
+
    ```bash
    git clone https://github.com/potemkin666/bluelens.git
    cd bluelens
    ```
 
 2. **Install dependencies** (dev tools only):
+
    ```bash
    npm install
    ```
 
 3. **Start the server**:
+
    ```bash
    npm start
    # or
@@ -46,28 +49,33 @@
 ### Development Workflow
 
 **Running tests**:
+
 ```bash
 npm test
 ```
 
 **Running tests with coverage**:
+
 ```bash
 npm run test:coverage
 ```
 
 **Linting**:
+
 ```bash
 npm run lint        # Check for issues
 npm run lint:fix    # Auto-fix issues
 ```
 
 **Formatting**:
+
 ```bash
 npm run format:check  # Check formatting
 npm run format        # Auto-format files
 ```
 
 **Windows Desktop Shortcut**:
+
 ```bash
 npm run desktop-icon
 ```
@@ -89,18 +97,21 @@ npm run desktop-icon
 #### Deployment Steps
 
 1. **Create a deployment user**:
+
    ```bash
    sudo useradd -m -s /bin/bash bluelens
    sudo su - bluelens
    ```
 
 2. **Clone and setup**:
+
    ```bash
    git clone https://github.com/potemkin666/bluelens.git
    cd bluelens
    ```
 
 3. **Configure environment** (optional):
+
    ```bash
    export PORT=8787
    export BLUELENS_LOG_LEVEL=INFO
@@ -108,6 +119,7 @@ npm run desktop-icon
    ```
 
 4. **Start with process manager** (PM2 recommended):
+
    ```bash
    npm install -g pm2
    pm2 start server.js --name bluelens
@@ -148,6 +160,7 @@ WantedBy=multi-user.target
 ```
 
 Enable and start:
+
 ```bash
 sudo mkdir -p /var/log/bluelens
 sudo chown bluelens:bluelens /var/log/bluelens
@@ -192,7 +205,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_cache_bypass $http_upgrade;
-        
+
         # Long-polling support for wait jobs
         proxy_read_timeout 35s;
         proxy_connect_timeout 10s;
@@ -202,6 +215,7 @@ server {
 ```
 
 Enable and restart:
+
 ```bash
 sudo ln -s /etc/nginx/sites-available/bluelens /etc/nginx/sites-enabled/
 sudo nginx -t
@@ -272,7 +286,7 @@ docker logs -f bluelens
 Create `docker-compose.yml`:
 
 ```yaml
-version: '3.8'
+version: "3.8"
 
 services:
   bluelens:
@@ -288,13 +302,15 @@ services:
       - ./logs:/var/log/bluelens
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8787/api/ping', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      test:
+        ["CMD", "node", "-e", "require('http').get('http://localhost:8787/api/ping', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
       interval: 30s
       timeout: 3s
       retries: 3
 ```
 
 Run with:
+
 ```bash
 docker-compose up -d
 docker-compose logs -f
@@ -307,6 +323,7 @@ docker-compose logs -f
 ### Application Logs
 
 **Console logs** (if running directly):
+
 ```bash
 # Follow logs with PM2
 pm2 logs bluelens
@@ -316,6 +333,7 @@ sudo journalctl -u bluelens -f
 ```
 
 **File logs** (if configured):
+
 ```bash
 tail -f /var/log/bluelens/app.log
 ```
@@ -323,6 +341,7 @@ tail -f /var/log/bluelens/app.log
 ### Log Format
 
 Structured JSON logs (when using logger module):
+
 ```json
 {
   "timestamp": "2026-05-10T10:00:00.000Z",
@@ -336,11 +355,13 @@ Structured JSON logs (when using logger module):
 ### Health Checks
 
 **Manual check**:
+
 ```bash
 curl http://localhost:8787/api/ping
 ```
 
 **Expected response**:
+
 ```json
 {
   "ok": true,
@@ -352,11 +373,13 @@ curl http://localhost:8787/api/ping
 ### Performance Monitoring
 
 **Check upload statistics**:
+
 ```bash
 curl http://localhost:8787/api/upload-stats
 ```
 
 **Monitor system resources**:
+
 ```bash
 # With PM2
 pm2 monit
@@ -369,6 +392,7 @@ df -h
 ### Alerts
 
 Set up monitoring with tools like:
+
 - **Uptime Robot**: External uptime monitoring
 - **Prometheus + Grafana**: Metrics and dashboards
 - **Sentry**: Error tracking
@@ -381,6 +405,7 @@ Set up monitoring with tools like:
 ### Server Won't Start
 
 **Check port availability**:
+
 ```bash
 # Check if port is in use
 sudo lsof -i :8787
@@ -388,6 +413,7 @@ sudo netstat -tuln | grep 8787
 ```
 
 **Check logs**:
+
 ```bash
 # PM2
 pm2 logs bluelens --err
@@ -399,17 +425,20 @@ sudo journalctl -u bluelens -n 50
 ### Upload Failures
 
 **Check upload host reachability**:
+
 ```bash
 curl http://localhost:8787/api/doctor/upload-reachability
 ```
 
 **Common causes**:
+
 1. Network connectivity issues
 2. Upload hosts down or blocking server IP
 3. Image size too large (some hosts have limits)
 4. Rate limiting from upload hosts
 
 **Solutions**:
+
 - Configure alternative upload hosts in `bluelens-config.js`
 - Check network/firewall rules
 - Reduce image size before upload
@@ -419,11 +448,13 @@ curl http://localhost:8787/api/doctor/upload-reachability
 **Symptoms**: Wait tabs stuck at "Waiting for upload..."
 
 **Check**:
+
 1. Server is running and accessible
 2. No CORS issues (check browser console)
 3. Wait job timeout settings in config
 
 **Debug**:
+
 ```bash
 # Check active jobs
 curl http://localhost:8787/api/wait-jobs/[job-id]
@@ -432,6 +463,7 @@ curl http://localhost:8787/api/wait-jobs/[job-id]
 ### High Memory Usage
 
 **Check memory**:
+
 ```bash
 # PM2
 pm2 show bluelens
@@ -442,11 +474,13 @@ ps aux | grep node
 ```
 
 **Common causes**:
+
 1. Large images being processed
 2. Memory leaks in long-running processes
 3. Too many concurrent uploads
 
 **Solutions**:
+
 - Restart the service regularly (cron job)
 - Add memory limit to PM2: `pm2 start server.js --max-memory-restart 500M`
 - Enable swap if needed
@@ -454,16 +488,19 @@ ps aux | grep node
 ### CDN Resources Not Loading
 
 **Check CDN reachability**:
+
 ```bash
 curl http://localhost:8787/api/doctor/cdn-reachability
 ```
 
 **Common causes**:
+
 1. Network/firewall blocking CDN domains
 2. Corporate proxy interfering
 3. DNS issues
 
 **Solutions**:
+
 - Check DNS resolution: `nslookup cdn.jsdelivr.net`
 - Configure proxy if needed
 - Whitelist CDN domains in firewall
@@ -473,11 +510,13 @@ curl http://localhost:8787/api/doctor/cdn-reachability
 **Symptoms**: Slow responses, timeouts
 
 **Check**:
+
 1. Server resource usage (CPU, RAM, disk)
 2. Network latency
 3. Upload host performance
 
 **Optimize**:
+
 ```bash
 # Enable compression in nginx
 gzip on;
@@ -503,11 +542,13 @@ worker_processes auto;
 ## Backup and Recovery
 
 **What to backup**:
+
 - Application logs (if important)
 - Configuration files (if customized)
 - Wait job store: `/tmp/bluelens-wait-jobs-v1.json` (ephemeral, low priority)
 
 **Backup script example**:
+
 ```bash
 #!/bin/bash
 BACKUP_DIR=/backup/bluelens/$(date +%Y%m%d)
