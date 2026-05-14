@@ -1,5 +1,3 @@
-/* global BLUELENS_CONFIG */
-
 (() => {
   const emptyRecon = {
     urls: [],

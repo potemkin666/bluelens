@@ -1,5 +1,3 @@
-/* global exifr, sha256, SparkMD5, OCR_PIPELINE, OSINT_LIB, BLUELENS_HELPERS, BLUELENS_CONFIG, Tesseract */
-
 const elements = {
   dropzone: document.getElementById("dropzone"),
   fileInput: document.getElementById("fileInput"),
@@ -4595,7 +4593,7 @@ function escapeHtml(s) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/\"/g, "&quot;")
+    .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
 
@@ -6497,7 +6495,7 @@ async function analyzeFile(file) {
 
   window.__osintActivateTab?.("search");
   if (elements.btnEvidencePack) elements.btnEvidencePack.disabled = false;
-  if (elements.btnIngestResults) elements.btnIngestResults.disabled = !Boolean((elements.resultIntakeInput?.value || "").trim());
+  if (elements.btnIngestResults) elements.btnIngestResults.disabled = !(elements.resultIntakeInput?.value || "").trim();
   logAction("image_loaded", `${file.name || "image"} · local review ready`);
   setStatusLine("Local review ready. Uploads start only when you choose a launch action.");
   renderOnboardingStrip();
@@ -6686,7 +6684,7 @@ function setupDnD() {
 
       let url = (uri || "").trim().split(/\s+/)[0];
       if (!url && html) {
-        const m = html.match(/<img[^>]+src=[\"']([^\"']+)[\"']/i);
+        const m = html.match(/<img[^>]+src=["']([^"']+)["']/i);
         url = m ? String(m[1] || "").trim() : "";
       }
       if (!url) return;

@@ -1,5 +1,3 @@
-/* global Tesseract, BLUELENS_CONFIG */
-
 // Lightweight OCR preprocessing + entity extraction helpers.
 // Exposed as `window.OCR_PIPELINE` for the non-module app.js script.
 (() => {

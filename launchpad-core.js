@@ -1,5 +1,3 @@
-/* global BLUELENS_CONFIG, crypto */
-
 (() => {
   const getRunEngines = ({ run, engineOrder = [] } = {}) => {
     const fromTargets = Object.keys(run?.targets || {});
