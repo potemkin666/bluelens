@@ -287,7 +287,7 @@ const DHASH_MUTATION_CLUSTER_THRESHOLD = APP_CONFIG.dhash?.mutationClusterThresh
 const HOST_STATS_REFRESH_TIMEOUT_MS = APP_CONFIG.hostStats?.refreshTimeoutMs || 2000;
 const UPLOAD_PROXY_TIMEOUT_MS = APP_CONFIG.upload?.endpointTimeoutMs || 45000;
 const UPLOAD_PREFLIGHT_TIMEOUT_MS = APP_CONFIG.upload?.preflightTimeoutMs || 2500;
-const WAIT_JOB_DEFAULT_TIMEOUT_MS = SERVER_CONFIG.waitJobs?.defaultTimeoutMs || 25000;
+const _WAIT_JOB_DEFAULT_TIMEOUT_MS = SERVER_CONFIG.waitJobs?.defaultTimeoutMs || 25000;
 const LOCAL_SERVER_HINT_TIMEOUT_MS = APP_CONFIG.localServerHint?.timeoutMs || 900;
 const LOCAL_SERVER_HINT_MESSAGE =
   APP_CONFIG.localServerHint?.offlineMessage ||
@@ -431,7 +431,7 @@ function writeStorage(key, value, scope, storage = localStorage) {
   }
 }
 
-function removeStorage(key, scope, storage = localStorage) {
+function _removeStorage(key, scope, storage = localStorage) {
   try {
     storage.removeItem(key);
     return true;
@@ -1143,7 +1143,7 @@ function getVisibleResultIntakeEntries(entries = state.resultIntake?.entries) {
   return (entries || []).filter((entry) => !entry?.suppressed);
 }
 
-function getSuppressedResultIntakeEntries(entries = state.resultIntake?.entries) {
+function _getSuppressedResultIntakeEntries(entries = state.resultIntake?.entries) {
   return (entries || []).filter((entry) => entry?.suppressed);
 }
 
@@ -2615,7 +2615,7 @@ function setSearchQueryOutput(output) {
   renderSearchQueryOutput();
 }
 
-function parseFilenameStem(name) {
+function _parseFilenameStem(name) {
   if (appHelpers.parseFilenameStem) return appHelpers.parseFilenameStem(name);
   const raw = String(name || "")
     .trim()
@@ -3790,7 +3790,7 @@ async function runMissionPreset(preset) {
       )
         return;
       setStatusLine("Swarm: staging wait tabs…");
-      const run = await prepareEngineSwarm({ engines: ENGINE_ORDER, labelPrefix: "Swarm" });
+      const _run = await prepareEngineSwarm({ engines: ENGINE_ORDER, labelPrefix: "Swarm" });
       state.session = loadSession();
       state.session.engines_opened += ENGINE_ORDER.length;
       saveSession();
@@ -4868,7 +4868,7 @@ async function parseExif(file) {
   }
 }
 
-function hasGps(exifObj) {
+function _hasGps(exifObj) {
   if (!exifObj) return false;
   const lat = exifObj.latitude ?? exifObj.GPSLatitude ?? exifObj.GPSLatitudeRef;
   const lon = exifObj.longitude ?? exifObj.GPSLongitude ?? exifObj.GPSLongitudeRef;
@@ -5597,7 +5597,7 @@ async function makeThumbnailDataUrl(file, maxEdge = 240) {
   }
 }
 
-function extractPivotsFromReport(report) {
+function _extractPivotsFromReport(report) {
   if (appHelpers.extractPivotsFromReport) return appHelpers.extractPivotsFromReport(report);
   const pivots = [];
   const ents = report?.key_fields?.ocr_entities;
@@ -6154,7 +6154,7 @@ function renderOcrEntities(text) {
   });
 }
 
-function detectScriptHint(text) {
+function _detectScriptHint(text) {
   return OCR_ENTITIES_UI.detectScriptHint({ text, scriptHints: OCR_SCRIPT_HINTS });
 }
 
@@ -7591,7 +7591,7 @@ function setupCursorBubbles() {
   });
 }
 
-function setupHoloTilt() {
+function _setupHoloTilt() {
   const card = document.querySelector(".console-card");
   if (!card) return;
   if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
