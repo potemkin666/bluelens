@@ -60,14 +60,12 @@ Please be respectful and constructive in all interactions with the community. We
 ### Making Changes
 
 1. **Write Quality Code**
-
    - Follow the existing code style and conventions
    - Keep functions focused and reasonably sized
    - Add comments for complex logic
    - Use meaningful variable and function names
 
 2. **Code Style**
-
    - We use ESLint and Prettier for code formatting
    - Run linting before committing:
      ```bash
@@ -81,7 +79,6 @@ Please be respectful and constructive in all interactions with the community. We
      ```
 
 3. **Testing**
-
    - Add tests for new features
    - Update existing tests if behavior changes
    - Ensure all tests pass: `npm test`
@@ -113,14 +110,12 @@ via the bluelens-config.js file. Defaults to 60% confidence.
 ### Pull Requests
 
 1. **Before Submitting**
-
    - Ensure all tests pass
    - Run linting and fix any issues
    - Update documentation
    - Rebase on the latest main branch if needed
 
 2. **PR Description**
-
    - Clearly describe what the PR does
    - Reference any related issues (e.g., "Fixes #123")
    - Include screenshots for UI changes
