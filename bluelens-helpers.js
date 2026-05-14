@@ -85,10 +85,10 @@
         ...ents.handles
           .slice(0, 3)
           .map((x) => {
-          // Old reports or manual entry mistakes can leave multiple leading @ symbols; normalize them to a single @ prefix format.
-          const handle = String(x || "").replace(/^@+/, "");
-          return handle ? `@${handle}` : null;
-        })
+            // Old reports or manual entry mistakes can leave multiple leading @ symbols; normalize them to a single @ prefix format.
+            const handle = String(x || "").replace(/^@+/, "");
+            return handle ? `@${handle}` : null;
+          })
           .filter(Boolean),
       );
     }
@@ -107,12 +107,16 @@
       .split(/\r?\n/)
       .map((line) => line.trim())
       .filter(Boolean);
-    const paragraphBreaks = String(text || "").split(/\n\s*\n/).filter((block) => block.trim()).length;
+    const paragraphBreaks = String(text || "")
+      .split(/\n\s*\n/)
+      .filter((block) => block.trim()).length;
     const headingCandidates = lines
       .filter((line) => line.length >= 4 && line.length <= 72 && (line === line.toUpperCase() || /^[A-Z][A-Za-z0-9 '&/-]{3,}$/.test(line)))
       .slice(0, 4);
     const keyValueRows = lines
-      .filter((line) => /[:|]/.test(line) || /\b(total|date|name|address|price|receipt|invoice|menu|certificate|issued|expires)\b/i.test(line))
+      .filter(
+        (line) => /[:|]/.test(line) || /\b(total|date|name|address|price|receipt|invoice|menu|certificate|issued|expires)\b/i.test(line),
+      )
       .slice(0, 6);
     const tabularRows = lines
       .filter((line) => /\d/.test(line) && /[$€£¥]|(?:\s{2,}|\t)|\bqty\b|\btotal\b|\bsubtotal\b/i.test(line))
@@ -170,19 +174,30 @@
   }
 
   function parseFilenameStem(name) {
-    const raw = String(name || "").trim().replace(/\.[^.]+$/, "");
+    const raw = String(name || "")
+      .trim()
+      .replace(/\.[^.]+$/, "");
     return raw.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
   }
 
-  function buildSearchQuerySpecs({ text = "", fileName = "", dimensions = "", language = "English", ent = {}, handles = [], domains = [] } = {}) {
+  function buildSearchQuerySpecs({
+    text = "",
+    fileName = "",
+    dimensions = "",
+    language = "English",
+    ent = {},
+    handles = [],
+    domains = [],
+  } = {}) {
     const kinds = inferDocumentKinds({ text, fileName, ent });
     const logoCandidates = collectLogoLookupCandidates({ text, ent, domains, handles });
     const fileStem = parseFilenameStem(fileName);
-    const topLine = String(text || "")
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .find((line) => line.length >= 4) || "";
+    const topLine =
+      String(text || "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .find((line) => line.length >= 4) || "";
     const queries = [];
     const seen = new Set();
     const add = (label, query, why) => {
@@ -191,26 +206,54 @@
       seen.add(clean);
       queries.push({ label, query: clean, why });
     };
-    if (logoCandidates[0] && ent.locations?.[0]) add("Brand + city", `"${logoCandidates[0]}" "${ent.locations[0]}"`, "Combine the strongest brand/logo clue with the strongest location clue.");
-    if (topLine && logoCandidates[0]) add("OCR text + logo", `"${topLine.slice(0, 80)}" "${logoCandidates[0]}"`, "Bind the main OCR line to the strongest logo/brand candidate.");
-    if (kinds[0]) add("Object + language", `"${kinds[0]}" "${language}"`, "Search the detected document/object type together with the OCR language.");
-    if (fileStem || dimensions) add("File name + dimensions", `"${fileStem || "image"}" "${dimensions || "unknown dimensions"}"`, "Use file naming residue with the visible pixel dimensions.");
+    if (logoCandidates[0] && ent.locations?.[0])
+      add(
+        "Brand + city",
+        `"${logoCandidates[0]}" "${ent.locations[0]}"`,
+        "Combine the strongest brand/logo clue with the strongest location clue.",
+      );
+    if (topLine && logoCandidates[0])
+      add(
+        "OCR text + logo",
+        `"${topLine.slice(0, 80)}" "${logoCandidates[0]}"`,
+        "Bind the main OCR line to the strongest logo/brand candidate.",
+      );
+    if (kinds[0])
+      add("Object + language", `"${kinds[0]}" "${language}"`, "Search the detected document/object type together with the OCR language.");
+    if (fileStem || dimensions)
+      add(
+        "File name + dimensions",
+        `"${fileStem || "image"}" "${dimensions || "unknown dimensions"}"`,
+        "Use file naming residue with the visible pixel dimensions.",
+      );
     if (handles[0]) {
-      const platformHint = domains.find((domain) => /(instagram|tiktok|x\.com|twitter|facebook|linkedin|telegram)/i.test(domain)) || "instagram OR tiktok OR x";
-      add("Visible username + platform", `"${handles[0]}" ${platformHint}`, "Pivot the visible handle against the likeliest platform hint.");
+      const platformHint =
+        domains.find((domain) => /(instagram|tiktok|x\.com|twitter|facebook|linkedin|telegram)/i.test(domain)) ||
+        "instagram OR tiktok OR x";
+      add(
+        "Visible username + platform",
+        `"${handles[0]}" ${platformHint}`,
+        "Pivot the visible handle against the likeliest platform hint.",
+      );
     }
-    if (domains[0] && logoCandidates[0]) add("Logo + domain", `"${logoCandidates[0]}" "${domains[0]}"`, "Pair a brand/logo clue with the strongest normalized domain.");
+    if (domains[0] && logoCandidates[0])
+      add("Logo + domain", `"${logoCandidates[0]}" "${domains[0]}"`, "Pair a brand/logo clue with the strongest normalized domain.");
     if (topLine) add("Quoted OCR line", `"${topLine.slice(0, 96)}"`, "Quoted text search for the most stable visible line.");
     return queries;
   }
 
   function normalizeHandleValue(value) {
-    const clean = String(value || "").trim().replace(/^@+/, "").toLowerCase();
+    const clean = String(value || "")
+      .trim()
+      .replace(/^@+/, "")
+      .toLowerCase();
     return clean ? `@${clean}` : "";
   }
 
   function normalizeDomainValue(value) {
-    const raw = String(value || "").trim().toLowerCase();
+    const raw = String(value || "")
+      .trim()
+      .toLowerCase();
     if (!raw) return "";
     const withoutProtocol = raw.replace(/^[a-z]+:\/\//i, "");
     const host = withoutProtocol.split(/[/?#]/, 1)[0].replace(/^www\./, "");
@@ -334,24 +377,32 @@
 
       for (const value of entities?.handles || []) {
         const normalized = normalizeHandleValue(value);
-        const detail = Array.isArray(details.handles) ? details.handles.find((entry) => normalizeHandleValue(entry?.value) === normalized) : null;
+        const detail = Array.isArray(details.handles)
+          ? details.handles.find((entry) => normalizeHandleValue(entry?.value) === normalized)
+          : null;
         addEntity("handle", normalized, detail);
       }
       for (const value of entities?.emails || []) {
         const email = String(value || "").toLowerCase();
-        const detail = Array.isArray(details.emails) ? details.emails.find((entry) => String(entry?.value || "").toLowerCase() === email) : null;
+        const detail = Array.isArray(details.emails)
+          ? details.emails.find((entry) => String(entry?.value || "").toLowerCase() === email)
+          : null;
         addEntity("email", email, detail);
         const domain = normalizeDomainValue(email.split("@")[1] || "");
         if (domain) addEntity("domain", domain, detail, { field: "ocr_entities.email_domain", source: "email_domain" });
       }
       for (const value of entities?.phones || []) {
         const phone = String(value || "").trim();
-        const detail = Array.isArray(details.phones) ? details.phones.find((entry) => String(entry?.value || "").trim() === phone || String(entry?.raw || "").trim() === phone) : null;
+        const detail = Array.isArray(details.phones)
+          ? details.phones.find((entry) => String(entry?.value || "").trim() === phone || String(entry?.raw || "").trim() === phone)
+          : null;
         addEntity("phone", phone, detail);
       }
       for (const value of entities?.urls || []) {
         const url = String(value || "").trim();
-        const detail = Array.isArray(details.urls) ? details.urls.find((entry) => String(entry?.value || "").trim() === url || String(entry?.raw || "").trim() === url) : null;
+        const detail = Array.isArray(details.urls)
+          ? details.urls.find((entry) => String(entry?.value || "").trim() === url || String(entry?.raw || "").trim() === url)
+          : null;
         addEntity("url", url, detail);
         const domain = normalizeDomainValue(url);
         if (domain) addEntity("domain", domain, detail, { field: "ocr_entities.url_domain", source: "url_domain" });
@@ -412,25 +463,29 @@
       }
     });
 
-    const nodes = Array.from(nodeMap.values()).map((node) => ({
-      ...node,
-      file_count: node.files.size,
-      files: Array.from(node.files).sort(),
-      provenance: node.provenance.slice(0, 24),
-      linked_keys: Array.from(node.linked_keys),
-      degree: node.linked_keys.size,
-    })).sort((a, b) => {
-      if (a.type === "file" && b.type !== "file") return -1;
-      if (a.type !== "file" && b.type === "file") return 1;
-      return b.file_count - a.file_count || b.evidence_count - a.evidence_count || a.label.localeCompare(b.label);
-    });
+    const nodes = Array.from(nodeMap.values())
+      .map((node) => ({
+        ...node,
+        file_count: node.files.size,
+        files: Array.from(node.files).sort(),
+        provenance: node.provenance.slice(0, 24),
+        linked_keys: Array.from(node.linked_keys),
+        degree: node.linked_keys.size,
+      }))
+      .sort((a, b) => {
+        if (a.type === "file" && b.type !== "file") return -1;
+        if (a.type !== "file" && b.type === "file") return 1;
+        return b.file_count - a.file_count || b.evidence_count - a.evidence_count || a.label.localeCompare(b.label);
+      });
 
-    const edges = Array.from(edgeMap.values()).map((edge) => ({
-      ...edge,
-      file_count: edge.files.size,
-      files: Array.from(edge.files).sort(),
-      provenance: edge.provenance.slice(0, 24),
-    })).sort((a, b) => b.file_count - a.file_count || b.evidence_count - a.evidence_count || a.key.localeCompare(b.key));
+    const edges = Array.from(edgeMap.values())
+      .map((edge) => ({
+        ...edge,
+        file_count: edge.files.size,
+        files: Array.from(edge.files).sort(),
+        provenance: edge.provenance.slice(0, 24),
+      }))
+      .sort((a, b) => b.file_count - a.file_count || b.evidence_count - a.evidence_count || a.key.localeCompare(b.key));
 
     return {
       nodes,
@@ -499,7 +554,9 @@
         });
       }
 
-      const captured = parseTimelineInstant(report?.key_fields?.captured_at, { ambiguous: report?.key_fields?.captured_at?.has_timezone === false });
+      const captured = parseTimelineInstant(report?.key_fields?.captured_at, {
+        ambiguous: report?.key_fields?.captured_at?.has_timezone === false,
+      });
       if (captured) {
         addEvent({
           key: `${reportKey}:captured`,
@@ -660,10 +717,11 @@
 
     const sorted = events
       .slice()
-      .sort((a, b) =>
-        (Number(a.ts_ms || Number.MAX_SAFE_INTEGER) - Number(b.ts_ms || Number.MAX_SAFE_INTEGER)) ||
-        ((categoryRank[a.category] || 99) - (categoryRank[b.category] || 99)) ||
-        String(a.label || "").localeCompare(String(b.label || "")),
+      .sort(
+        (a, b) =>
+          Number(a.ts_ms || Number.MAX_SAFE_INTEGER) - Number(b.ts_ms || Number.MAX_SAFE_INTEGER) ||
+          (categoryRank[a.category] || 99) - (categoryRank[b.category] || 99) ||
+          String(a.label || "").localeCompare(String(b.label || "")),
       );
 
     return {

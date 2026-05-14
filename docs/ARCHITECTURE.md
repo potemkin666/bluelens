@@ -18,6 +18,7 @@ BlueLens is a local-first OSINT (Open Source Intelligence) tool for image reconn
 **Files**: `app.js`, `index.html`, `wait.html`, `styles.css`
 
 The client layer runs entirely in the browser and handles:
+
 - Image upload and preview
 - Local hash computation (SHA-256, MD5, dHash)
 - EXIF metadata extraction using exifr library
@@ -27,6 +28,7 @@ The client layer runs entirely in the browser and handles:
 - Session state management (localStorage)
 
 **Key Components**:
+
 - **Dropzone**: Drag-and-drop image upload interface
 - **Preview Stage**: Image display with crop selection
 - **Hash Computation**: SHA-256, MD5, and perceptual dHash generation
@@ -42,21 +44,25 @@ The client layer runs entirely in the browser and handles:
 The server provides three main services:
 
 #### a. Static File Server
+
 Serves the HTML, CSS, JavaScript, and asset files for the web interface.
 
 #### b. Upload Proxy (`/api/upload`)
+
 - Proxies image uploads to public temporary hosting services (Uguu, Catbox, Litterbox, 0x0)
 - Implements failover logic across multiple hosts
 - Tracks upload success/failure statistics for intelligent host selection
 - Returns public URLs for use in reverse search engines
 
 #### c. Wait Job Handoff (`/api/wait-jobs/:id`)
+
 - Long-polling mechanism for wait tabs
 - Allows search engine tabs to receive URLs without popup blockers
 - Implements job expiration and cleanup
 - Stores jobs in-memory with optional disk persistence
 
 #### d. Acquisition Layer
+
 - Fetches remote content for analysis
 - Robots.txt discovery
 - Archive.org snapshot lookup
@@ -67,6 +73,7 @@ Serves the HTML, CSS, JavaScript, and asset files for the web interface.
 **Files**: `bluelens-helpers.js`, `bluelens-config.js`, `osint-lib.js`, `launchpad-core.js`, `ocr-pipeline.js`, `ocr-entities-ui.js`
 
 Shared utilities used by both client and server:
+
 - **bluelens-config.js**: Central configuration (ports, timeouts, engine URLs)
 - **bluelens-helpers.js**: Shared helper functions (Hamming distance, dimension parsing, sorting)
 - **osint-lib.js**: OSINT-specific utilities (reverse search URL builders)
@@ -127,6 +134,7 @@ For engines that need post-upload processing:
 ## Storage
 
 ### Browser (localStorage)
+
 - **osint:session:v1**: Current investigation session (images, results, suppressions)
 - **osint:lastRun:v1**: Last analysis run metadata
 - **ui:missionPreset**: User's mission preset selection
@@ -134,6 +142,7 @@ For engines that need post-upload processing:
 - **fx:\***: Visual effects settings
 
 ### Server (In-Memory + Disk)
+
 - **WAIT_JOBS Map**: Active wait jobs (in-memory)
 - **UPLOAD_STATS Map**: Host performance telemetry (in-memory)
 - **DOCTOR_HISTORY**: Health check history (in-memory)
@@ -174,12 +183,14 @@ For engines that need post-upload processing:
 ## Dependencies
 
 ### Client-Side (CDN)
+
 - **exifr**: EXIF metadata parsing
 - **Tesseract.js**: OCR engine
 - **SparkMD5**: MD5 hashing
 - **sha256**: SHA-256 hashing
 
 ### Server-Side (Built-in)
+
 - **http**: HTTP server
 - **fs**: File system operations
 - **path**: Path manipulation
@@ -187,6 +198,7 @@ For engines that need post-upload processing:
 - **net**: Network utilities
 
 ### Development
+
 - **eslint**: Code linting
 - **prettier**: Code formatting
 - **node:test**: Built-in test runner (Node 18+)

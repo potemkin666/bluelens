@@ -10,6 +10,7 @@ The BlueLens codebase has two large files that could benefit from modularization
 ## Why Not Split Now?
 
 ### app.js (Browser Context)
+
 - **Single Script Tag**: Currently loaded as a single `<script>` tag in index.html
 - **No Build System**: Project intentionally avoids build tools (webpack, rollup, etc.)
 - **Global State**: Extensive use of global state and DOM element references
@@ -20,6 +21,7 @@ The BlueLens codebase has two large files that could benefit from modularization
   - Converting to ES modules (requires browser compatibility considerations)
 
 ### server.js (Node.js Context)
+
 - **Manageable Size**: At 1,208 lines, it's large but not unwieldy
 - **Logical Organization**: Currently well-organized with clear sections:
   - Configuration (lines 1-75)
@@ -36,16 +38,17 @@ The BlueLens codebase has two large files that could benefit from modularization
 When ready to modularize, consider:
 
 1. **Use Native ES Modules**:
+
    ```javascript
    // app/state.js
    export const state = { ... };
-   
+
    // app/dom.js
    export const elements = { ... };
-   
+
    // app/hashing.js
    export async function computeHashes(file) { ... }
-   
+
    // app.js (main)
    import { state } from './app/state.js';
    import { elements } from './app/dom.js';
@@ -68,6 +71,7 @@ When ready to modularize, consider:
    - `app/main.js` - Main initialization and event wiring
 
 3. **Update index.html**:
+
    ```html
    <script type="module" src="./app/main.js"></script>
    ```
@@ -124,6 +128,7 @@ These improvements make the large files more maintainable without breaking chang
 ## When to Revisit
 
 Consider splitting when:
+
 - app.js grows beyond 10,000 lines
 - server.js grows beyond 2,000 lines
 - Adding a build system becomes necessary for other reasons

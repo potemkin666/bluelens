@@ -91,24 +91,10 @@
             </div>
             <div class="field-label">Other actions</div>
             <div class="row row-tight quick-actions-row quick-actions-row-secondary">
-              <button
-                id="btnQuickLens"
-                class="btn btn-secondary"
-                type="button"
-                disabled
-                data-ico="⌕"
-                title="Upload once and open Lens."
-              >
+              <button id="btnQuickLens" class="btn btn-secondary" type="button" disabled data-ico="⌕" title="Upload once and open Lens.">
                 Lens only
               </button>
-              <button
-                id="btnQuickOcr"
-                class="btn btn-secondary"
-                type="button"
-                disabled
-                data-ico="⚡"
-                title="Run the fast local OCR pass."
-              >
+              <button id="btnQuickOcr" class="btn btn-secondary" type="button" disabled data-ico="⚡" title="Run the fast local OCR pass.">
                 Run OCR
               </button>
             </div>
@@ -221,237 +207,254 @@
           <div class="tabpanel active" data-panel="search" role="tabpanel">
             <section id="searchConsoleAdvanced" class="search-console-panel">
               <div class="search-console-stack">
-            <div class="subcard hud" data-hud-key="search">
-              <div class="subcard-head">
-                <div class="subcard-title">Share</div>
-                <div class="pill-row">
-                  <span class="pill pill-muted" id="sharePill">Not shared</span>
-                  <span class="pill pill-warn" id="gpsPill" hidden>GPS present</span>
-                  <span class="pill" id="editPill" hidden>Editing software</span>
-                </div>
-              </div>
-
-              <div class="grid console-grid">
-                <div class="kv">
-                  <div class="k">Source</div>
-                  <input id="srcWhere" class="input" placeholder="URL / platform / channel" />
-                </div>
-                <div class="kv">
-                  <div class="k">Captured</div>
-                  <input id="srcWhen" class="input" type="datetime-local" />
-                </div>
-                <div class="kv">
-                  <div class="k">Sender</div>
-                  <input id="srcWho" class="input" placeholder="Name / handle / org" />
-                </div>
-                <div class="kv">
-                  <div class="k">Original</div>
-                  <input id="srcOrig" class="input" placeholder="Original name (if different)" />
-                </div>
-              </div>
-
-              <div class="row row-tight">
-                <label class="field" title="Manual analyst note for how much you trust your current findings">
-                  <span class="field-label">Confidence</span>
-                  <select id="confLevel" class="select">
-                    <option value="unverified">Unverified</option>
-                    <option value="likely">Likely</option>
-                    <option value="confirmed">Confirmed</option>
-                  </select>
-                </label>
-              </div>
-
-              <div class="mono mono-box" title="Uploading only happens after you choose a launch action">
-                <input id="chkEnableShare" type="checkbox" checked hidden />
-                Uploads start only when you choose search.
-              </div>
-
-              <div class="kv">
-                <div class="k">Manual notes</div>
-                <textarea id="manualNotes" class="input textarea" rows="3" placeholder="Notes"></textarea>
-              </div>
-
-              <label class="toggle toggle-mini" title="Uploads the clean copy (re-encoded) instead of the original file">
-                <input id="chkShareSafe" type="checkbox" />
-                <span class="toggle-ui" aria-hidden="true"></span>
-                <span class="toggle-text">Clean upload copy</span>
-              </label>
-
-              <div class="row row-tight">
-                <select id="shareProvider" class="select" disabled title="Automatic host selection — the local proxy ranks temporary hosts and records which one actually accepted the upload.">
-                  <option value="0x0">Auto host</option>
-                </select>
-                <button id="btnCopyPublicUrl" class="btn btn-ghost" type="button" disabled title="Copy public URL">
-                  Copy URL
-                </button>
-                <button
-                  id="btnRetryUpload"
-                  class="btn btn-secondary"
-                  type="button"
-                  disabled
-                  hidden
-                  title="Retry upload / public URL"
-                >
-                  Retry
-                </button>
-              </div>
-
-              <div id="publicUrlOut" class="mono mono-box">—</div>
-              <div id="engineLinks" class="mono mono-box links" hidden></div>
-              <div id="hostStatsOut" class="mono mono-box" hidden></div>
-              <div id="actionLogOut" class="mono mono-box" hidden></div>
-            </div>
-
-            <div class="subcard hud" data-hud-key="ai-suspicion">
-              <div class="subcard-head">
-                <div class="subcard-title">AI-image suspicion</div>
-                <span class="pill pill-muted">checklist</span>
-              </div>
-              <div id="aiSuspicionSummary" class="hint">Checklist only — not an oracle.</div>
-              <div id="aiSuspicionOut" class="ai-suspicion-list" aria-live="polite"></div>
-            </div>
-
-            <div class="subcard hud" data-hud-key="mission-output">
-              <div class="subcard-head">
-                <div class="subcard-title">Mission Output</div>
-                <span class="pill pill-muted">structured</span>
-              </div>
-              <div id="missionOutputOut" class="mono mono-box mission-output-box">
-                Run a workflow.
-              </div>
-            </div>
-
-            <div class="subcard hud" data-hud-key="result-intake">
-              <div class="subcard-head">
-                <div class="subcard-title">Result Intake</div>
-                <span class="pill pill-muted">dedupe queue</span>
-              </div>
-              <textarea
-                id="resultIntakeInput"
-                class="input textarea"
-                rows="4"
-                placeholder="URL | title | snippet | engine"
-              ></textarea>
-              <div class="row row-tight">
-                <button id="btnIngestResults" class="btn btn-secondary" type="button" disabled title="Normalize and merge pasted findings">
-                  Ingest Results
-                </button>
-                <button id="btnClearResults" class="btn btn-ghost" type="button" disabled title="Clear the intake queue">
-                  Clear Queue
-                </button>
-                <button id="btnCopyResultsJson" class="btn btn-ghost" type="button" disabled title="Copy the normalized queue as JSON">
-                  Copy JSON
-                </button>
-              </div>
-              <div id="resultIntakeSummary" class="mono mono-box mission-output-box">
-                No external findings ingested yet.
-              </div>
-            </div>
-
-            <div class="subcard hud" data-hud-key="no-result-autopsy">
-              <div class="subcard-head">
-                <div class="subcard-title">No-result autopsy</div>
-                <span class="pill pill-muted">why nothing hit</span>
-              </div>
-              <div id="noResultAutopsyOut" class="mono mono-box mission-output-box">
-                Run a multi-engine launch, then ingest hits. If nothing lands, BlueLens will explain the likely failure modes here.
-              </div>
-            </div>
-
-            <div class="subcard hud" data-hud-key="source-contradictions">
-              <div class="subcard-head">
-                <div class="subcard-title">Source contradictions</div>
-                <span class="pill pill-muted">date conflicts</span>
-              </div>
-              <div id="sourceContradictionOut" class="mono mono-box mission-output-box">
-                Ingest result snippets with dates and BlueLens will surface conflicts instead of flattening them into fake certainty.
-              </div>
-            </div>
-
-            <details class="drawer hud" data-hud-key="advanced">
-              <summary title="More tools">More tools</summary>
-              <div class="drawer-body">
-            <div class="subcard hud" data-hud-key="mutate">
-              <div class="subcard-head">
-                <div class="subcard-title">Mutation Lab</div>
-                <span class="pill" title="Generate local variants for manual review">variants</span>
-              </div>
-              <div class="row row-tight">
-                <button id="btnMutateSearch" class="btn btn-secondary" type="button" disabled title="Creates local variants, uploads them, and opens Lens tabs for manual review">
-                  Generate Variants + Lens
-                </button>
-                <button id="btnCopyMutations" class="btn btn-ghost" type="button" disabled title="Copy mutation JSON">Copy JSON</button>
-              </div>
-              <div id="mutationOut" class="mono mono-box">—</div>
-            </div>
-
-            <div class="subcard hud" data-hud-key="batch">
-              <div class="subcard-head">
-                <div class="subcard-title">Batch</div>
-                <span class="pill" title="Drop multiple images for a report per file">reports</span>
-              </div>
-              <div class="row row-tight">
-                <input id="batchInput" class="input" type="file" accept="image/*" multiple title="Select multiple images" />
-                <button id="btnRunBatch" class="btn btn-secondary" type="button" title="Generate per-file reports">Run Batch</button>
-                <button id="btnDownloadBatch" class="btn btn-ghost" type="button" disabled title="Download JSON bundle">Download JSON</button>
-                <button id="btnDownloadBatchCsv" class="btn btn-ghost" type="button" disabled title="Download CSV summary">Download CSV</button>
-              </div>
-              <div id="batchOut" class="pre">—</div>
-            </div>
-
-            <div class="subcard hud" data-hud-key="doctor">
-              <div class="subcard-head">
-                <div class="subcard-title">Doctor</div>
-                <span class="pill" title="Runtime diagnostics">diag</span>
-              </div>
-              <div class="row row-tight">
-                <button id="btnRunDoctor" class="btn btn-secondary" type="button" title="Check server, browser, storage, popup, and upload reachability">
-                  Run Doctor
-                </button>
-              </div>
-              <div id="doctorOut" class="mono mono-box">Checking runtime…</div>
-            </div>
-
-                <div class="subcard hud" data-hud-key="fx">
+                <div class="subcard hud" data-hud-key="search">
                   <div class="subcard-head">
-                    <div class="subcard-title">FX</div>
-                    <span class="pill">optional</span>
+                    <div class="subcard-title">Share</div>
+                    <div class="pill-row">
+                      <span class="pill pill-muted" id="sharePill">Not shared</span>
+                      <span class="pill pill-warn" id="gpsPill" hidden>GPS present</span>
+                      <span class="pill" id="editPill" hidden>Editing software</span>
+                    </div>
                   </div>
-                  <label class="toggle toggle-mini" title="Enable ambient motion, chrome, and HUD experiments">
-                    <input id="chkFunMode" type="checkbox" />
-                    <span class="toggle-ui" aria-hidden="true"></span>
-                    <span class="toggle-text">Fun mode (ambient FX, chrome skin, HUD drag)</span>
-                  </label>
-                  <label class="toggle toggle-mini" title="Strip ambient FX, foreground the canonical workflow, and keep a traceable session log">
-                    <input id="chkOperatorMode" type="checkbox" checked />
-                    <span class="toggle-ui" aria-hidden="true"></span>
-                    <span class="toggle-text">Operator mode (focused workflow + trace log)</span>
-                  </label>
+
+                  <div class="grid console-grid">
+                    <div class="kv">
+                      <div class="k">Source</div>
+                      <input id="srcWhere" class="input" placeholder="URL / platform / channel" />
+                    </div>
+                    <div class="kv">
+                      <div class="k">Captured</div>
+                      <input id="srcWhen" class="input" type="datetime-local" />
+                    </div>
+                    <div class="kv">
+                      <div class="k">Sender</div>
+                      <input id="srcWho" class="input" placeholder="Name / handle / org" />
+                    </div>
+                    <div class="kv">
+                      <div class="k">Original</div>
+                      <input id="srcOrig" class="input" placeholder="Original name (if different)" />
+                    </div>
+                  </div>
+
                   <div class="row row-tight">
-                    <label class="field" title="Scanlines intensity">
-                      <span class="field-label">Scan</span>
-                      <input id="scanlineSlider" class="input range" type="range" min="0" max="0.35" step="0.01" />
+                    <label class="field" title="Manual analyst note for how much you trust your current findings">
+                      <span class="field-label">Confidence</span>
+                      <select id="confLevel" class="select">
+                        <option value="unverified">Unverified</option>
+                        <option value="likely">Likely</option>
+                        <option value="confirmed">Confirmed</option>
+                      </select>
                     </label>
-                    <label class="field" title="Chromatic hover split intensity">
-                      <span class="field-label">Split</span>
-                      <input id="chromaticSlider" class="input range" type="range" min="0" max="1.2" step="0.05" />
-                    </label>
-                    <button id="btnOverclock" class="btn btn-secondary" type="button" title="Apply the louder FX preset." disabled>Overclock</button>
                   </div>
-                  <label class="toggle toggle-mini" title="Blue-chrome 2001 music player skin">
-                    <input id="chkChrome" type="checkbox" />
+
+                  <div class="mono mono-box" title="Uploading only happens after you choose a launch action">
+                    <input id="chkEnableShare" type="checkbox" checked hidden />
+                    Uploads start only when you choose search.
+                  </div>
+
+                  <div class="kv">
+                    <div class="k">Manual notes</div>
+                    <textarea id="manualNotes" class="input textarea" rows="3" placeholder="Notes"></textarea>
+                  </div>
+
+                  <label class="toggle toggle-mini" title="Uploads the clean copy (re-encoded) instead of the original file">
+                    <input id="chkShareSafe" type="checkbox" />
                     <span class="toggle-ui" aria-hidden="true"></span>
-                    <span class="toggle-text">Blue chrome skin</span>
+                    <span class="toggle-text">Clean upload copy</span>
                   </label>
-                  <label class="toggle toggle-mini" title="Drag mini-panels around the screen">
-                    <input id="chkHud" type="checkbox" />
-                    <span class="toggle-ui" aria-hidden="true"></span>
-                    <span class="toggle-text">HUD mode</span>
-                  </label>
-                  <div class="hint">BlueLens starts in a restrained operator theme. Turn on Fun mode if you want the aquarium.</div>
+
+                  <div class="row row-tight">
+                    <select
+                      id="shareProvider"
+                      class="select"
+                      disabled
+                      title="Automatic host selection — the local proxy ranks temporary hosts and records which one actually accepted the upload."
+                    >
+                      <option value="0x0">Auto host</option>
+                    </select>
+                    <button id="btnCopyPublicUrl" class="btn btn-ghost" type="button" disabled title="Copy public URL">Copy URL</button>
+                    <button id="btnRetryUpload" class="btn btn-secondary" type="button" disabled hidden title="Retry upload / public URL">
+                      Retry
+                    </button>
+                  </div>
+
+                  <div id="publicUrlOut" class="mono mono-box">—</div>
+                  <div id="engineLinks" class="mono mono-box links" hidden></div>
+                  <div id="hostStatsOut" class="mono mono-box" hidden></div>
+                  <div id="actionLogOut" class="mono mono-box" hidden></div>
                 </div>
-              </div>
-            </details>
+
+                <div class="subcard hud" data-hud-key="ai-suspicion">
+                  <div class="subcard-head">
+                    <div class="subcard-title">AI-image suspicion</div>
+                    <span class="pill pill-muted">checklist</span>
+                  </div>
+                  <div id="aiSuspicionSummary" class="hint">Checklist only — not an oracle.</div>
+                  <div id="aiSuspicionOut" class="ai-suspicion-list" aria-live="polite"></div>
+                </div>
+
+                <div class="subcard hud" data-hud-key="mission-output">
+                  <div class="subcard-head">
+                    <div class="subcard-title">Mission Output</div>
+                    <span class="pill pill-muted">structured</span>
+                  </div>
+                  <div id="missionOutputOut" class="mono mono-box mission-output-box">Run a workflow.</div>
+                </div>
+
+                <div class="subcard hud" data-hud-key="result-intake">
+                  <div class="subcard-head">
+                    <div class="subcard-title">Result Intake</div>
+                    <span class="pill pill-muted">dedupe queue</span>
+                  </div>
+                  <textarea id="resultIntakeInput" class="input textarea" rows="4" placeholder="URL | title | snippet | engine"></textarea>
+                  <div class="row row-tight">
+                    <button
+                      id="btnIngestResults"
+                      class="btn btn-secondary"
+                      type="button"
+                      disabled
+                      title="Normalize and merge pasted findings"
+                    >
+                      Ingest Results
+                    </button>
+                    <button id="btnClearResults" class="btn btn-ghost" type="button" disabled title="Clear the intake queue">
+                      Clear Queue
+                    </button>
+                    <button id="btnCopyResultsJson" class="btn btn-ghost" type="button" disabled title="Copy the normalized queue as JSON">
+                      Copy JSON
+                    </button>
+                  </div>
+                  <div id="resultIntakeSummary" class="mono mono-box mission-output-box">No external findings ingested yet.</div>
+                </div>
+
+                <div class="subcard hud" data-hud-key="no-result-autopsy">
+                  <div class="subcard-head">
+                    <div class="subcard-title">No-result autopsy</div>
+                    <span class="pill pill-muted">why nothing hit</span>
+                  </div>
+                  <div id="noResultAutopsyOut" class="mono mono-box mission-output-box">
+                    Run a multi-engine launch, then ingest hits. If nothing lands, BlueLens will explain the likely failure modes here.
+                  </div>
+                </div>
+
+                <div class="subcard hud" data-hud-key="source-contradictions">
+                  <div class="subcard-head">
+                    <div class="subcard-title">Source contradictions</div>
+                    <span class="pill pill-muted">date conflicts</span>
+                  </div>
+                  <div id="sourceContradictionOut" class="mono mono-box mission-output-box">
+                    Ingest result snippets with dates and BlueLens will surface conflicts instead of flattening them into fake certainty.
+                  </div>
+                </div>
+
+                <details class="drawer hud" data-hud-key="advanced">
+                  <summary title="More tools">More tools</summary>
+                  <div class="drawer-body">
+                    <div class="subcard hud" data-hud-key="mutate">
+                      <div class="subcard-head">
+                        <div class="subcard-title">Mutation Lab</div>
+                        <span class="pill" title="Generate local variants for manual review">variants</span>
+                      </div>
+                      <div class="row row-tight">
+                        <button
+                          id="btnMutateSearch"
+                          class="btn btn-secondary"
+                          type="button"
+                          disabled
+                          title="Creates local variants, uploads them, and opens Lens tabs for manual review"
+                        >
+                          Generate Variants + Lens
+                        </button>
+                        <button id="btnCopyMutations" class="btn btn-ghost" type="button" disabled title="Copy mutation JSON">
+                          Copy JSON
+                        </button>
+                      </div>
+                      <div id="mutationOut" class="mono mono-box">—</div>
+                    </div>
+
+                    <div class="subcard hud" data-hud-key="batch">
+                      <div class="subcard-head">
+                        <div class="subcard-title">Batch</div>
+                        <span class="pill" title="Drop multiple images for a report per file">reports</span>
+                      </div>
+                      <div class="row row-tight">
+                        <input id="batchInput" class="input" type="file" accept="image/*" multiple title="Select multiple images" />
+                        <button id="btnRunBatch" class="btn btn-secondary" type="button" title="Generate per-file reports">
+                          Run Batch
+                        </button>
+                        <button id="btnDownloadBatch" class="btn btn-ghost" type="button" disabled title="Download JSON bundle">
+                          Download JSON
+                        </button>
+                        <button id="btnDownloadBatchCsv" class="btn btn-ghost" type="button" disabled title="Download CSV summary">
+                          Download CSV
+                        </button>
+                      </div>
+                      <div id="batchOut" class="pre">—</div>
+                    </div>
+
+                    <div class="subcard hud" data-hud-key="doctor">
+                      <div class="subcard-head">
+                        <div class="subcard-title">Doctor</div>
+                        <span class="pill" title="Runtime diagnostics">diag</span>
+                      </div>
+                      <div class="row row-tight">
+                        <button
+                          id="btnRunDoctor"
+                          class="btn btn-secondary"
+                          type="button"
+                          title="Check server, browser, storage, popup, and upload reachability"
+                        >
+                          Run Doctor
+                        </button>
+                      </div>
+                      <div id="doctorOut" class="mono mono-box">Checking runtime…</div>
+                    </div>
+
+                    <div class="subcard hud" data-hud-key="fx">
+                      <div class="subcard-head">
+                        <div class="subcard-title">FX</div>
+                        <span class="pill">optional</span>
+                      </div>
+                      <label class="toggle toggle-mini" title="Enable ambient motion, chrome, and HUD experiments">
+                        <input id="chkFunMode" type="checkbox" />
+                        <span class="toggle-ui" aria-hidden="true"></span>
+                        <span class="toggle-text">Fun mode (ambient FX, chrome skin, HUD drag)</span>
+                      </label>
+                      <label
+                        class="toggle toggle-mini"
+                        title="Strip ambient FX, foreground the canonical workflow, and keep a traceable session log"
+                      >
+                        <input id="chkOperatorMode" type="checkbox" checked />
+                        <span class="toggle-ui" aria-hidden="true"></span>
+                        <span class="toggle-text">Operator mode (focused workflow + trace log)</span>
+                      </label>
+                      <div class="row row-tight">
+                        <label class="field" title="Scanlines intensity">
+                          <span class="field-label">Scan</span>
+                          <input id="scanlineSlider" class="input range" type="range" min="0" max="0.35" step="0.01" />
+                        </label>
+                        <label class="field" title="Chromatic hover split intensity">
+                          <span class="field-label">Split</span>
+                          <input id="chromaticSlider" class="input range" type="range" min="0" max="1.2" step="0.05" />
+                        </label>
+                        <button id="btnOverclock" class="btn btn-secondary" type="button" title="Apply the louder FX preset." disabled>
+                          Overclock
+                        </button>
+                      </div>
+                      <label class="toggle toggle-mini" title="Blue-chrome 2001 music player skin">
+                        <input id="chkChrome" type="checkbox" />
+                        <span class="toggle-ui" aria-hidden="true"></span>
+                        <span class="toggle-text">Blue chrome skin</span>
+                      </label>
+                      <label class="toggle toggle-mini" title="Drag mini-panels around the screen">
+                        <input id="chkHud" type="checkbox" />
+                        <span class="toggle-ui" aria-hidden="true"></span>
+                        <span class="toggle-text">HUD mode</span>
+                      </label>
+                      <div class="hint">BlueLens starts in a restrained operator theme. Turn on Fun mode if you want the aquarium.</div>
+                    </div>
+                  </div>
+                </details>
               </div>
             </section>
           </div>
@@ -475,11 +478,12 @@
                 <button id="btnSearchCrop" class="btn btn-secondary" type="button" disabled title="Search only the selected crop">
                   Search Crop
                 </button>
-                <button id="btnClearCrop" class="btn btn-ghost" type="button" disabled title="Clear the selected crop">
-                  Clear Crop
-                </button>
+                <button id="btnClearCrop" class="btn btn-ghost" type="button" disabled title="Clear the selected crop">Clear Crop</button>
               </div>
-              <div id="cropStatusOut" class="hint crop-status">Drag a box around a face, logo, object, tattoo, sign, vehicle, building, product, artwork, or text area to search just that region.</div>
+              <div id="cropStatusOut" class="hint crop-status">
+                Drag a box around a face, logo, object, tattoo, sign, vehicle, building, product, artwork, or text area to search just that
+                region.
+              </div>
             </div>
 
             <div class="subcard hud" data-hud-key="hashes">
@@ -546,18 +550,10 @@
               </div>
 
               <div class="row row-tight">
-                <button id="btnOpenMap" class="btn btn-secondary" type="button" disabled title="Open GPS in OpenStreetMap">
-                  Map
-                </button>
-                <button id="btnCopyCoords" class="btn btn-ghost" type="button" disabled title="Copy GPS coords">
-                  Copy Coords
-                </button>
-                <button id="btnCopyExif" class="btn btn-ghost" type="button" disabled title="Copy EXIF JSON">
-                  Copy EXIF
-                </button>
-                <button id="btnTogglePretty" class="btn btn-ghost" type="button" disabled title="Toggle formatting">
-                  Pretty
-                </button>
+                <button id="btnOpenMap" class="btn btn-secondary" type="button" disabled title="Open GPS in OpenStreetMap">Map</button>
+                <button id="btnCopyCoords" class="btn btn-ghost" type="button" disabled title="Copy GPS coords">Copy Coords</button>
+                <button id="btnCopyExif" class="btn btn-ghost" type="button" disabled title="Copy EXIF JSON">Copy EXIF</button>
+                <button id="btnTogglePretty" class="btn btn-ghost" type="button" disabled title="Toggle formatting">Pretty</button>
               </div>
 
               <div id="exifKeyFields" class="keygrid" aria-label="Key metadata fields">
@@ -635,11 +631,37 @@
                     <option value="chi_tra">Chinese (Traditional)</option>
                   </select>
                 </label>
-                <span id="ocrLangHint" class="pill pill-muted" hidden title="Weak script hint from observed characters">Weak script hint</span>
+                <span id="ocrLangHint" class="pill pill-muted" hidden title="Weak script hint from observed characters"
+                  >Weak script hint</span
+                >
                 <button id="btnRunOcr" class="btn btn-secondary" type="button" disabled title="Run OCR">Run OCR</button>
-                <button id="btnRunDocumentMode" class="btn btn-secondary" type="button" disabled title="Run document-image review from OCR and layout cues">Document mode</button>
-                <button id="btnGenerateQueries" class="btn btn-secondary" type="button" disabled title="Generate smart search queries from OCR and image clues">Generate queries</button>
-                <button id="btnPivotSearch" class="btn btn-secondary" type="button" disabled title="Open manual pivot templates for OCR hits">Manual pivots</button>
+                <button
+                  id="btnRunDocumentMode"
+                  class="btn btn-secondary"
+                  type="button"
+                  disabled
+                  title="Run document-image review from OCR and layout cues"
+                >
+                  Document mode
+                </button>
+                <button
+                  id="btnGenerateQueries"
+                  class="btn btn-secondary"
+                  type="button"
+                  disabled
+                  title="Generate smart search queries from OCR and image clues"
+                >
+                  Generate queries
+                </button>
+                <button
+                  id="btnPivotSearch"
+                  class="btn btn-secondary"
+                  type="button"
+                  disabled
+                  title="Open manual pivot templates for OCR hits"
+                >
+                  Manual pivots
+                </button>
                 <button id="btnCopyOcr" class="btn btn-ghost" type="button" disabled title="Copy OCR text">Copy</button>
               </div>
 
@@ -662,12 +684,8 @@
               </div>
 
               <div class="row row-tight">
-                <button id="btnChooseCompare" class="btn" type="button" disabled title="Choose another image to compare">
-                  Choose
-                </button>
-                <button id="btnClearCompare" class="btn btn-ghost" type="button" disabled title="Clear comparison">
-                  Clear
-                </button>
+                <button id="btnChooseCompare" class="btn" type="button" disabled title="Choose another image to compare">Choose</button>
+                <button id="btnClearCompare" class="btn btn-ghost" type="button" disabled title="Clear comparison">Clear</button>
                 <input id="compareInput" type="file" accept="image/*" hidden />
               </div>
 
@@ -698,7 +716,8 @@
                     <div id="cmpVerdict" class="v">—</div>
                   </div>
                   <div class="mono mono-box" id="cmpExplain">
-                    dHash is a 64-bit perceptual heuristic. Lower Hamming distance means the thumbnails look closer, not that the files are proven to be the same image.
+                    dHash is a 64-bit perceptual heuristic. Lower Hamming distance means the thumbnails look closer, not that the files are
+                    proven to be the same image.
                   </div>
                 </div>
               </div>
@@ -711,7 +730,9 @@
                 <div class="subcard-title">Investigation</div>
                 <span class="pill pill-muted">graph + chronology</span>
               </div>
-              <div class="hint">Correlate entities, inspect chronology, monitor source health, and track swarm outcomes from one shared investigation model.</div>
+              <div class="hint">
+                Correlate entities, inspect chronology, monitor source health, and track swarm outcomes from one shared investigation model.
+              </div>
               <div class="row row-tight investigation-subtabs" role="tablist" aria-label="Investigation views">
                 <button class="btn btn-secondary btn-small active" type="button" data-investigation-view="graph">Graph</button>
                 <button class="btn btn-secondary btn-small" type="button" data-investigation-view="timeline">Timeline</button>
@@ -720,7 +741,13 @@
                 <button id="btnRunSonar" class="btn btn-ghost btn-small" type="button" title="Refresh live source-health sonar">
                   Refresh Sonar
                 </button>
-                <button id="btnCopySwarmJson" class="btn btn-ghost btn-small" type="button" disabled title="Copy the staged swarm run as JSON">
+                <button
+                  id="btnCopySwarmJson"
+                  class="btn btn-ghost btn-small"
+                  type="button"
+                  disabled
+                  title="Copy the staged swarm run as JSON"
+                >
                   Copy Swarm JSON
                 </button>
               </div>
@@ -731,7 +758,13 @@
               <div class="investigation-view active" data-investigation-panel="graph">
                 <div class="investigation-grid">
                   <div class="investigation-stage">
-                    <svg id="investigationGraph" class="investigation-graph" viewBox="0 0 860 480" role="img" aria-label="Investigation entity graph"></svg>
+                    <svg
+                      id="investigationGraph"
+                      class="investigation-graph"
+                      viewBox="0 0 860 480"
+                      role="img"
+                      aria-label="Investigation entity graph"
+                    ></svg>
                     <div id="investigationLegend" class="chips chips-mini" hidden></div>
                   </div>
                   <div id="investigationDetail" class="mono mono-box">
@@ -747,23 +780,17 @@
               </div>
 
               <div class="investigation-view" data-investigation-panel="sonar" hidden>
-                <div id="investigationSonarOut" class="mono mono-box">
-                  Running sonar…
-                </div>
+                <div id="investigationSonarOut" class="mono mono-box">Running sonar…</div>
               </div>
 
               <div class="investigation-view" data-investigation-panel="swarm" hidden>
-                <div id="investigationSwarmOut" class="mono mono-box">
-                  No launchpad or swarm run staged yet.
-                </div>
+                <div id="investigationSwarmOut" class="mono mono-box">No launchpad or swarm run staged yet.</div>
               </div>
             </div>
           </div>
         </div>
 
-        <div class="hint">
-          *HEIC support depends on your browser/OS. One-click search makes the image public via a temporary URL.
-        </div>
+        <div class="hint">*HEIC support depends on your browser/OS. One-click search makes the image public via a temporary URL.</div>
       </section>
     </main>
 

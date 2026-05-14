@@ -17,6 +17,7 @@ Base URL: `http://localhost:8787` (default port, configurable via `PORT` env var
 Health check endpoint that returns server status.
 
 **Response**: 200 OK
+
 ```json
 {
   "ok": true,
@@ -34,17 +35,21 @@ Health check endpoint that returns server status.
 Proxies an image upload to a temporary public hosting service. Implements automatic failover across multiple hosts.
 
 **Headers**:
+
 - `Content-Type`: `multipart/form-data` or `application/octet-stream`
 
 **Request Body**:
+
 - For multipart: Include `file` field with image data
 - For octet-stream: Raw image bytes
 
 **Query Parameters**:
+
 - `purpose` (optional): Hint for host selection (`lens`, `google`, or `default`)
 - `provider` (optional): Force specific provider (`uguu`, `catbox`, `litterbox`, `0x0`)
 
 **Response**: 200 OK
+
 ```json
 {
   "ok": true,
@@ -56,6 +61,7 @@ Proxies an image upload to a temporary public hosting service. Implements automa
 ```
 
 **Error Response**: 500/503
+
 ```json
 {
   "ok": false,
@@ -66,12 +72,14 @@ Proxies an image upload to a temporary public hosting service. Implements automa
 ```
 
 **Supported Hosts**:
+
 1. **Uguu** (`uguu.se`) - 48-hour expiry
 2. **Catbox** (`catbox.moe`) - Permanent
 3. **Litterbox** (`litterbox.catbox.moe`) - 72-hour expiry (configurable)
 4. **0x0** (`0x0.st`) - 1-year expiry
 
 **Host Selection Logic**:
+
 - Automatic failover if primary host fails
 - Purpose-specific host preferences for better compatibility
 - Performance-based selection using historical upload stats
@@ -83,6 +91,7 @@ Proxies an image upload to a temporary public hosting service. Implements automa
 Returns upload host performance statistics.
 
 **Response**: 200 OK
+
 ```json
 {
   "stats": {
@@ -111,6 +120,7 @@ Wait jobs enable a long-polling mechanism for search engine tabs to receive URLs
 Creates a new wait job.
 
 **Request Body**:
+
 ```json
 {
   "engine": "lens",
@@ -119,6 +129,7 @@ Creates a new wait job.
 ```
 
 **Response**: 200 OK
+
 ```json
 {
   "ok": true,
@@ -138,9 +149,11 @@ Creates a new wait job.
 Long-polls for a wait job's result. Holds the connection until the job is updated or times out.
 
 **Query Parameters**:
+
 - `timeout` (optional): Max wait time in milliseconds (default: 25000, max: 30000)
 
 **Response (pending)**: 200 OK (after timeout)
+
 ```json
 {
   "ok": true,
@@ -151,6 +164,7 @@ Long-polls for a wait job's result. Holds the connection until the job is update
 ```
 
 **Response (completed)**: 200 OK
+
 ```json
 {
   "ok": true,
@@ -162,6 +176,7 @@ Long-polls for a wait job's result. Holds the connection until the job is update
 ```
 
 **Response (failed)**: 200 OK
+
 ```json
 {
   "ok": false,
@@ -179,6 +194,7 @@ Long-polls for a wait job's result. Holds the connection until the job is update
 Updates a wait job with a result (URL or error).
 
 **Request Body**:
+
 ```json
 {
   "status": "completed",
@@ -196,6 +212,7 @@ or
 ```
 
 **Response**: 200 OK
+
 ```json
 {
   "ok": true,
@@ -215,9 +232,11 @@ The acquisition layer provides safe fetching of remote resources with rate limit
 Fetches a remote URL's content.
 
 **Query Parameters**:
+
 - `url` (required): Target URL to fetch
 
 **Response**: 200 OK
+
 ```json
 {
   "ok": true,
@@ -240,6 +259,7 @@ Fetches a remote URL's content.
 ```
 
 **Security**:
+
 - Blocks private IP addresses (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8)
 - Rate limited: 18 requests per IP per minute
 - 10-second timeout
@@ -252,9 +272,11 @@ Fetches a remote URL's content.
 Fetches and parses a site's robots.txt file.
 
 **Query Parameters**:
+
 - `url` (required): Target URL (robots.txt will be fetched from the origin)
 
 **Response**: 200 OK
+
 ```json
 {
   "ok": true,
@@ -283,9 +305,11 @@ Fetches and parses a site's robots.txt file.
 Checks for Wayback Machine snapshots of a URL.
 
 **Query Parameters**:
+
 - `url` (required): Target URL to check
 
 **Response**: 200 OK
+
 ```json
 {
   "ok": true,
@@ -301,6 +325,7 @@ Checks for Wayback Machine snapshots of a URL.
 ```
 
 **Response (no snapshot)**: 200 OK
+
 ```json
 {
   "ok": true,
@@ -319,6 +344,7 @@ Checks for Wayback Machine snapshots of a URL.
 Checks if upload hosts are reachable.
 
 **Response**: 200 OK
+
 ```json
 {
   "ok": true,
@@ -336,6 +362,7 @@ Checks if upload hosts are reachable.
 Checks if CDN resources are reachable.
 
 **Response**: 200 OK
+
 ```json
 {
   "ok": true,
@@ -353,6 +380,7 @@ Checks if CDN resources are reachable.
 Checks if search engine pages are reachable.
 
 **Response**: 200 OK
+
 ```json
 {
   "ok": true,
@@ -376,14 +404,16 @@ The client-side JavaScript provides several global APIs for image analysis and s
 Generates a reverse search URL for a given engine.
 
 **Parameters**:
+
 - `engine` (string): Engine name (`lens`, `bing`, `yandex`, `tineye`, `saucenao`, `iqdb`, `baidu`, `ascii2d`, `google_images`)
 - `imageUrl` (string): Public URL of the image to search
 
 **Returns**: String URL or empty string if engine not supported
 
 **Example**:
+
 ```javascript
-const url = OSINT_LIB.reverseSearchUrl('lens', 'https://example.com/image.jpg');
+const url = OSINT_LIB.reverseSearchUrl("lens", "https://example.com/image.jpg");
 // Returns: "https://lens.google.com/uploadbyurl?url=https%3A%2F%2Fexample.com%2Fimage.jpg"
 ```
 
@@ -394,6 +424,7 @@ const url = OSINT_LIB.reverseSearchUrl('lens', 'https://example.com/image.jpg');
 Returns the manual upload page URL for an engine.
 
 **Parameters**:
+
 - `engine` (string): Engine name
 
 **Returns**: String URL or `about:blank` if not supported
@@ -407,6 +438,7 @@ Returns the manual upload page URL for an engine.
 Global configuration object containing all app settings.
 
 **Structure**:
+
 ```javascript
 {
   meta: {
@@ -430,35 +462,35 @@ Global configuration object containing all app settings.
 
 ## Rate Limits
 
-| Endpoint | Limit | Window |
-|----------|-------|--------|
-| `/api/upload` | None (but individual hosts may limit) | N/A |
-| `/api/acquire` | 18 requests | 60 seconds per IP |
-| `/api/discover` | 18 requests | 60 seconds per IP |
-| `/api/archive` | 18 requests | 60 seconds per IP |
+| Endpoint        | Limit                                 | Window            |
+| --------------- | ------------------------------------- | ----------------- |
+| `/api/upload`   | None (but individual hosts may limit) | N/A               |
+| `/api/acquire`  | 18 requests                           | 60 seconds per IP |
+| `/api/discover` | 18 requests                           | 60 seconds per IP |
+| `/api/archive`  | 18 requests                           | 60 seconds per IP |
 
 ---
 
 ## Error Codes
 
-| Code | HTTP Status | Description |
-|------|-------------|-------------|
-| `upload_failed` | 500 | All upload hosts failed |
-| `invalid_image` | 400 | Invalid or corrupt image data |
-| `timeout` | 504 | Request timed out |
-| `rate_limited` | 429 | Too many requests from this IP |
-| `private_ip_blocked` | 403 | Target URL resolves to private IP |
-| `invalid_url` | 400 | Malformed or invalid URL |
-| `acquire_failed` | 500 | Failed to fetch remote content |
+| Code                 | HTTP Status | Description                       |
+| -------------------- | ----------- | --------------------------------- |
+| `upload_failed`      | 500         | All upload hosts failed           |
+| `invalid_image`      | 400         | Invalid or corrupt image data     |
+| `timeout`            | 504         | Request timed out                 |
+| `rate_limited`       | 429         | Too many requests from this IP    |
+| `private_ip_blocked` | 403         | Target URL resolves to private IP |
+| `invalid_url`        | 400         | Malformed or invalid URL          |
+| `acquire_failed`     | 500         | Failed to fetch remote content    |
 
 ---
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `8787` | Server port |
-| `BLUELENS_LOG_LEVEL` | `INFO` | Log level (DEBUG, INFO, WARN, ERROR) |
-| `BLUELENS_LOG_FILE` | None | Optional log file path |
-| `BLUELENS_ARCHIVE_API_BASE` | `https://archive.org/wayback/available` | Archive.org API base URL |
-| `BLUELENS_ALLOW_PRIVATE_FETCH` | `0` | Allow fetching private IPs (testing only) |
+| Variable                       | Default                                 | Description                               |
+| ------------------------------ | --------------------------------------- | ----------------------------------------- |
+| `PORT`                         | `8787`                                  | Server port                               |
+| `BLUELENS_LOG_LEVEL`           | `INFO`                                  | Log level (DEBUG, INFO, WARN, ERROR)      |
+| `BLUELENS_LOG_FILE`            | None                                    | Optional log file path                    |
+| `BLUELENS_ARCHIVE_API_BASE`    | `https://archive.org/wayback/available` | Archive.org API base URL                  |
+| `BLUELENS_ALLOW_PRIVATE_FETCH` | `0`                                     | Allow fetching private IPs (testing only) |

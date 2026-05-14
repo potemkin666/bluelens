@@ -4,7 +4,13 @@
   const getRunEngines = ({ run, engineOrder = [] } = {}) => {
     const fromTargets = Object.keys(run?.targets || {});
     const fromQueue = Object.keys(run?.queue || {});
-    return Array.from(new Set([...(engineOrder || []).filter((engine) => fromTargets.includes(engine) || fromQueue.includes(engine)), ...fromTargets, ...fromQueue])).filter(Boolean);
+    return Array.from(
+      new Set([
+        ...(engineOrder || []).filter((engine) => fromTargets.includes(engine) || fromQueue.includes(engine)),
+        ...fromTargets,
+        ...fromQueue,
+      ]),
+    ).filter(Boolean);
   };
 
   const updateRunQueueStatus = ({ run, engine, patch = {}, runQueueStatus = { queued: "queued" } } = {}) => {
@@ -96,7 +102,14 @@
     };
   };
 
-  const openTargetsForRun = ({ run, engines, engineOrder = [], openUrl = () => null, updateRunQueueStatus: updateStatus, runQueueStatus = {} } = {}) => {
+  const openTargetsForRun = ({
+    run,
+    engines,
+    engineOrder = [],
+    openUrl = () => null,
+    updateRunQueueStatus: updateStatus,
+    runQueueStatus = {},
+  } = {}) => {
     if (!run || !run.targets) return { openedCount: 0, blockedCount: 0 };
     ensureRunOutcomeState({ run, engines: getRunEngines({ run, engineOrder }) });
     const openList = Array.from(new Set((engines || []).filter((engine) => run.targets?.[engine])));
@@ -124,7 +137,15 @@
     return { openedCount, blockedCount };
   };
 
-  const hydrateRunTargets = ({ run, engines = [], url = "", reverseSearchUrl = () => "", updateRunQueueStatus: updateStatus, openLens = true, runQueueStatus = {} } = {}) => {
+  const hydrateRunTargets = ({
+    run,
+    engines = [],
+    url = "",
+    reverseSearchUrl = () => "",
+    updateRunQueueStatus: updateStatus,
+    openLens = true,
+    runQueueStatus = {},
+  } = {}) => {
     run.url = url;
     run.targets = Object.fromEntries(engines.map((engine) => [engine, reverseSearchUrl(engine, url)]));
     for (const engine of engines) {
@@ -192,7 +213,9 @@
     const run = createRun({ engines, mode: "swarm", reverseSearchUrl, runQueueStatus, artifact: getArtifact() });
     ensureRunOutcomeState({ run, engines });
     for (const engine of engines) {
-      const wait = openWaitJob(engine, `${labelPrefix} · ${engineLabel[engine] || engine}`, { initialStatus: runQueueStatus.queued || "queued" });
+      const wait = openWaitJob(engine, `${labelPrefix} · ${engineLabel[engine] || engine}`, {
+        initialStatus: runQueueStatus.queued || "queued",
+      });
       updateStatus?.(run, engine, {
         job_id: wait.jobId,
         attempts: 1,
@@ -209,7 +232,10 @@
     for (let index = 0; index < engines.length; index += 1) {
       const engine = engines[index];
       const jobId = run.queue?.[engine]?.job_id || "";
-      updateStatus?.(run, engine, { status: runQueueStatus.ready || "ready", detail: `Provider target staged (${index + 1}/${engines.length})` });
+      updateStatus?.(run, engine, {
+        status: runQueueStatus.ready || "ready",
+        detail: `Provider target staged (${index + 1}/${engines.length})`,
+      });
       if (jobId && !run.blocked?.[engine]) publishWaitState(jobId, { url });
       persistRun(run);
       if (index < engines.length - 1 && delayMs > 0) await sleep(delayMs);

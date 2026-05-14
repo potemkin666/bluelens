@@ -208,27 +208,32 @@ For detailed documentation, see the [docs/](./docs) folder:
 ## 🧑‍💻 Development
 
 **Install development tools**:
+
 ```bash
 npm install
 ```
 
 **Run tests**:
+
 ```bash
 npm test
 ```
 
 **Run tests with coverage**:
+
 ```bash
 npm run test:coverage
 ```
 
 **Linting**:
+
 ```bash
 npm run lint
 npm run lint:fix
 ```
 
 **Formatting**:
+
 ```bash
 npm run format:check
 npm run format

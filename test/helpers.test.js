@@ -61,14 +61,7 @@ test("extractPivotsFromReport keeps OCR handles to a single @ prefix", () => {
 });
 
 test("document helpers summarize layout, infer document kinds, and collect logo candidates", () => {
-  const text = [
-    "CITY MENU",
-    "",
-    "Name: Alex Example",
-    "Date: 2024-05-01",
-    "Burger      $12.00",
-    "Subtotal    $12.00",
-  ].join("\n");
+  const text = ["CITY MENU", "", "Name: Alex Example", "Date: 2024-05-01", "Burger      $12.00", "Subtotal    $12.00"].join("\n");
 
   const layout = summarizeDocumentLayout(text);
   assert.equal(layout.line_count, 5);
@@ -135,8 +128,18 @@ test("investigation graph keeps file/entity provenance and evidence counts", () 
             phones: [],
             details: {
               handles: [{ value: "@alpha", offsets: [{ start: 8, end: 14, source: "handle_regex", raw: "@alpha", confidence: 0.94 }] }],
-              emails: [{ value: "alpha@example.com", offsets: [{ start: 19, end: 36, source: "email_regex", raw: "alpha@example.com", confidence: 0.99 }] }],
-              urls: [{ value: "https://example.com/path", offsets: [{ start: 40, end: 64, source: "url_regex", raw: "https://example.com/path", confidence: 0.99 }] }],
+              emails: [
+                {
+                  value: "alpha@example.com",
+                  offsets: [{ start: 19, end: 36, source: "email_regex", raw: "alpha@example.com", confidence: 0.99 }],
+                },
+              ],
+              urls: [
+                {
+                  value: "https://example.com/path",
+                  offsets: [{ start: 40, end: 64, source: "url_regex", raw: "https://example.com/path", confidence: 0.99 }],
+                },
+              ],
             },
           },
         },
@@ -150,7 +153,9 @@ test("investigation graph keeps file/entity provenance and evidence counts", () 
             emails: [],
             urls: [],
             phones: [],
-            details: { handles: [{ value: "@alpha", offsets: [{ start: 0, end: 6, source: "handle_regex", raw: "@alpha", confidence: 0.94 }] }] },
+            details: {
+              handles: [{ value: "@alpha", offsets: [{ start: 0, end: 6, source: "handle_regex", raw: "@alpha", confidence: 0.94 }] }],
+            },
           },
         },
       },
@@ -349,16 +354,18 @@ test("local server exposes scoped acquisition routes with provenance", async (t)
     }
     if (u.pathname === "/archive") {
       res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-      res.end(JSON.stringify({
-        archived_snapshots: {
-          closest: {
-            available: true,
-            url: "https://web.archive.org/web/20200102030405/https://example.test/evidence",
-            timestamp: "20200102030405",
-            status: "200",
+      res.end(
+        JSON.stringify({
+          archived_snapshots: {
+            closest: {
+              available: true,
+              url: "https://web.archive.org/web/20200102030405/https://example.test/evidence",
+              timestamp: "20200102030405",
+              status: "200",
+            },
           },
-        },
-      }));
+        }),
+      );
       return;
     }
     res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });

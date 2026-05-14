@@ -155,7 +155,6 @@ const elements = {
   cmdk: document.getElementById("cmdk"),
   cmdkInput: document.getElementById("cmdkInput"),
   cmdkList: document.getElementById("cmdkList"),
-
 };
 
 const appHelpers = BLUELENS_HELPERS || {};
@@ -186,24 +185,32 @@ const sortBatchItems =
         sortKey === "name"
           ? String(item?.report?.file?.name || "")
           : sortKey === "gps"
-            ? (triage.gps ? 1 : 0)
+            ? triage.gps
+              ? 1
+              : 0
             : sortKey === "ent"
-              ? (triage.entCount || 0)
+              ? triage.entCount || 0
               : sortKey === "repost"
-                ? (Number.isFinite(triage.repost) ? triage.repost : -1)
+                ? Number.isFinite(triage.repost)
+                  ? triage.repost
+                  : -1
                 : sortKey === "cluster"
-                  ? (item?.clusterId || 0)
+                  ? item?.clusterId || 0
                   : sortKey === "dim"
-                    ? (dims ? Number(dims[1]) * Number(dims[2]) : -1)
-                    : (triage.lead || 0);
+                    ? dims
+                      ? Number(dims[1]) * Number(dims[2])
+                      : -1
+                    : triage.lead || 0;
       const va = pick(a, ta, dimsA);
       const vb = pick(b, tb, dimsB);
       if (typeof va === "string" || typeof vb === "string") return dir * String(va).localeCompare(String(vb));
       return dir * ((va || 0) - (vb || 0));
     });
   });
-const buildEntityGraph = appHelpers.buildEntityGraph || (() => ({ nodes: [], edges: [], summary: { reports: 0, file_nodes: 0, entity_nodes: 0, edges: 0 } }));
-const buildInvestigationTimeline = appHelpers.buildInvestigationTimeline || (() => ({ events: [], summary: { total: 0, ambiguous: 0, categories: {} } }));
+const buildEntityGraph =
+  appHelpers.buildEntityGraph || (() => ({ nodes: [], edges: [], summary: { reports: 0, file_nodes: 0, entity_nodes: 0, edges: 0 } }));
+const buildInvestigationTimeline =
+  appHelpers.buildInvestigationTimeline || (() => ({ events: [], summary: { total: 0, ambiguous: 0, categories: {} } }));
 
 const runtimeConfig = BLUELENS_CONFIG || {};
 const CONFIG_META = runtimeConfig.meta || {};
@@ -212,7 +219,18 @@ const SERVER_CONFIG = runtimeConfig.server || {};
 const FX_CONFIG = runtimeConfig.fx || {};
 const STORAGE_KEYS = runtimeConfig.storageKeys || {};
 
-const ENGINE_ORDER = APP_CONFIG.engines?.order || ["lens", "bing", "yandex", "tineye", "pinterest", "saucenao", "iqdb", "baidu", "ascii2d", "google_images"];
+const ENGINE_ORDER = APP_CONFIG.engines?.order || [
+  "lens",
+  "bing",
+  "yandex",
+  "tineye",
+  "pinterest",
+  "saucenao",
+  "iqdb",
+  "baidu",
+  "ascii2d",
+  "google_images",
+];
 const ENGINE_LABEL = APP_CONFIG.engines?.labels || {
   lens: "Lens",
   bing: "Bing",
@@ -255,14 +273,15 @@ const BATCH_TOP_LENS_MAX = APP_CONFIG.batch?.topLensMax || 10;
 const BATCH_OCR_DEFAULT = APP_CONFIG.batch?.ocrDefault || 8;
 const BATCH_OCR_MAX = APP_CONFIG.batch?.ocrMax || 20;
 const OCR_DEFAULT_LANGUAGE = APP_CONFIG.ocr?.defaultLanguage || "eng";
-const OCR_LANGUAGE_OPTIONS = Array.isArray(APP_CONFIG.ocr?.languages) && APP_CONFIG.ocr.languages.length
-  ? APP_CONFIG.ocr.languages
-  : [
-      { value: "eng", label: "English" },
-      { value: "spa", label: "Spanish" },
-      { value: "fra", label: "French" },
-      { value: "deu", label: "German" },
-    ];
+const OCR_LANGUAGE_OPTIONS =
+  Array.isArray(APP_CONFIG.ocr?.languages) && APP_CONFIG.ocr.languages.length
+    ? APP_CONFIG.ocr.languages
+    : [
+        { value: "eng", label: "English" },
+        { value: "spa", label: "Spanish" },
+        { value: "fra", label: "French" },
+        { value: "deu", label: "German" },
+      ];
 const OCR_FAST_PREPROCESS_MAX_DIM = APP_CONFIG.ocr?.fastPreprocessMaxDim || 1200;
 const OCR_BATCH_PREPROCESS_MAX_DIM = APP_CONFIG.ocr?.batchPreprocessMaxDim || 1400;
 const DHASH_BATCH_CLUSTER_THRESHOLD = APP_CONFIG.dhash?.batchClusterThreshold || 8;
@@ -272,7 +291,9 @@ const UPLOAD_PROXY_TIMEOUT_MS = APP_CONFIG.upload?.endpointTimeoutMs || 45000;
 const UPLOAD_PREFLIGHT_TIMEOUT_MS = APP_CONFIG.upload?.preflightTimeoutMs || 2500;
 const WAIT_JOB_DEFAULT_TIMEOUT_MS = SERVER_CONFIG.waitJobs?.defaultTimeoutMs || 25000;
 const LOCAL_SERVER_HINT_TIMEOUT_MS = APP_CONFIG.localServerHint?.timeoutMs || 900;
-const LOCAL_SERVER_HINT_MESSAGE = APP_CONFIG.localServerHint?.offlineMessage || "Local server offline — start `bluelens-start.cmd` (or `node server.js`) for Upload + Launchpad.";
+const LOCAL_SERVER_HINT_MESSAGE =
+  APP_CONFIG.localServerHint?.offlineMessage ||
+  "Local server offline — start `bluelens-start.cmd` (or `node server.js`) for Upload + Launchpad.";
 const WAIT_JOB_ENDPOINT_PREFIX = "/api/wait-jobs/";
 const SESSION_KEY = STORAGE_KEYS.session || "osint:session:v1";
 const LAST_RUN_KEY = STORAGE_KEYS.lastRun || "osint:lastRun:v1";
@@ -340,7 +361,8 @@ const RUN_QUEUE_STATUS = {
   error: "error",
 };
 const UNKNOWN_EXPIRY_WINDOW = "unknown";
-const TEMP_EXTERNAL_ARTIFACT_WARNING = "Temporary external artifact — third-party upload URLs may expire or disappear before a reader opens the report.";
+const TEMP_EXTERNAL_ARTIFACT_WARNING =
+  "Temporary external artifact — third-party upload URLs may expire or disappear before a reader opens the report.";
 const TEMP_EXTERNAL_ARTIFACT_NOTE = "Host retention is controlled by the third-party service and is not guaranteed by BlueLens.";
 const compareDiffScratchA = document.createElement("canvas");
 const compareDiffScratchB = document.createElement("canvas");
@@ -362,7 +384,8 @@ const EXPORT_RUNTIME_CONFIG_SOURCE = JSON.stringify({
     metadataSuspicionBands: METADATA_SUSPICION_BANDS,
   },
 });
-const EXPORT_RUNTIME_CONFIG_FINGERPRINT = typeof sha256 === "function" ? sha256(EXPORT_RUNTIME_CONFIG_SOURCE) : EXPORT_RUNTIME_CONFIG_SOURCE;
+const EXPORT_RUNTIME_CONFIG_FINGERPRINT =
+  typeof sha256 === "function" ? sha256(EXPORT_RUNTIME_CONFIG_SOURCE) : EXPORT_RUNTIME_CONFIG_SOURCE;
 const DOCTOR_SONAR_POLL_MS = 120_000;
 let doctorSonarTimer = 0;
 
@@ -636,11 +659,9 @@ function getInvestigationReports({ currentReport = null } = {}) {
   const addReport = (report) => {
     const enriched = enrichReportForInvestigation(report);
     if (!enriched) return;
-    const key = [
-      enriched.file?.name || "image",
-      enriched.hashes?.sha256 || enriched.hashes?.md5 || "",
-      enriched.generated_at || "",
-    ].join("|");
+    const key = [enriched.file?.name || "image", enriched.hashes?.sha256 || enriched.hashes?.md5 || "", enriched.generated_at || ""].join(
+      "|",
+    );
     if (seen.has(key)) return;
     seen.add(key);
     reports.push(enriched);
@@ -782,7 +803,9 @@ function renderInvestigationGraph(model) {
   svg.innerHTML = `<g>${edgeMarkup}${nodeMarkup}</g>`;
   const legendTypes = Array.from(new Set(nodes.map((node) => node.type)));
   legend.hidden = legendTypes.length === 0;
-  legend.innerHTML = legendTypes.map((type) => `<span class="chip" style="border-color:${escapeAttr(getInvestigationNodeColor(type))};">${escapeHtml(type)}</span>`).join("");
+  legend.innerHTML = legendTypes
+    .map((type) => `<span class="chip" style="border-color:${escapeAttr(getInvestigationNodeColor(type))};">${escapeHtml(type)}</span>`)
+    .join("");
 }
 
 function renderInvestigationDetail(model) {
@@ -809,10 +832,17 @@ function renderInvestigationDetail(model) {
     ...(linkedNodes.length ? linkedNodes.map((entry) => `- ${entry.label} (${entry.type}) · files ${entry.file_count}`) : ["- —"]),
     "",
     "Provenance:",
-    ...((node.provenance || []).slice(0, 10).map((entry) => `- ${entry.file_name || "report"} · ${entry.field || "field"} · ${entry.source || "source"}${entry.raw ? ` · ${entry.raw}` : ""}${entry.excerpt ? ` · ${entry.excerpt}` : ""}`) || ["- —"]),
+    ...((node.provenance || [])
+      .slice(0, 10)
+      .map(
+        (entry) =>
+          `- ${entry.file_name || "report"} · ${entry.field || "field"} · ${entry.source || "source"}${entry.raw ? ` · ${entry.raw}` : ""}${entry.excerpt ? ` · ${entry.excerpt}` : ""}`,
+      ) || ["- —"]),
     "",
     "Edges:",
-    ...(linkedEdges.length ? linkedEdges.map((edge) => `- ${edge.type} · evidence ${edge.evidence_count} · files ${edge.file_count}`) : ["- —"]),
+    ...(linkedEdges.length
+      ? linkedEdges.map((edge) => `- ${edge.type} · evidence ${edge.evidence_count} · files ${edge.file_count}`)
+      : ["- —"]),
   ];
   el.textContent = lines.join("\n");
 }
@@ -844,32 +874,45 @@ function renderDoctorSurface(report) {
     lines.push("Running sonar…");
   } else {
     lines.push(`App: ${report.app_version || APP_VERSION} · schema ${report.schema_version || EXPORT_SCHEMA_VERSION}`);
-    lines.push(`Ping: ${report.server?.ping_ok ? "OK" : "FAIL"}${report.server?.node_version ? ` · Node ${report.server.node_version}` : ""}`);
+    lines.push(
+      `Ping: ${report.server?.ping_ok ? "OK" : "FAIL"}${report.server?.node_version ? ` · Node ${report.server.node_version}` : ""}`,
+    );
     lines.push(`Popup: ${report.popup?.ok ? "OK" : "BLOCKED"} · Storage: ${report.storage?.ok ? "OK" : "FAIL"}`);
     lines.push(`Libraries: ${report.libs?.summary || "unknown"}`);
     if (report.server?.recommended_upload_host) lines.push(`Best upload path: ${report.server.recommended_upload_host}`);
     if (Array.isArray(report.server?.upload_reachability) && report.server.upload_reachability.length) {
       lines.push("Upload reachability:");
       for (const row of report.server.upload_reachability) {
-        lines.push(`- ${row.host}: ${row.reachable ? "OK" : "FAIL"}${row.status_code ? ` (${row.status_code})` : ""}${row.error ? ` · ${row.error}` : ""}`);
+        lines.push(
+          `- ${row.host}: ${row.reachable ? "OK" : "FAIL"}${row.status_code ? ` (${row.status_code})` : ""}${row.error ? ` · ${row.error}` : ""}`,
+        );
       }
     }
     if (Array.isArray(report.server?.cdn_reachability) && report.server.cdn_reachability.length) {
       lines.push("CDN reachability:");
-      for (const row of report.server.cdn_reachability) lines.push(`- ${row.name}: ${row.reachable ? "OK" : "FAIL"}${row.status_code ? ` (${row.status_code})` : ""}${row.error ? ` · ${row.error}` : ""}`);
+      for (const row of report.server.cdn_reachability)
+        lines.push(
+          `- ${row.name}: ${row.reachable ? "OK" : "FAIL"}${row.status_code ? ` (${row.status_code})` : ""}${row.error ? ` · ${row.error}` : ""}`,
+        );
     }
     if (Array.isArray(report.server?.engine_availability) && report.server.engine_availability.length) {
       lines.push("Engine availability:");
-      for (const row of report.server.engine_availability) lines.push(`- ${row.engine}: ${row.reachable ? "OK" : "FAIL"}${row.status_code ? ` (${row.status_code})` : ""}${row.error ? ` · ${row.error}` : ""}`);
+      for (const row of report.server.engine_availability)
+        lines.push(
+          `- ${row.engine}: ${row.reachable ? "OK" : "FAIL"}${row.status_code ? ` (${row.status_code})` : ""}${row.error ? ` · ${row.error}` : ""}`,
+        );
     }
     if (Array.isArray(report.server?.recent_upload_attempts) && report.server.recent_upload_attempts.length) {
       lines.push("Recent upload attempts:");
-      for (const row of report.server.recent_upload_attempts.slice(0, 6)) lines.push(`- ${row.host}: ${row.ok ? "OK" : "FAIL"} · ${fmtMs(row.ms)}${row.err ? ` · ${row.err}` : ""}`);
+      for (const row of report.server.recent_upload_attempts.slice(0, 6))
+        lines.push(`- ${row.host}: ${row.ok ? "OK" : "FAIL"} · ${fmtMs(row.ms)}${row.err ? ` · ${row.err}` : ""}`);
     }
     if (report.server?.history?.upload_hosts && Object.keys(report.server.history.upload_hosts).length) {
       lines.push("Host trends:");
       for (const [host, stats] of Object.entries(report.server.history.upload_hosts)) {
-        lines.push(`- ${host}: ok ${stats.ok || 0} · fail ${stats.fail || 0} · fail-rate ${Math.round(Number(stats.fail_rate || 0) * 100)}% · avg ${fmtMs(stats.avg_ms)}`);
+        lines.push(
+          `- ${host}: ok ${stats.ok || 0} · fail ${stats.fail || 0} · fail-rate ${Math.round(Number(stats.fail_rate || 0) * 100)}% · avg ${fmtMs(stats.avg_ms)}`,
+        );
       }
     }
   }
@@ -891,14 +934,17 @@ function renderInvestigationSwarm(model) {
   el.innerHTML = `
     <div class="swarm-summary">
       <div>Mode: ${escapeHtml(run.mode || "launchpad")} · artifact ${escapeHtml(run.artifact || "original")} · engines ${engines.length}</div>
-      <div>Outcomes: ${Object.entries(outcomeSummary).map(([key, value]) => `${escapeHtml(key)} ${escapeHtml(String(value))}`).join(" · ")}</div>
+      <div>Outcomes: ${Object.entries(outcomeSummary)
+        .map(([key, value]) => `${escapeHtml(key)} ${escapeHtml(String(value))}`)
+        .join(" · ")}</div>
     </div>
     <div class="swarm-grid">
-      ${engines.map((engine) => {
-        const queue = run.queue?.[engine] || {};
-        const outcome = run.outcomes?.[engine] || {};
-        const disposition = outcome.disposition || "pending";
-        return `
+      ${engines
+        .map((engine) => {
+          const queue = run.queue?.[engine] || {};
+          const outcome = run.outcomes?.[engine] || {};
+          const disposition = outcome.disposition || "pending";
+          return `
           <div class="swarm-card ${escapeAttr(queue.status || disposition)}" data-swarm-engine="${escapeAttr(engine)}">
             <div class="swarm-card-head">
               <strong>${escapeHtml(displayEngineLabel(engine))}</strong>
@@ -917,7 +963,8 @@ function renderInvestigationSwarm(model) {
             </label>
           </div>
         `;
-      }).join("")}
+        })
+        .join("")}
     </div>
   `;
 }
@@ -967,7 +1014,12 @@ function createReviewEntry({
 function updateSourceInfoField(field, value, { source = "manual", note = "" } = {}) {
   state.sourceInfo = state.sourceInfo || {};
   const normalized = typeof value === "string" ? value : value == null ? "" : String(value);
-  const previous = typeof state.sourceInfo[field] === "string" ? state.sourceInfo[field] : state.sourceInfo[field] == null ? "" : String(state.sourceInfo[field]);
+  const previous =
+    typeof state.sourceInfo[field] === "string"
+      ? state.sourceInfo[field]
+      : state.sourceInfo[field] == null
+        ? ""
+        : String(state.sourceInfo[field]);
   if (normalized === previous) return false;
   state.sourceInfo[field] = normalized;
   appendReviewEntry(
@@ -1134,7 +1186,9 @@ function formatSourceLabelKey(key) {
 
 function extractYearCandidatesFromText(text) {
   const raw = String(text || "");
-  const years = Array.from(new Set((raw.match(/\b(19\d{2}|20\d{2})\b/g) || []).map((value) => Number(value)).filter((value) => value >= 1900 && value <= 2099)));
+  const years = Array.from(
+    new Set((raw.match(/\b(19\d{2}|20\d{2})\b/g) || []).map((value) => Number(value)).filter((value) => value >= 1900 && value <= 2099)),
+  );
   return years.sort((a, b) => a - b);
 }
 
@@ -1156,7 +1210,8 @@ function buildResultIntakeDerivedContext(entries = []) {
 }
 
 function classifyResultIntakeEntry(entry, context = {}) {
-  const combined = `${entry?.title || ""}\n${entry?.snippet || ""}\n${entry?.canonical_url || entry?.url || ""}\n${entry?.source_line || ""}`.toLowerCase();
+  const combined =
+    `${entry?.title || ""}\n${entry?.snippet || ""}\n${entry?.canonical_url || entry?.url || ""}\n${entry?.source_line || ""}`.toLowerCase();
   const years = extractYearCandidatesFromText(combined);
   const earliestYear = years[0] || null;
   const notes = [];
@@ -1166,10 +1221,16 @@ function classifyResultIntakeEntry(entry, context = {}) {
   const domain = String(entry?.domain || "");
   const repeated = Number(context.repeatedDomains?.get(domain) || 0);
   const has = (re) => re.test(combined);
-  const stockDomain = /(shutterstock|adobestock|stock|istockphoto|gettyimages|pixabay|pexels|unsplash)/.test(domain) || has(/\b(stock|royalty[- ]free|licensing|shutterstock|getty|adobe stock|iStock)\b/);
+  const stockDomain =
+    /(shutterstock|adobestock|stock|istockphoto|gettyimages|pixabay|pexels|unsplash)/.test(domain) ||
+    has(/\b(stock|royalty[- ]free|licensing|shutterstock|getty|adobe stock|iStock)\b/);
   const memeSignal = has(/\b(meme|reaction image|caption|template|knowyourmeme|imgflip|shitpost)\b/);
-  const mirrorSignal = /(pinimg|pinterest|weheartit|tumblr|reddit|9gag|danbooru|gelbooru|yande\.re|zerochan|e-shuushuu|fancaps)/.test(domain) || has(/\b(mirror|mirrored|rehost|aggregator|board|cached|scraped|proxy)\b/);
-  const originalSignal = /(artstation|behance|deviantart|pixiv|flickr|instagram|twitter|x\.com|newgrounds)/.test(domain) || has(/\b(original|official|artist|author|portfolio|source post|posted by)\b/);
+  const mirrorSignal =
+    /(pinimg|pinterest|weheartit|tumblr|reddit|9gag|danbooru|gelbooru|yande\.re|zerochan|e-shuushuu|fancaps)/.test(domain) ||
+    has(/\b(mirror|mirrored|rehost|aggregator|board|cached|scraped|proxy)\b/);
+  const originalSignal =
+    /(artstation|behance|deviantart|pixiv|flickr|instagram|twitter|x\.com|newgrounds)/.test(domain) ||
+    has(/\b(original|official|artist|author|portfolio|source post|posted by)\b/);
   const repostSignal = has(/\b(repost|reblog|shared by|posted on|pinned|collection|roundup|compilation)\b/);
 
   if (stockDomain) {
@@ -1260,7 +1321,8 @@ function renderSourceContradictions() {
   const conflict = buildSourceContradictionModel();
   if (!conflict) {
     el.classList.remove("mission-grid");
-    el.textContent = "Ingest result snippets with dates and BlueLens will surface conflicts instead of flattening them into fake certainty.";
+    el.textContent =
+      "Ingest result snippets with dates and BlueLens will surface conflicts instead of flattening them into fake certainty.";
     return;
   }
   el.classList.add("mission-grid");
@@ -1286,15 +1348,15 @@ function renderSourceContradictions() {
 
 function pickBestResultIntakeEntry(entries = []) {
   const priority = { likely_original: 5, stock_duplicate: 4, scraped_mirror: 3, likely_repost: 2, meme_derivative: 1, needs_review: 0 };
-  return entries
-    .slice()
-    .sort((a, b) => {
+  return (
+    entries.slice().sort((a, b) => {
       const pa = priority[a.source_label] || 0;
       const pb = priority[b.source_label] || 0;
       if (pb !== pa) return pb - pa;
       if ((b.source_confidence || 0) !== (a.source_confidence || 0)) return (b.source_confidence || 0) - (a.source_confidence || 0);
       return String(a.canonical_url || a.url || "").localeCompare(String(b.canonical_url || b.url || ""));
-    })[0] || null;
+    })[0] || null
+  );
 }
 
 function parseCurrentDimensions() {
@@ -1319,7 +1381,8 @@ function computeNoResultAutopsy() {
   const readyEngines = Object.keys(run.targets || {}).length;
   const manualOnlyProviders = ["pinterest"].filter((engine) => run.targets?.[engine]);
   const hasExif = Boolean(state.exif && Object.keys(state.exif).length > 0);
-  const hasTextPivots = Boolean((state.ocrText || "").trim()) || Boolean(state.insights?.attribution_hints && state.insights.attribution_hints !== "—");
+  const hasTextPivots =
+    Boolean((state.ocrText || "").trim()) || Boolean(state.insights?.attribution_hints && state.insights.attribution_hints !== "—");
 
   if (blocked > 0) {
     reasons.push({
@@ -1527,11 +1590,12 @@ function renderResultIntake() {
     <div class="mission-summary">
       Intake queue: ${summary.total} visible entries · merged ${summary.duplicatesMerged} duplicates · engines ${summary.engines.join(", ") || "—"} · top domains ${summary.topDomains.join(", ") || "—"}${suppressedEntries.length ? ` · suppressed ${suppressedEntries.length}` : ""}
     </div>
-    ${visibleEntries.length
-      ? visibleEntries
-      .slice(0, 12)
-      .map(
-        (entry) => `
+    ${
+      visibleEntries.length
+        ? visibleEntries
+            .slice(0, 12)
+            .map(
+              (entry) => `
           <div class="mission-card">
             <div class="mission-card-head">
               <div>${escapeHtml(entry.title || entry.canonical_url || entry.url)}</div>
@@ -1549,9 +1613,10 @@ function renderResultIntake() {
             </div>
           </div>
         `,
-      )
-      .join("")
-      : `<div class="mission-card"><div class="mission-card-lines"><div>All current findings are suppressed for this session.</div></div></div>`}
+            )
+            .join("")
+        : `<div class="mission-card"><div class="mission-card-lines"><div>All current findings are suppressed for this session.</div></div></div>`
+    }
     ${
       suppressedEntries.length
         ? `
@@ -1642,13 +1707,7 @@ function buildMetadataPassOutput() {
   const software = elements.kfSoftware?.textContent || "—";
   const gps = elements.kfGps?.textContent || "—";
   const suspicion = state.insights?.metadata_suspicion_band || "—";
-  const lines = [
-    `Captured: ${captured}`,
-    `Camera: ${camera}`,
-    `Software: ${software}`,
-    `GPS: ${gps}`,
-    `Metadata suspicion: ${suspicion}`,
-  ];
+  const lines = [`Captured: ${captured}`, `Camera: ${camera}`, `Software: ${software}`, `GPS: ${gps}`, `Metadata suspicion: ${suspicion}`];
   if (Array.isArray(state.insights?.metadata_suspicion_inputs)) {
     lines.push(...state.insights.metadata_suspicion_inputs.slice(0, 4).map((line) => `Cue: ${line}`));
   }
@@ -1661,7 +1720,14 @@ function buildMetadataPassOutput() {
         label: state.file?.name || "Loaded image",
         meta: elements.metaDim?.textContent || "metadata review",
         lines,
-        links: state.gps ? [{ label: "Open map", url: `https://www.openstreetmap.org/?mlat=${encodeURIComponent(state.gps.lat)}&mlon=${encodeURIComponent(state.gps.lon)}#map=16/${encodeURIComponent(state.gps.lat)}/${encodeURIComponent(state.gps.lon)}` }] : [],
+        links: state.gps
+          ? [
+              {
+                label: "Open map",
+                url: `https://www.openstreetmap.org/?mlat=${encodeURIComponent(state.gps.lat)}&mlon=${encodeURIComponent(state.gps.lon)}#map=16/${encodeURIComponent(state.gps.lat)}/${encodeURIComponent(state.gps.lon)}`,
+              },
+            ]
+          : [],
       },
     ],
   };
@@ -1682,7 +1748,8 @@ function getBatchEntityClusters(items = state.batchItems) {
   for (const item of items || []) {
     const report = item?.report;
     const fileName = report?.file?.name || item?.file?.name || "image";
-    const ent = report?.key_fields?.ocr_entities || (report?.ocr_text ? OCR_PIPELINE?.extractEntities?.(report.ocr_text) : null) || { urls: [], emails: [], handles: [], phones: [] };
+    const ent = report?.key_fields?.ocr_entities ||
+      (report?.ocr_text ? OCR_PIPELINE?.extractEntities?.(report.ocr_text) : null) || { urls: [], emails: [], handles: [], phones: [] };
     for (const handle of ent.handles || []) {
       const normalized = OCR_PIPELINE?.normalizeHandle?.(handle);
       if (normalized) addCluster("handle", `@${normalized}`, fileName);
@@ -1738,7 +1805,9 @@ async function fetchLocalJson(endpoint, scope = "api.fetch") {
 }
 
 function extractEmailDomain(email) {
-  const value = String(email || "").trim().toLowerCase();
+  const value = String(email || "")
+    .trim()
+    .toLowerCase();
   const at = value.lastIndexOf("@");
   return at >= 0 ? value.slice(at + 1) : "";
 }
@@ -1801,7 +1870,9 @@ async function runPivotStructuredTask({ entityType, entityKey, entityValue }) {
   };
 
   if (entityType === "handle") {
-    const handle = String(entityValue || "").replace(/^@/, "").trim();
+    const handle = String(entityValue || "")
+      .replace(/^@/, "")
+      .trim();
     const candidates = [
       { label: "Instagram", url: `https://www.instagram.com/${encodeURIComponent(handle)}/` },
       { label: "TikTok", url: `https://www.tiktok.com/@${encodeURIComponent(handle)}` },
@@ -1816,7 +1887,9 @@ async function runPivotStructuredTask({ entityType, entityKey, entityValue }) {
     const live = probes.filter((probe) => probe.result.ok);
     return {
       status: live.length ? "ready" : "error",
-      summary: live.length ? `Resolved ${live.length}/${probes.length} profile probes for @${handle}.` : `No profile metadata fetched for @${handle}.`,
+      summary: live.length
+        ? `Resolved ${live.length}/${probes.length} profile probes for @${handle}.`
+        : `No profile metadata fetched for @${handle}.`,
       lines: probes.map((probe) =>
         probe.result.ok
           ? `${probe.label}: ${(probe.result.data?.metadata?.title || probe.result.data?.final_url || probe.url).slice(0, 120)}`
@@ -1840,11 +1913,13 @@ async function runPivotStructuredTask({ entityType, entityKey, entityValue }) {
       call(`/api/archive?url=${encodeURIComponent(target)}`, `pivot.${entityType}.archive`),
     ]);
     const lines = [];
-    if (page.ok) lines.push(`Fetch: ${page.data?.status || "—"} · ${(page.data?.metadata?.title || page.data?.snippet || target).slice(0, 140)}`);
+    if (page.ok)
+      lines.push(`Fetch: ${page.data?.status || "—"} · ${(page.data?.metadata?.title || page.data?.snippet || target).slice(0, 140)}`);
     else lines.push(`Fetch: ${page.error}`);
     if (metadata.ok) lines.push(`Canonical: ${metadata.data?.metadata?.canonical_url || metadata.data?.final_url || target}`);
     else lines.push(`Metadata: ${metadata.error}`);
-    if (discover.ok) lines.push(`Discovery: ${Number(discover.data?.sitemaps?.length || 0)} sitemaps · robots ${discover.data?.robots_status || "—"}`);
+    if (discover.ok)
+      lines.push(`Discovery: ${Number(discover.data?.sitemaps?.length || 0)} sitemaps · robots ${discover.data?.robots_status || "—"}`);
     else lines.push(`Discovery: ${discover.error}`);
     if (archive.ok) {
       const snap = archive.data?.snapshot;
@@ -1970,8 +2045,8 @@ function renderOnboardingStrip() {
         state.localServerOnline === null
           ? "Checking local upload helper…"
           : state.localServerOnline === false
-          ? "Uploads unavailable — start `node server.js`."
-          : "Uploads available when you ask for them.",
+            ? "Uploads unavailable — start `node server.js`."
+            : "Uploads available when you ask for them.",
     },
     state.popupLikely ? { tone: "warn", text: "If a search tab does not open, click that engine again." } : null,
   ].filter(Boolean);
@@ -2252,7 +2327,12 @@ function reset() {
     analyst_confidence: "unverified",
   };
   state.sourceReviewLog = [];
-  state.insights = { metadata_suspicion_score: null, metadata_suspicion_band: null, metadata_suspicion_inputs: [], ai_image_suspicion: null };
+  state.insights = {
+    metadata_suspicion_score: null,
+    metadata_suspicion_band: null,
+    metadata_suspicion_inputs: [],
+    ai_image_suspicion: null,
+  };
   state.missionOutput = null;
   state.resultIntake = { raw: "", entries: [], last_ingested_at: null };
   state.pivotTaskResults = {};
@@ -2278,7 +2358,8 @@ function reset() {
   }
   elements.previewEmpty.style.display = "grid";
   if (elements.cropStatusOut) {
-    elements.cropStatusOut.textContent = "Drag a box around a face, logo, object, tattoo, sign, vehicle, building, product, artwork, or text area to search just that region.";
+    elements.cropStatusOut.textContent =
+      "Drag a box around a face, logo, object, tattoo, sign, vehicle, building, product, artwork, or text area to search just that region.";
   }
   elements.metaName.textContent = "—";
   elements.metaType.textContent = "—";
@@ -2380,7 +2461,8 @@ function reset() {
   }
   if (elements.noResultAutopsyOut) {
     elements.noResultAutopsyOut.classList.remove("mission-grid");
-    elements.noResultAutopsyOut.textContent = "Run a multi-engine launch, then ingest hits. If nothing lands, BlueLens will explain the likely failure modes here.";
+    elements.noResultAutopsyOut.textContent =
+      "Run a multi-engine launch, then ingest hits. If nothing lands, BlueLens will explain the likely failure modes here.";
   }
   if (elements.sourceContradictionOut) {
     elements.sourceContradictionOut.classList.remove("mission-grid");
@@ -2537,7 +2619,9 @@ function setSearchQueryOutput(output) {
 
 function parseFilenameStem(name) {
   if (appHelpers.parseFilenameStem) return appHelpers.parseFilenameStem(name);
-  const raw = String(name || "").trim().replace(/\.[^.]+$/, "");
+  const raw = String(name || "")
+    .trim()
+    .replace(/\.[^.]+$/, "");
   return raw.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
@@ -2551,10 +2635,20 @@ function summarizeDocumentLayout(text) {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
-  const paragraphBreaks = String(text || "").split(/\n\s*\n/).filter((block) => block.trim()).length;
-  const headingCandidates = lines.filter((line) => line.length >= 4 && line.length <= 72 && (line === line.toUpperCase() || /^[A-Z][A-Za-z0-9 '&/-]{3,}$/.test(line))).slice(0, 4);
-  const kvRows = lines.filter((line) => /[:|]/.test(line) || /\b(total|date|name|address|price|receipt|invoice|menu|certificate|issued|expires)\b/i.test(line)).slice(0, 6);
-  const tableRows = lines.filter((line) => /\d/.test(line) && /[$€£¥]|(?:\s{2,}|\t)|\bqty\b|\btotal\b|\bsubtotal\b/i.test(line)).slice(0, 6);
+  const paragraphBreaks = String(text || "")
+    .split(/\n\s*\n/)
+    .filter((block) => block.trim()).length;
+  const headingCandidates = lines
+    .filter((line) => line.length >= 4 && line.length <= 72 && (line === line.toUpperCase() || /^[A-Z][A-Za-z0-9 '&/-]{3,}$/.test(line)))
+    .slice(0, 4);
+  const kvRows = lines
+    .filter(
+      (line) => /[:|]/.test(line) || /\b(total|date|name|address|price|receipt|invoice|menu|certificate|issued|expires)\b/i.test(line),
+    )
+    .slice(0, 6);
+  const tableRows = lines
+    .filter((line) => /\d/.test(line) && /[$€£¥]|(?:\s{2,}|\t)|\bqty\b|\btotal\b|\bsubtotal\b/i.test(line))
+    .slice(0, 6);
   return {
     line_count: lines.length,
     paragraph_count: paragraphBreaks,
@@ -2657,12 +2751,10 @@ function buildDocumentImageOutput(context = getCurrentReconContext()) {
           `Candidates: ${logoCandidates.join(" · ") || "No strong brand/logo cue extracted"}`,
           "Use logo lookups as pivots, not proof of origin.",
         ],
-        links: logoCandidates
-          .slice(0, 4)
-          .flatMap((candidate) => [
-            { label: `${candidate} logo`, url: buildSearchLink(`"${candidate}" logo`) },
-            { label: `${candidate} images`, url: buildSearchLink(`"${candidate}"`) },
-          ]),
+        links: logoCandidates.slice(0, 4).flatMap((candidate) => [
+          { label: `${candidate} logo`, url: buildSearchLink(`"${candidate}" logo`) },
+          { label: `${candidate} images`, url: buildSearchLink(`"${candidate}"`) },
+        ]),
       },
       {
         label: "Entity extraction",
@@ -2724,26 +2816,38 @@ function renderEngineLaunchpad(run) {
   const queue = r.queue && typeof r.queue === "object" ? r.queue : {};
   const engines = getRunEngines(r);
 
-  const chips = engines.map((eng) => {
-    const url = r.targets?.[eng] || "";
-    const on = chosen?.[eng] !== false;
-    const queueState = queue?.[eng] || {};
-    const st = blocked?.[eng] ? "blocked" : opened?.[eng] ? "opened" : queueState.status || "";
-    const title = blocked?.[eng] ? "Popup blocked" : opened?.[eng] ? "Opened" : queueState.status ? `State: ${queueState.status}` : "Prepared";
-    const disabled = url ? "" : "disabled";
-    return `
+  const chips = engines
+    .map((eng) => {
+      const url = r.targets?.[eng] || "";
+      const on = chosen?.[eng] !== false;
+      const queueState = queue?.[eng] || {};
+      const st = blocked?.[eng] ? "blocked" : opened?.[eng] ? "opened" : queueState.status || "";
+      const title = blocked?.[eng]
+        ? "Popup blocked"
+        : opened?.[eng]
+          ? "Opened"
+          : queueState.status
+            ? `State: ${queueState.status}`
+            : "Prepared";
+      const disabled = url ? "" : "disabled";
+      return `
       <label class="engine-chip ${st} ${disabled}" title="${escapeAttr(title)}">
         <input type="checkbox" data-eng="${escapeAttr(eng)}" ${on ? "checked" : ""} ${url ? "" : "disabled"} />
         <span class="ico" aria-hidden="true">${escapeHtml(ENGINE_ICON[eng] || "•")}</span>
         <span class="name">${escapeHtml(ENGINE_LABEL[eng] || eng)}</span>
       </label>
     `;
-  }).join("");
+    })
+    .join("");
 
   const queueCards = engines
     .map((eng) => {
       const q = queue?.[eng] || {};
-      const status = blocked?.[eng] ? RUN_QUEUE_STATUS.blocked : opened?.[eng] ? RUN_QUEUE_STATUS.opened : q.status || (r.targets?.[eng] ? RUN_QUEUE_STATUS.prepared : "idle");
+      const status = blocked?.[eng]
+        ? RUN_QUEUE_STATUS.blocked
+        : opened?.[eng]
+          ? RUN_QUEUE_STATUS.opened
+          : q.status || (r.targets?.[eng] ? RUN_QUEUE_STATUS.prepared : "idle");
       const detail = [
         q.job_id ? `job ${q.job_id.slice(0, 12)}…` : "",
         Number.isFinite(q.attempts) && q.attempts > 0 ? `attempts ${q.attempts}` : "",
@@ -2952,7 +3056,9 @@ function fmtMs(ms) {
 function triageSignalsForReport(report) {
   const gps = report?.gps && Number.isFinite(report.gps.lat) && Number.isFinite(report.gps.lon);
   // Keep reading the old field from saved cases/reports until they have all been re-exported with metadata_suspicion_score.
-  const repost = Number(report?.insights?.metadata_suspicion_score ?? report?.insights?.repost_heuristic ?? report?.insights?.repost_likelihood);
+  const repost = Number(
+    report?.insights?.metadata_suspicion_score ?? report?.insights?.repost_heuristic ?? report?.insights?.repost_likelihood,
+  );
   const hasExif = Boolean(report?.exif && Object.keys(report.exif).length > 0);
   const software = String(report?.key_fields?.software || report?.exif?.Software || "").trim();
 
@@ -2964,10 +3070,7 @@ function triageSignalsForReport(report) {
   const lowRes = mp != null ? mp < 1.0 : false;
 
   // "Entities" from OCR if available; otherwise from whatever text we have without forcing batch OCR.
-  let ent =
-    report?.key_fields?.ocr_entities && typeof report.key_fields.ocr_entities === "object"
-      ? report.key_fields.ocr_entities
-      : null;
+  let ent = report?.key_fields?.ocr_entities && typeof report.key_fields.ocr_entities === "object" ? report.key_fields.ocr_entities : null;
 
   if (!ent && report?.ocr_text) {
     ent = OCR_PIPELINE?.extractEntities?.(String(report.ocr_text)) || null;
@@ -3068,7 +3171,9 @@ function renderBatchDashboard() {
   const entityClusters = getBatchEntityClusters(items).slice(0, 10);
 
   const applyFilters = () => {
-    const q = String(state.batchUi.query || "").toLowerCase().trim();
+    const q = String(state.batchUi.query || "")
+      .toLowerCase()
+      .trim();
     const gpsOnly = Boolean(state.batchUi.gpsOnly);
     const entOnly = Boolean(state.batchUi.entOnly);
     const cl = state.batchUi.cluster;
@@ -3079,7 +3184,8 @@ function renderBatchDashboard() {
       if (entOnly && !t.entCount) return false;
       if (cl !== "all" && String(it.clusterId || "") !== String(cl)) return false;
       if (q) {
-        const hay = `${it.report?.file?.name || ""} ${it.triage?.software || ""} ${(t.ent?.urls || []).join(" ")} ${(t.ent?.handles || []).join(" ")} ${(t.ent?.emails || []).join(" ")}`.toLowerCase();
+        const hay =
+          `${it.report?.file?.name || ""} ${it.triage?.software || ""} ${(t.ent?.urls || []).join(" ")} ${(t.ent?.handles || []).join(" ")} ${(t.ent?.emails || []).join(" ")}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -3466,7 +3572,12 @@ async function ensureReconContext({ mode = "deep" } = {}) {
   return normalizeReconEntities(state.ocrText || "");
 }
 
-function createEngineRunRecord({ engines = ENGINE_ORDER, mode = "launchpad", url = "", artifact = state.publicUrlArtifact || "original" } = {}) {
+function createEngineRunRecord({
+  engines = ENGINE_ORDER,
+  mode = "launchpad",
+  url = "",
+  artifact = state.publicUrlArtifact || "original",
+} = {}) {
   return LAUNCHPAD_CORE.createEngineRunRecord({
     engines,
     mode,
@@ -3621,7 +3732,9 @@ async function runMissionPreset(preset) {
       const output = buildSearchQueryGeneratorOutput(context);
       setSearchQueryOutput(output);
       setMissionOutput(output);
-      setStatusLine(output.items?.length ? `Query generator: ${output.items.length} searches prepared` : "Query generator: no stable clues yet");
+      setStatusLine(
+        output.items?.length ? `Query generator: ${output.items.length} searches prepared` : "Query generator: no stable clues yet",
+      );
       setStatus("Ready");
       return;
     }
@@ -3647,7 +3760,9 @@ async function runMissionPreset(preset) {
     if (p === "handle_recon") {
       const context = await ensureReconContext({ mode: "deep" });
       setMissionOutput(buildHandleReconOutput(context));
-      setStatusLine(context.handles.length ? `Handle recon: ${context.handles.length} handles normalized` : "Handle recon: no stable handles found");
+      setStatusLine(
+        context.handles.length ? `Handle recon: ${context.handles.length} handles normalized` : "Handle recon: no stable handles found",
+      );
       setStatus("Ready");
       return;
     }
@@ -3655,7 +3770,9 @@ async function runMissionPreset(preset) {
     if (p === "domain_recon") {
       const context = await ensureReconContext({ mode: "deep" });
       setMissionOutput(buildDomainReconOutput(context));
-      setStatusLine(context.domains.length ? `Domain recon: ${context.domains.length} domains normalized` : "Domain recon: no domains found");
+      setStatusLine(
+        context.domains.length ? `Domain recon: ${context.domains.length} domains normalized` : "Domain recon: no domains found",
+      );
       setStatus("Ready");
       return;
     }
@@ -3668,17 +3785,24 @@ async function runMissionPreset(preset) {
     }
 
     if (p === "cross_engine_swarm") {
-      if (!ensureMissionShareEnabled("Cross-engine swarm opens queued wait tabs for every configured engine and uses one temporary upload for the shared handoff. Allow it?")) return;
+      if (
+        !ensureMissionShareEnabled(
+          "Cross-engine swarm opens queued wait tabs for every configured engine and uses one temporary upload for the shared handoff. Allow it?",
+        )
+      )
+        return;
       setStatusLine("Swarm: staging wait tabs…");
       const run = await prepareEngineSwarm({ engines: ENGINE_ORDER, labelPrefix: "Swarm" });
       state.session = loadSession();
       state.session.engines_opened += ENGINE_ORDER.length;
       saveSession();
       void refreshHostStats();
-      setMissionOutput(buildMissionSummaryOutput("Cross-Engine Swarm", [
-        `Queued ${ENGINE_ORDER.length} engine waits with throttled handoff`,
-        `Swarm cockpit now tracks per-engine state, retries, and reopen status`,
-      ]));
+      setMissionOutput(
+        buildMissionSummaryOutput("Cross-Engine Swarm", [
+          `Queued ${ENGINE_ORDER.length} engine waits with throttled handoff`,
+          `Swarm cockpit now tracks per-engine state, retries, and reopen status`,
+        ]),
+      );
       setStatusLine("Swarm: queued and ready");
       setStatus("Ready");
     }
@@ -3715,7 +3839,9 @@ async function refreshHostStats() {
     }
     const lines = [
       `Upload stats (session-only diagnostic): engines ${session.engines_opened} · uploads ok ${session.uploads_ok} · fail ${session.uploads_fail} · last ${session.last_host || "—"} ${fmtMs(session.last_ms)}`,
-      rows.length ? `Hosts: ${rows.map((r) => `${r.host} ok ${r.ok} · fail ${r.fail} · avg ${fmtMs(r.avgMs)}`).join(" · ")}` : "Hosts: no completed upload samples yet",
+      rows.length
+        ? `Hosts: ${rows.map((r) => `${r.host} ok ${r.ok} · fail ${r.fail} · avg ${fmtMs(r.avgMs)}`).join(" · ")}`
+        : "Hosts: no completed upload samples yet",
     ];
 
     elements.hostStatsOut.textContent = lines.join("\n");
@@ -3882,15 +4008,8 @@ async function ensurePublicUrl({ purpose = "" } = {}) {
     };
 
     const uploadFile =
-      artifactWanted === "clean"
-        ? await ensureCleanCopyFile()
-        : artifactWanted === "crop"
-          ? await ensureCropSearchFile()
-          : state.file;
-    const url =
-      provider === "0x0"
-        ? await publicUrlForFile(uploadFile, normalizedPurpose)
-        : "";
+      artifactWanted === "clean" ? await ensureCleanCopyFile() : artifactWanted === "crop" ? await ensureCropSearchFile() : state.file;
+    const url = provider === "0x0" ? await publicUrlForFile(uploadFile, normalizedPurpose) : "";
     if (!url) throw new Error("Unsupported provider");
     state.publicUrl = url;
     state.publicUrlPurpose = normalizedPurpose;
@@ -3923,7 +4042,11 @@ async function handleQuickJump(engine) {
   if (!state.file) return;
   if (state.uiBusy) return;
 
-  if (!ensureMissionShareEnabled("To open a provider in one step, BlueLens needs one temporary public upload for the handoff URL. Allow the upload?")) {
+  if (
+    !ensureMissionShareEnabled(
+      "To open a provider in one step, BlueLens needs one temporary public upload for the handoff URL. Allow the upload?",
+    )
+  ) {
     openUrl(reverseSearchUploadPage(engine));
     return;
   }
@@ -4156,10 +4279,7 @@ function setupCropTool() {
     const bounds = stage.getBoundingClientRect();
     const px = event.clientX - bounds.left;
     const py = event.clientY - bounds.top;
-    if (
-      px < metrics.left || px > metrics.left + metrics.width ||
-      py < metrics.top || py > metrics.top + metrics.height
-    ) return;
+    if (px < metrics.left || px > metrics.left + metrics.width || py < metrics.top || py > metrics.top + metrics.height) return;
     event.preventDefault();
     state.crop.dragging = true;
     state.crop.pointerId = event.pointerId;
@@ -4232,7 +4352,9 @@ function setupCropTool() {
     invalidateSharedSearch("Crop ready — next search uploads only the selected region");
     renderCropSelection();
     updateCropButtons();
-    setCropStatus(`Crop locked: ${state.crop.rect.natural.width} × ${state.crop.rect.natural.height}px. SEARCH now uses only the selected region.`);
+    setCropStatus(
+      `Crop locked: ${state.crop.rect.natural.width} × ${state.crop.rect.natural.height}px. SEARCH now uses only the selected region.`,
+    );
   };
 
   stage.addEventListener("pointerdown", beginCrop);
@@ -4288,11 +4410,7 @@ async function generateMutationFiles() {
   low.ctx.drawImage(img, 0, 0, iw, ih);
   low.ctx.filter = "none";
 
-  const blobs = await Promise.all([
-    canvasToBlob(crop.c, outType, q),
-    canvasToBlob(rot.c, outType, q),
-    canvasToBlob(low.c, outType, q),
-  ]);
+  const blobs = await Promise.all([canvasToBlob(crop.c, outType, q), canvasToBlob(rot.c, outType, q), canvasToBlob(low.c, outType, q)]);
 
   const files = [
     new File([blobs[0]], `${baseName}_mut_crop.jpg`, { type: outType }),
@@ -4383,10 +4501,13 @@ function renderMutationSummary(entries) {
       const lens = url ? reverseSearchUrl("lens", url) : "";
       const analystAnnotation = r.analyst_annotation || r.confidence || "unreviewed";
       const disabled = r.status !== "ok" ? "disabled" : "";
-      const score = r.engine_review && typeof r.engine_review === "object" ? r.engine_review : r.score && typeof r.score === "object" ? r.score : {};
+      const score =
+        r.engine_review && typeof r.engine_review === "object" ? r.engine_review : r.score && typeof r.score === "object" ? r.score : {};
 
       parts.push(`<div class="mut-row">`);
-      parts.push(`<div class="mut-a"><span class="mut-tag">${status}</span> <span class="mut-label">${escapeHtml(r.label || "Variant")}</span></div>`);
+      parts.push(
+        `<div class="mut-a"><span class="mut-tag">${status}</span> <span class="mut-label">${escapeHtml(r.label || "Variant")}</span></div>`,
+      );
       parts.push(`<div class="mut-b">Δ ${escapeHtml(dist)}</div>`);
       parts.push(
         `<div class="mut-c"><select class="select mut-select" data-mut="${escapeAttr(r.id || "")}" ${disabled}>` +
@@ -4502,7 +4623,9 @@ function buildPivotSearchUrlsFromEntities(ent) {
   for (const date of (ent?.dates || []).slice(0, 4)) add(google(`"${date}"`));
   for (const alias of (ent?.aliases || []).slice(0, 4)) add(google(`"${alias}"`));
   for (const hRaw of (ent?.handles || []).slice(0, 8)) {
-    const h = String(hRaw || "").replace(/^@/, "").trim();
+    const h = String(hRaw || "")
+      .replace(/^@/, "")
+      .trim();
     if (!h) continue;
     add(google(`@${h}`));
     add(`https://www.instagram.com/${encodeURIComponent(h)}/`);
@@ -4551,7 +4674,9 @@ function buildMarkdownReport(report) {
   lines.push(`- Size: \`${file.size_bytes != null ? formatBytes(file.size_bytes) : "—"}\``);
   lines.push(`- Dimensions: \`${r.dimensions || "—"}\``);
   if (crop?.bounds_pixels) {
-    lines.push(`- Search crop: \`${crop.bounds_pixels.width} × ${crop.bounds_pixels.height}px @ ${crop.bounds_pixels.x},${crop.bounds_pixels.y}\``);
+    lines.push(
+      `- Search crop: \`${crop.bounds_pixels.width} × ${crop.bounds_pixels.height}px @ ${crop.bounds_pixels.x},${crop.bounds_pixels.y}\``,
+    );
   }
   lines.push("");
   lines.push(`## Signals`);
@@ -4601,7 +4726,8 @@ function buildMarkdownReport(report) {
   lines.push(`- Expected expiry window: ${upload.expected_expiry_window ? `\`${upload.expected_expiry_window}\`` : "—"}`);
   lines.push(`- Retention note: ${upload.retention_note || "—"}`);
   lines.push(`- Warning: ${upload.temporary_external_artifact_warning || "—"}`);
-  if (r.export_metadata?.runtime_config_fingerprint) lines.push(`- Runtime fingerprint: \`${r.export_metadata.runtime_config_fingerprint}\``);
+  if (r.export_metadata?.runtime_config_fingerprint)
+    lines.push(`- Runtime fingerprint: \`${r.export_metadata.runtime_config_fingerprint}\``);
   lines.push("");
   lines.push(`## OCR Pivots`);
   const u = Array.isArray(entities.urls) ? entities.urls.slice(0, 8) : [];
@@ -4664,14 +4790,20 @@ function buildMarkdownReport(report) {
   lines.push(`- Deduped entries: \`${Array.isArray(r.result_intake?.entries) ? r.result_intake.entries.length : 0}\``);
   lines.push(`- Last ingested: ${r.result_intake?.last_ingested_at ? `\`${r.result_intake.last_ingested_at}\`` : "—"}`);
   if (r.result_intake?.best_match) {
-    lines.push(`- Best match: ${r.result_intake.best_match.title ? `\`${r.result_intake.best_match.title}\`` : "—"} · ${r.result_intake.best_match.label || "—"} · confidence ${r.result_intake.best_match.confidence ?? "—"}`);
+    lines.push(
+      `- Best match: ${r.result_intake.best_match.title ? `\`${r.result_intake.best_match.title}\`` : "—"} · ${r.result_intake.best_match.label || "—"} · confidence ${r.result_intake.best_match.confidence ?? "—"}`,
+    );
     lines.push(`- Best match URL: ${r.result_intake.best_match.url || "—"}`);
   }
   if (r.result_intake?.contradictions?.summary) lines.push(`- Contradictions: ${r.result_intake.contradictions.summary}`);
   lines.push("");
   lines.push(`## Action Log`);
   const actionLog = Array.isArray(r.session_action_log) ? r.session_action_log : [];
-  lines.push(actionLog.length ? actionLog.map((row) => `- ${row.ts || "—"} · ${row.event || "event"}${row.detail ? ` · ${row.detail}` : ""}`).join("\n") : "- —");
+  lines.push(
+    actionLog.length
+      ? actionLog.map((row) => `- ${row.ts || "—"} · ${row.event || "event"}${row.detail ? ` · ${row.detail}` : ""}`).join("\n")
+      : "- —",
+  );
   lines.push("");
   lines.push(`---`);
   lines.push("");
@@ -4770,7 +4902,8 @@ function parseExifDateValue(rawValue) {
       normalized: raw.replace(/\.000Z$/, "Z"),
       normalized_utc: raw,
       has_timezone: false,
-      timezone_note: "EXIF parser returned a Date object; the original EXIF timezone is still ambiguous unless a source offset is documented elsewhere.",
+      timezone_note:
+        "EXIF parser returned a Date object; the original EXIF timezone is still ambiguous unless a source offset is documented elsewhere.",
       source_type: sourceType,
     };
   }
@@ -4840,7 +4973,11 @@ function normalizeCapturedAt(exifObj) {
   };
 }
 
-function buildExportMetadata({ ocrMode = state.lastOcrMode || "not_run", ocrLanguage = elements.ocrLang?.value || OCR_DEFAULT_LANGUAGE, uploadMeta = state.uploadMeta ? { ...state.uploadMeta } : null } = {}) {
+function buildExportMetadata({
+  ocrMode = state.lastOcrMode || "not_run",
+  ocrLanguage = elements.ocrLang?.value || OCR_DEFAULT_LANGUAGE,
+  uploadMeta = state.uploadMeta ? { ...state.uploadMeta } : null,
+} = {}) {
   const upload = buildUploadLifecycleMeta(uploadMeta, uploadMeta?.purpose || state.publicUrlPurpose || "");
   return {
     schema_version: EXPORT_SCHEMA_VERSION,
@@ -5164,9 +5301,8 @@ function computeAiImageSuspicionChecklist({ exifObj, file, width, height, ocrTex
     return letters > 0 && digits > 0;
   }).length;
 
-  const squareish = Number.isFinite(width) && Number.isFinite(height) && height > 0
-    ? Math.abs(width / height - 1) < AI_SQUAREISH_ASPECT_DELTA
-    : false;
+  const squareish =
+    Number.isFinite(width) && Number.isFinite(height) && height > 0 ? Math.abs(width / height - 1) < AI_SQUAREISH_ASPECT_DELTA : false;
   const hiRes = Number.isFinite(width) && Number.isFinite(height) ? (width * height) / 1_000_000 >= AI_SYNTHETIC_TEXTURE_HIRES_MP : false;
   const syntheticFriendlyFormat = /image\/(png|webp)/i.test(file?.type || "");
 
@@ -5176,21 +5312,76 @@ function computeAiImageSuspicionChecklist({ exifObj, file, width, height, ocrTex
     aiToolName
       ? { key: "metadata", label: "Metadata hints", status: "flag", detail: `Creator/software tag mentions ${aiToolName}.` }
       : !hasExif
-        ? { key: "metadata", label: "Metadata hints", status: "review", detail: "No capture metadata present. Re-exports and synthetic images often strip EXIF." }
+        ? {
+            key: "metadata",
+            label: "Metadata hints",
+            status: "review",
+            detail: "No capture metadata present. Re-exports and synthetic images often strip EXIF.",
+          }
         : hasCameraMeta
-          ? { key: "metadata", label: "Metadata hints", status: "clear", detail: "Camera/capture metadata is present, so there is no direct generator tag here." }
-          : { key: "metadata", label: "Metadata hints", status: "review", detail: software ? `Creator/software tag: ${software}` : "Metadata is thin; review provenance manually." },
+          ? {
+              key: "metadata",
+              label: "Metadata hints",
+              status: "clear",
+              detail: "Camera/capture metadata is present, so there is no direct generator tag here.",
+            }
+          : {
+              key: "metadata",
+              label: "Metadata hints",
+              status: "review",
+              detail: software ? `Creator/software tag: ${software}` : "Metadata is thin; review provenance manually.",
+            },
     !text
-      ? { key: "text", label: "Malformed text", status: "review", detail: "Run OCR or visually inspect lettering for warped glyphs, merged characters, and fake UI text." }
+      ? {
+          key: "text",
+          label: "Malformed text",
+          status: "review",
+          detail: "Run OCR or visually inspect lettering for warped glyphs, merged characters, and fake UI text.",
+        }
       : weirdGlyphRatio > AI_OCR_WEIRD_GLYPH_RATIO || repeatedRuns || noisyTokens >= AI_OCR_NOISY_TOKEN_MIN
-        ? { key: "text", label: "Malformed text", status: "flag", detail: "OCR output looks noisy enough to justify a closer lettering review." }
-        : { key: "text", label: "Malformed text", status: "clear", detail: "OCR text does not show an obvious gibberish pattern from local extraction alone." },
+        ? {
+            key: "text",
+            label: "Malformed text",
+            status: "flag",
+            detail: "OCR output looks noisy enough to justify a closer lettering review.",
+          }
+        : {
+            key: "text",
+            label: "Malformed text",
+            status: "clear",
+            detail: "OCR text does not show an obvious gibberish pattern from local extraction alone.",
+          },
     aiToolName || (!hasExif && hiRes && syntheticFriendlyFormat) || squareish
-      ? { key: "texture", label: "Synthetic texture", status: "review", detail: "Zoom into skin, sky, fabric, foliage, or walls for repeated micro-patterns and plastic smoothing." }
-      : { key: "texture", label: "Synthetic texture", status: "review", detail: "Still inspect repeated texture, oversmoothing, and edge halos manually." },
-    { key: "reflections", label: "Weird reflections", status: "review", detail: "Check glass, water, chrome, and eyes for impossible mirrored geometry." },
-    { key: "shadows", label: "Inconsistent shadows", status: "review", detail: "Check whether shadow direction, hardness, and light color stay consistent across the scene." },
-    { key: "anatomy", label: "Impossible anatomy", status: "review", detail: "Check hands, teeth, ears, jewelry, straps, and limb joins for broken structure." },
+      ? {
+          key: "texture",
+          label: "Synthetic texture",
+          status: "review",
+          detail: "Zoom into skin, sky, fabric, foliage, or walls for repeated micro-patterns and plastic smoothing.",
+        }
+      : {
+          key: "texture",
+          label: "Synthetic texture",
+          status: "review",
+          detail: "Still inspect repeated texture, oversmoothing, and edge halos manually.",
+        },
+    {
+      key: "reflections",
+      label: "Weird reflections",
+      status: "review",
+      detail: "Check glass, water, chrome, and eyes for impossible mirrored geometry.",
+    },
+    {
+      key: "shadows",
+      label: "Inconsistent shadows",
+      status: "review",
+      detail: "Check whether shadow direction, hardness, and light color stay consistent across the scene.",
+    },
+    {
+      key: "anatomy",
+      label: "Impossible anatomy",
+      status: "review",
+      detail: "Check hands, teeth, ears, jewelry, straps, and limb joins for broken structure.",
+    },
   ];
 
   const flagged = items.filter((item) => item.status === "flag").length;
@@ -5240,9 +5431,7 @@ function updateConsoleInsights({ exifObj, file, width, height, ocrText }) {
       elements.repostReasons.innerHTML = "";
     } else {
       elements.repostReasons.hidden = false;
-      elements.repostReasons.innerHTML = top
-        .map((r) => `<span class="chip">${escapeHtml(String(r))}</span>`)
-        .join("");
+      elements.repostReasons.innerHTML = top.map((r) => `<span class="chip">${escapeHtml(String(r))}</span>`).join("");
     }
   }
   return { score, band, inputs, aiImageSuspicion };
@@ -5355,10 +5544,7 @@ async function encodeCleanCopy(img, preferredType) {
   ctx.imageSmoothingQuality = "high";
   ctx.drawImage(img, 0, 0, w, h);
 
-  const type =
-    preferredType && (preferredType === "image/png" || preferredType === "image/webp")
-      ? preferredType
-      : "image/jpeg";
+  const type = preferredType && (preferredType === "image/png" || preferredType === "image/webp") ? preferredType : "image/jpeg";
 
   const quality = type === "image/jpeg" ? 0.92 : undefined;
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, type, quality));
@@ -5516,9 +5702,7 @@ function buildOsintReport({ includeInvestigation = true } = {}) {
       ocr_entity_confidence: state.entityConfidence && Object.keys(state.entityConfidence).length ? { ...state.entityConfidence } : null,
       ocr_entity_review_entries: buildCurrentOcrReviewEntries(),
       ocr_entity_tasks:
-        state.pivotTaskResults && Object.keys(state.pivotTaskResults).length
-          ? JSON.parse(JSON.stringify(state.pivotTaskResults))
-          : null,
+        state.pivotTaskResults && Object.keys(state.pivotTaskResults).length ? JSON.parse(JSON.stringify(state.pivotTaskResults)) : null,
     },
     exif: state.exif || null,
     ocr_text: state.ocrText || null,
@@ -5547,12 +5731,12 @@ function buildOsintReport({ includeInvestigation = true } = {}) {
           items: Array.isArray(state.missionOutput.items) ? state.missionOutput.items.slice() : null,
         }
       : null,
-    document_image_mode: (state.documentModeOutput || state.ocrText)
-      ? deepClone(state.documentModeOutput || buildDocumentImageOutput(reconContext))
-      : null,
-    search_query_generator: (state.searchQueryOutput || state.ocrText || state.file)
-      ? deepClone(state.searchQueryOutput || buildSearchQueryGeneratorOutput(reconContext))
-      : null,
+    document_image_mode:
+      state.documentModeOutput || state.ocrText ? deepClone(state.documentModeOutput || buildDocumentImageOutput(reconContext)) : null,
+    search_query_generator:
+      state.searchQueryOutput || state.ocrText || state.file
+        ? deepClone(state.searchQueryOutput || buildSearchQueryGeneratorOutput(reconContext))
+        : null,
     result_intake: state.resultIntake
       ? {
           last_ingested_at: state.resultIntake.last_ingested_at || null,
@@ -5560,7 +5744,9 @@ function buildOsintReport({ includeInvestigation = true } = {}) {
           autopsy: computeNoResultAutopsy(),
           contradictions: buildSourceContradictionModel(),
           best_match: (() => {
-            const best = pickBestResultIntakeEntry(getAnalyzedResultIntakeEntries(state.resultIntake.entries || []).filter((entry) => !entry?.suppressed));
+            const best = pickBestResultIntakeEntry(
+              getAnalyzedResultIntakeEntries(state.resultIntake.entries || []).filter((entry) => !entry?.suppressed),
+            );
             return best
               ? {
                   title: best.title || null,
@@ -5603,11 +5789,7 @@ function extractKeyFieldsObj(exifObj) {
 }
 
 async function buildReportForFileHeadless(file) {
-  const [hashes, exifObj, decoded] = await Promise.all([
-    computeHashes(file),
-    parseExif(file),
-    loadImageStandalone(file),
-  ]);
+  const [hashes, exifObj, decoded] = await Promise.all([computeHashes(file), parseExif(file), loadImageStandalone(file)]);
 
   const width = decoded.img.naturalWidth || decoded.img.width;
   const height = decoded.img.naturalHeight || decoded.img.height;
@@ -5678,7 +5860,9 @@ async function runBatchFiles(files) {
         thumb = null;
       }
       state.batchItems.push({ id, file: f, report: r, triage: null, clusterId: 0, thumb });
-      const suspicion = r.insights?.metadata_suspicion_band || formatMetadataSuspicionBand(Number(r.insights?.metadata_suspicion_score ?? r.insights?.repost_heuristic));
+      const suspicion =
+        r.insights?.metadata_suspicion_band ||
+        formatMetadataSuspicionBand(Number(r.insights?.metadata_suspicion_score ?? r.insights?.repost_heuristic));
       lines.push(`  OK · suspicion ${suspicion}`);
     } catch (e) {
       lines.push(`  FAIL · ${e?.message || "unknown error"}`);
@@ -5733,8 +5917,10 @@ function estimateLocalSourcePosture(report) {
   const dims = String(report?.dimensions || "");
   const match = dims.match(/(\d+)\s*[×x]\s*(\d+)/);
   const mp = match ? (Number(match[1]) * Number(match[2])) / 1_000_000 : 0;
-  if (hasExif && !software && mp >= 1.5 && score <= 45) return { label: "Likely original", confidence: 0.62, notes: ["Local metadata and resolution look comparatively source-like"] };
-  if (software || score >= 60) return { label: "Likely repost", confidence: 0.58, notes: ["Editing/software or repost-oriented metadata cues present"] };
+  if (hasExif && !software && mp >= 1.5 && score <= 45)
+    return { label: "Likely original", confidence: 0.62, notes: ["Local metadata and resolution look comparatively source-like"] };
+  if (software || score >= 60)
+    return { label: "Likely repost", confidence: 0.58, notes: ["Editing/software or repost-oriented metadata cues present"] };
   return { label: "Needs review", confidence: 0.4, notes: ["No external result intake was attached to this batch row"] };
 }
 
@@ -5784,7 +5970,18 @@ function buildBatchSummaryRows(items = state.batchItems) {
 }
 
 function downloadCsvRows(rows, filename) {
-  const cols = ["file_name", "dimensions", "sha256", "best_match", "best_match_label", "earliest_date", "source_urls", "confidence", "duplicate_count", "notes"];
+  const cols = [
+    "file_name",
+    "dimensions",
+    "sha256",
+    "best_match",
+    "best_match_label",
+    "earliest_date",
+    "source_urls",
+    "confidence",
+    "duplicate_count",
+    "notes",
+  ];
   const lines = [cols.join(",")];
   for (const row of rows || []) {
     lines.push(cols.map((col) => toCsvValue(row?.[col] ?? "")).join(","));
@@ -5876,7 +6073,9 @@ function getOcrLanguageLabel(code) {
 function populateOcrLanguageOptions() {
   if (!elements.ocrLang) return;
   const current = elements.ocrLang.value || OCR_DEFAULT_LANGUAGE;
-  elements.ocrLang.innerHTML = OCR_LANGUAGE_OPTIONS.map((opt) => `<option value="${escapeAttr(opt.value)}">${escapeHtml(opt.label)}</option>`).join("");
+  elements.ocrLang.innerHTML = OCR_LANGUAGE_OPTIONS.map(
+    (opt) => `<option value="${escapeAttr(opt.value)}">${escapeHtml(opt.label)}</option>`,
+  ).join("");
   const fallback = OCR_LANGUAGE_OPTIONS.some((opt) => opt.value === current) ? current : OCR_DEFAULT_LANGUAGE;
   elements.ocrLang.value = fallback;
 }
@@ -6014,7 +6213,12 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
           const m = (elements.metaDim.textContent || "").match(/(\d+)\s*×\s*(\d+)/);
           return m ? Number(m[2]) : null;
         })();
-        const { score: s, band, inputs, aiImageSuspicion } = updateConsoleInsights({
+        const {
+          score: s,
+          band,
+          inputs,
+          aiImageSuspicion,
+        } = updateConsoleInsights({
           exifObj: state.exif,
           file: state.file,
           width: imgW,
@@ -6173,7 +6377,12 @@ async function runOcrForCurrent({ mode = "deep" } = {}) {
         const m = (elements.metaDim.textContent || "").match(/(\d+)\s*×\s*(\d+)/);
         return m ? Number(m[2]) : null;
       })();
-      const { score: s, band, inputs, aiImageSuspicion } = updateConsoleInsights({
+      const {
+        score: s,
+        band,
+        inputs,
+        aiImageSuspicion,
+      } = updateConsoleInsights({
         exifObj: state.exif,
         file: state.file,
         width: imgW,
@@ -6265,7 +6474,9 @@ async function analyzeFile(file) {
     setShareControlsEnabled(true);
     setShareStatus(state.publicUrl ? "Shared" : "Not shared");
     clearCompare();
-    setCropStatus("Drag a box over the preview to search only a face, logo, object, tattoo, sign, vehicle, building, product, artwork, or text area.");
+    setCropStatus(
+      "Drag a box over the preview to search only a face, logo, object, tattoo, sign, vehicle, building, product, artwork, or text area.",
+    );
     renderCropSelection();
     updateCropButtons();
 
@@ -6411,8 +6622,7 @@ async function analyzeCompareFile(file) {
     elements.cmpVerdict.textContent = verdict;
     if (elements.cmpExplain) {
       const diffText = Number.isFinite(state.compare.diffScore) ? ` Thumbnail diff intensity: ${state.compare.diffScore}/255.` : "";
-      elements.cmpExplain.textContent =
-        `dHash compares tiny perceptual thumbnails; 0 means identical hashes and larger numbers mean less visual agreement.${diffText} Treat this as a screening signal, not proof that two files are the same image.`;
+      elements.cmpExplain.textContent = `dHash compares tiny perceptual thumbnails; 0 means identical hashes and larger numbers mean less visual agreement.${diffText} Treat this as a screening signal, not proof that two files are the same image.`;
     }
     elements.btnClearCompare.disabled = false;
     setStatus("Ready");
@@ -6670,7 +6880,9 @@ function setupActions() {
           autopsy: computeNoResultAutopsy(),
           contradictions: buildSourceContradictionModel(),
           best_match: (() => {
-            const best = pickBestResultIntakeEntry(getAnalyzedResultIntakeEntries(state.resultIntake?.entries || []).filter((entry) => !entry?.suppressed));
+            const best = pickBestResultIntakeEntry(
+              getAnalyzedResultIntakeEntries(state.resultIntake?.entries || []).filter((entry) => !entry?.suppressed),
+            );
             return best
               ? {
                   title: best.title || null,
@@ -6763,9 +6975,7 @@ function setupActions() {
 
     await withUiLock("Mutating…", async () => {
       if (!state.shareEnabled) {
-        const ok = window.confirm(
-          "Mutation Lab needs automatic uploads (uploads variants to generate public URLs). Allow it?",
-        );
+        const ok = window.confirm("Mutation Lab needs automatic uploads (uploads variants to generate public URLs). Allow it?");
         if (!ok) return;
         state.shareEnabled = true;
         elements.chkEnableShare.checked = true;
@@ -6800,7 +7010,10 @@ function setupActions() {
         }
       }
 
-      const clusters = clusterByDhash(muts.filter((m) => m.dhash), DHASH_MUTATION_CLUSTER_THRESHOLD);
+      const clusters = clusterByDhash(
+        muts.filter((m) => m.dhash),
+        DHASH_MUTATION_CLUSTER_THRESHOLD,
+      );
       for (let ci = 0; ci < clusters.length; ci += 1) {
         for (const m of clusters[ci].items) m.cluster = ci + 1;
       }
@@ -6887,7 +7100,9 @@ function setupActions() {
       const output = buildSearchQueryGeneratorOutput(context);
       setSearchQueryOutput(output);
       setMissionOutput(output);
-      setStatusLine(output.items?.length ? `Query generator: ${output.items.length} searches prepared` : "Query generator: no stable clues yet");
+      setStatusLine(
+        output.items?.length ? `Query generator: ${output.items.length} searches prepared` : "Query generator: no stable clues yet",
+      );
       setStatus("Ready");
     });
   });
@@ -6923,7 +7138,9 @@ function setupActions() {
   elements.btnOpenMap.addEventListener("click", () => {
     if (!state.gps) return;
     const { lat, lon } = state.gps;
-    openUrl(`https://www.openstreetmap.org/?mlat=${encodeURIComponent(lat)}&mlon=${encodeURIComponent(lon)}#map=16/${encodeURIComponent(lat)}/${encodeURIComponent(lon)}`);
+    openUrl(
+      `https://www.openstreetmap.org/?mlat=${encodeURIComponent(lat)}&mlon=${encodeURIComponent(lon)}#map=16/${encodeURIComponent(lat)}/${encodeURIComponent(lon)}`,
+    );
   });
 
   elements.btnCopyCoords.addEventListener("click", async () => {
@@ -7142,9 +7359,13 @@ function setupFx() {
   if (elements.chkFunMode) elements.chkFunMode.checked = funMode;
   if (elements.chkOperatorMode) elements.chkOperatorMode.checked = operatorMode;
   if (elements.scanlineSlider)
-    elements.scanlineSlider.value = String(Math.max(0, Math.min(FX_SCANLINE_MAX, Number.isFinite(scanline) ? scanline : FX_SCANLINE_FUN_DEFAULT)));
+    elements.scanlineSlider.value = String(
+      Math.max(0, Math.min(FX_SCANLINE_MAX, Number.isFinite(scanline) ? scanline : FX_SCANLINE_FUN_DEFAULT)),
+    );
   if (elements.chromaticSlider)
-    elements.chromaticSlider.value = String(Math.max(0, Math.min(FX_CHROMATIC_MAX, Number.isFinite(chromatic) ? chromatic : FX_CHROMATIC_FUN_DEFAULT)));
+    elements.chromaticSlider.value = String(
+      Math.max(0, Math.min(FX_CHROMATIC_MAX, Number.isFinite(chromatic) ? chromatic : FX_CHROMATIC_FUN_DEFAULT)),
+    );
   if (elements.chkHud) elements.chkHud.checked = state.hudWanted;
   if (elements.chkChrome) elements.chkChrome.checked = state.chromeSkinWanted;
 
@@ -7447,16 +7668,41 @@ function setupCommandPalette() {
   let activeIndex = 0;
 
   const actions = [
-    { name: "Upload + Prepare Links", meta: "Reverse-search launchpad", keys: ["upload", "prepare", "search", "all", "reverse", "engines", "launchpad"], run: () => void handleSearchAll() },
-    { name: "Refresh Local Analysis", meta: "OCR + signals", keys: ["refresh", "pass", "ocr", "signals", "attribution"], run: () => elements.btnRunPass?.click() },
+    {
+      name: "Upload + Prepare Links",
+      meta: "Reverse-search launchpad",
+      keys: ["upload", "prepare", "search", "all", "reverse", "engines", "launchpad"],
+      run: () => void handleSearchAll(),
+    },
+    {
+      name: "Refresh Local Analysis",
+      meta: "OCR + signals",
+      keys: ["refresh", "pass", "ocr", "signals", "attribution"],
+      run: () => elements.btnRunPass?.click(),
+    },
     { name: "Copy Report", meta: "JSON to clipboard", keys: ["copy", "report", "json"], run: () => elements.btnCopyReport?.click() },
     { name: "Copy Public URL", meta: "If shared", keys: ["copy", "url", "public"], run: () => elements.btnCopyPublicUrl?.click() },
     { name: "Tab: Search", meta: "Console", keys: ["tab", "search"], run: () => window.__osintActivateTab?.("search") },
-    { name: "Tab: Signals", meta: "Hashes + EXIF", keys: ["tab", "signals", "exif", "hash"], run: () => window.__osintActivateTab?.("signals") },
+    {
+      name: "Tab: Signals",
+      meta: "Hashes + EXIF",
+      keys: ["tab", "signals", "exif", "hash"],
+      run: () => window.__osintActivateTab?.("signals"),
+    },
     { name: "Tab: Text", meta: "OCR", keys: ["tab", "text", "ocr"], run: () => window.__osintActivateTab?.("text") },
     { name: "Tab: Compare", meta: "Similarity", keys: ["tab", "compare", "dhash"], run: () => window.__osintActivateTab?.("compare") },
-    { name: "Toggle Blue Chrome", meta: "Y2K skin", keys: ["toggle", "chrome", "skin"], run: () => (elements.chkChrome.checked = !elements.chkChrome.checked, elements.chkChrome.dispatchEvent(new Event("change"))) },
-    { name: "Toggle HUD Mode", meta: "Drag panels", keys: ["toggle", "hud", "cockpit"], run: () => (elements.chkHud.checked = !elements.chkHud.checked, elements.chkHud.dispatchEvent(new Event("change"))) },
+    {
+      name: "Toggle Blue Chrome",
+      meta: "Y2K skin",
+      keys: ["toggle", "chrome", "skin"],
+      run: () => ((elements.chkChrome.checked = !elements.chkChrome.checked), elements.chkChrome.dispatchEvent(new Event("change"))),
+    },
+    {
+      name: "Toggle HUD Mode",
+      meta: "Drag panels",
+      keys: ["toggle", "hud", "cockpit"],
+      run: () => ((elements.chkHud.checked = !elements.chkHud.checked), elements.chkHud.dispatchEvent(new Event("change"))),
+    },
     { name: "Reset", meta: "Clear current image", keys: ["reset", "clear"], run: () => elements.btnReset?.click() },
   ].filter((a) => typeof a.run === "function");
 
